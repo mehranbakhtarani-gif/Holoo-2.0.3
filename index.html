@@ -506,6 +506,7 @@
             </div>
             <div class="flex flex-wrap gap-1.5 text-xs">
               <button onclick="setAccTab('journal')" id="acc-tab-journal" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-holoo-700 text-white">📖 دفتر روزنامه</button>
+              <button onclick="setAccTab('chart')" id="acc-tab-chart" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🗂️ سرفصل‌ها</button>
               <button onclick="setAccTab('manual')" id="acc-tab-manual" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">✍️ سند دستی</button>
               <button onclick="setAccTab('review')" id="acc-tab-review" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🔎 مرور ۴ سطحی (F7)</button>
               <button onclick="setAccTab('trial')" id="acc-tab-trial" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">⚖️ تراز آزمایشی</button>
@@ -3208,10 +3209,31 @@
       renderAccountingModule();
     }
 
+    function saveCustomAccount() {
+      const parentId = document.getElementById('new-acc-parent')?.value;
+      const code = document.getElementById('new-acc-code')?.value.trim();
+      const name = document.getElementById('new-acc-name')?.value.trim();
+      const parent = (state.accountCatalog || []).find(a => a.id === parentId && a.level === 'general');
+      if (!parent || !/^\\d{4,8}$/.test(code || '') || !code.startsWith(parent.code) || !name) { showToast('کد باید عددی، یکتا و زیرمجموعه حساب کل انتخاب‌شده باشد.', 'error'); return; }
+      if (state.accountCatalog.some(a => a.code === code) || CHART_ACCOUNTS.some(a => a.code === code)) { showToast('این کد حساب قبلاً استفاده شده است.', 'error'); return; }
+      const account = { code, name };
+      CHART_ACCOUNTS.push(account);
+      state.accountCatalog.push({ id: 'SUB-' + code, code, name, level: 'subsidiary', parentId, system: false, active: true });
+      saveState(); renderAccountingModule(); showToast('حساب معین جدید ثبت شد.');
+    }
+
     function renderAccountingModule() {
       const box = document.getElementById('accounting-panel-body');
       const bal = getAccountBalances();
-      if (activeAccTab === 'journal') {
+      if (activeAccTab === 'chart') {
+        const rows = (state.accountCatalog || []).slice().sort((a, b) => a.code.localeCompare(b.code)).map(a => {
+          const indent = a.level === 'group' ? '' : (a.level === 'general' ? '　　' : '　　　　');
+          const levelName = a.level === 'group' ? 'گروه' : (a.level === 'general' ? 'کل' : 'معین');
+          return `<div class="flex items-center justify-between gap-2 p-2 rounded-lg border ${a.level === 'group' ? 'bg-slate-100 font-black' : (a.level === 'general' ? 'bg-sky-50 font-bold' : 'bg-white')}" style="margin-right:${a.level === 'group' ? 0 : (a.level === 'general' ? 12 : 24)}px"><span>${indent}${faNum(a.code)} - ${a.name}</span><span class="text-[10px] text-slate-400">${levelName}</span></div>`;
+        }).join('');
+        const parents = (state.accountCatalog || []).filter(a => a.level === 'general' && a.active);
+        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3"><div class="font-black text-sm">درخت حساب‌ها: گروه ← کل ← معین</div><div class="space-y-1">${rows}</div><div class="border-t pt-3 space-y-2"><strong>افزودن حساب معین جدید</strong><div class="grid grid-cols-1 md:grid-cols-3 gap-2"><select id="new-acc-parent" class="touch-btn border rounded-xl px-2">${parents.map(p => `<option value="${p.id}">${faNum(p.code)} - ${p.name}</option>`).join('')}</select><input id="new-acc-code" class="touch-btn border rounded-xl px-2" inputmode="numeric" placeholder="کد حساب (۴ رقم یا بیشتر)" /><input id="new-acc-name" class="touch-btn border rounded-xl px-2" placeholder="نام حساب" /></div><button onclick="saveCustomAccount()" class="touch-btn bg-holoo-700 text-white rounded-xl px-4 font-bold">ثبت حساب جدید</button><p class="text-[10px] text-slate-500">حساب دارای گردش حذف نمی‌شود؛ کدهای فعلی و اسناد قبلی حفظ شده‌اند.</p></div></div>`;
+      } else if (activeAccTab === 'journal') {
         box.innerHTML = state.vouchers.map(v => `
           <div class="bg-white rounded-2xl p-3.5 border ${v.locked ? 'border-emerald-400' : 'border-slate-200'} space-y-2">
             <div class="flex justify-between items-center border-b pb-1.5">
