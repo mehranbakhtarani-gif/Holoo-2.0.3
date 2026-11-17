@@ -95,6 +95,23 @@ for each row execute function public.record_untracked_holoo_sync_write();
 revoke all on table public.holoo_operation_log from public, anon, authenticated;
 grant select, insert on table public.holoo_operation_log to anon, authenticated;
 
+-- The client invokes the RPC with the anon key (SECURITY INVOKER).
+-- Keep the existing holoo_sync policies untouched; allow the client role
+-- to read the journal for safe merge checks and append operation records.
+drop policy if exists holoo_operation_log_client_select on public.holoo_operation_log;
+create policy holoo_operation_log_client_select
+  on public.holoo_operation_log
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists holoo_operation_log_client_insert on public.holoo_operation_log;
+create policy holoo_operation_log_client_insert
+  on public.holoo_operation_log
+  for insert
+  to anon, authenticated
+  with check (true);
+
 drop function if exists public.holoo_apply_state_operation(
   text, timestamptz, jsonb, uuid, text, text, bigint, text, text, timestamptz
 );
