@@ -2239,13 +2239,17 @@
         kardex: stock > 0 ? [{ date: `${state.fiscalYear}/08/27`, doc: 'موجودی اولیه', inQty: stock, outQty: 0, bal: stock, price: buyPrice }] : []
       };
       state.products.unshift(newProd);
-      if (stock > 0 && buyPrice > 0) {
+      const hasOpeningStockVoucher = stock > 0 && buyPrice > 0;
+      if (hasOpeningStockVoucher) {
+        // postVoucher خودش saveState را اجرا می‌کند؛ ذخیره دوم باعث لاگ snapshot تکراری می‌شد.
         postVoucher(`موجودی اولیه کالا: ${name}`, [
           { code: '1105', partyId: null, desc: name, debit: stock * buyPrice, credit: 0 },
           { code: '3101', partyId: null, desc: 'تعدیل سرمایه بابت موجودی اولیه', debit: 0, credit: stock * buyPrice }
         ]);
+      } else {
+        saveState();
       }
-      saveState(); closeModal('modal-product'); renderAll();
+      closeModal('modal-product'); renderAll();
       showToast('کالای نساجی و ۱۰ سطح قیمت ثبت و به Supabase ارسال شد ✔');
     }
 
