@@ -1916,15 +1916,16 @@
     }
 
     function recalcInvDraft() {
-      const sub = invDraft.lines.reduce((s, l) => s + l.total, 0);
+      const grossSub = invDraft.lines.reduce((s, l) => s + (l.kg * l.price), 0);
       const disc = invDraft.lines.reduce((s, l) => s + l.disc, 0);
-      const vat = Math.round(sub * (Number(document.getElementById('inv-vat-rate').value || 0) / 100));
-      const comm = Math.round(sub * (Number(document.getElementById('inv-commission-rate').value || 0) / 100));
-      document.getElementById('inv-sum-sub').textContent = money(sub);
+      const netSub = invDraft.lines.reduce((s, l) => s + l.total, 0);
+      const vat = Math.round(netSub * (Number(document.getElementById('inv-vat-rate').value || 0) / 100));
+      const comm = Math.round(netSub * (Number(document.getElementById('inv-commission-rate').value || 0) / 100));
+      document.getElementById('inv-sum-sub').textContent = money(grossSub);
       document.getElementById('inv-sum-disc').textContent = money(disc);
       document.getElementById('inv-sum-vat').textContent = money(vat);
       document.getElementById('inv-sum-comm').textContent = money(comm);
-      document.getElementById('inv-sum-grand').textContent = money(sub + vat);
+      document.getElementById('inv-sum-grand').textContent = money(netSub + vat);
     }
 
     function submitInvoice() {
@@ -1935,8 +1936,9 @@
       const payMethod = document.getElementById('inv-pay-method').value;
       const vatRate = Number(document.getElementById('inv-vat-rate').value || 0);
       const commRate = Number(document.getElementById('inv-commission-rate').value || 0);
-      const sub = invDraft.lines.reduce((s, l) => s + l.total, 0);
+      const sub = invDraft.lines.reduce((s, l) => s + l.total, 0); // مبلغ خالص پس از تخفیف؛ مبنای ثبت حسابداری
       const disc = invDraft.lines.reduce((s, l) => s + l.disc, 0);
+      const grossSub = invDraft.lines.reduce((s, l) => s + (l.kg * l.price), 0);
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
       const grandTotal = sub + vatAmount;
@@ -1946,7 +1948,7 @@
       state.invoices.unshift({
         id, type, date, dueDate: document.getElementById('inv-due-date').value, partyId, warehouseId,
         payMethod, salesperson: document.getElementById('inv-salesperson').value, commRate, commAmount,
-        subtotal: sub, discount: disc, vatRate, vatAmount, grandTotal, paidAmount: payMethod === 'credit' ? 0 : grandTotal,
+        subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal, paidAmount: payMethod === 'credit' ? 0 : grandTotal,
         status: 'active', items: [...invDraft.lines]
       });
 
@@ -2100,7 +2102,9 @@
             <tbody>${inv.items.map(it => `<tr><td class="border p-1.5">${it.name}</td><td class="border p-1.5 tabular-nums">${faNum(it.kg)}</td><td class="border p-1.5 tabular-nums">${faNum(it.cartons)}</td><td class="border p-1.5 tabular-nums">${money(it.price, false)}</td><td class="border p-1.5 font-bold tabular-nums">${money(it.total, false)}</td></tr>`).join('')}</tbody>
           </table>
           <div class="p-2.5 bg-slate-50 border rounded-lg space-y-1">
-            <div class="flex justify-between"><span>جمع کل:</span><strong>${money(inv.subtotal)}</strong></div>
+            <div class="flex justify-between"><span>جمع ناخالص:</span><strong>${money(inv.subtotal)}</strong></div>
+            <div class="flex justify-between text-rose-700"><span>تخفیف:</span><strong>${money(inv.discount || 0)}</strong></div>
+            <div class="flex justify-between"><span>جمع پس از تخفیف:</span><strong>${money(inv.netSubtotal ?? (inv.subtotal - (inv.discount || 0)))}</strong></div>
             <div class="flex justify-between"><span>مالیات ارزش افزوده (${faNum(inv.vatRate)}٪):</span><strong>${money(inv.vatAmount)}</strong></div>
             <div class="flex justify-between font-black text-sm text-holoo-900 border-t pt-1"><span>مبلغ قابل پرداخت:</span><span>${money(inv.grandTotal)}</span></div>
           </div>
