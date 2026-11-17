@@ -56,7 +56,7 @@ test('sales return restores the original consumed batch quantities', () => {
   const p = { id: 'P5', stock: 4, batches: [
     { id: 'B1', lot: 'L1', receivedDate: '1405/01/01', remainingQty: 4, quantity: 10, unitCost: 100 }
   ] };
-  restoreFifoAllocations(p, [{ batchId: 'B1', lot: 'L1', quantity: 2, unitCost: 100 }], 0, 0, 'RET-1');
+  restoreFifoAllocations(p, [{ batchId: 'B1', lot: 'L1', quantity: 2, unitCost: 100 }], 2, 100, 'RET-1');
   assert.equal(p.batches[0].remainingQty, 6);
 });
 
