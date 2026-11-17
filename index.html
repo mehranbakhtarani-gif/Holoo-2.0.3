@@ -1801,7 +1801,7 @@
       const rootChanges = {};
       const rootKeys = new Set([...Object.keys(previous || {}), ...Object.keys(current || {})]);
       rootKeys.forEach(key => {
-        if (SYNC_ENTITY_COLLECTIONS.includes(key) || Array.isArray(previous?.[key]) || Array.isArray(current?.[key])) return;
+        if (key === 'activeRole' || SYNC_ENTITY_COLLECTIONS.includes(key) || Array.isArray(previous?.[key]) || Array.isArray(current?.[key])) return;
         if (!Object.prototype.hasOwnProperty.call(current || {}, key)) rootChanges[key] = { changeType: 'delete' };
         else if (JSON.stringify(previous?.[key]) !== JSON.stringify(current[key])) rootChanges[key] = { changeType: 'upsert', value: current[key] };
       });
@@ -1813,6 +1813,8 @@
       const operationId = createStableId('op').slice(3);
       const sequence = Number(localStorage.getItem(OPERATION_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
+      const operationPayload = JSON.parse(snapshot);
+      operationPayload.activeRole = 'mehran';
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
       const changeSet = buildEntityChangeSet(lastSavedState, state, sequence);
       const operation = {
@@ -1825,7 +1827,7 @@
         createdAt: updatedAt,
         operationType: 'state_snapshot',
         summary: lastAudit?.action || 'به‌روزرسانی اطلاعات شرکت',
-        payload: JSON.parse(snapshot),
+        payload: operationPayload,
         entityChanges: changeSet.entityChanges,
         rootChanges: changeSet.rootChanges,
         expectedUpdatedAt: localStorage.getItem(CLOUD_BASELINE_KEY) || null,
