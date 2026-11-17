@@ -1,5 +1,11 @@
-const CACHE_NAME = 'holoo-pwa-shell-v1';
+const CACHE_NAME = 'holoo-pwa-shell-v2';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icons/icon.svg'];
+const CDN_HOSTS = new Set([
+  'cdn.tailwindcss.com',
+  'cdn.jsdelivr.net',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com'
+]);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -12,43 +18,79 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(
+        keys.filter((key) => key.startsWith('holoo-pwa-') && key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      ))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  const url = new URL(request.url);
+  if (request.method !== 'GET') return;
 
-  // Never intercept or store Supabase, authentication, API, POST, or cross-origin traffic.
-  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (/\/rest\/v1\/|\/auth\/v1\/|\/storage\/v1\//i.test(url.pathname)) return;
+  const url = new URL(request.url);
+  const sameOrigin = url.origin === self.location.origin;
+
+  // Supabase and other API/auth traffic must always go to the network.
+  if (/supabase|\/rest\/v1\/|\/auth\/v1\/|\/storage\/v1\//i.test(url.href)) return;
+
+  // Cache only the known static CDNs used by this app; never cache arbitrary third-party requests.
+  if (!sameOrigin) {
+    if (!CDN_HOSTS.has(url.hostname)) return;
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        try {
+          const response = await fetch(request);
+          if (response.ok || response.type === 'opaque') {
+            await cache.put(request, response.clone());
+          }
+          return response;
+        } catch (error) {
+          return cached || Response.error();
+        }
+      })
+    );
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).then((response) => {
+      fetch(request).then(async (response) => {
         if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put('./index.html', response.clone());
         }
         return response;
       }).catch(async () => {
         return (await caches.match(request)) ||
-               (await caches.match('./index.html')) ||
-               Response.error();
+          (await caches.match('./index.html')) ||
+          Response.error();
       })
     );
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok && response.type === 'basic') {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    caches.match(request).then(async (cached) => {
+      if (cached) return cached;
+      try {
+        const response = await fetch(request);
+        if (response.ok && response.type === 'basic') {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, response.clone());
+        }
+        return response;
+      } catch (error) {
+        return cached || Response.error();
       }
-      return response;
-    }))
+    })
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
