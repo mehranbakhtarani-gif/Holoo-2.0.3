@@ -1208,6 +1208,7 @@
         // نسخه محلی پیش از جایگزینی در یک snapshot مستقل نگه داشته می‌شود.
         createSnapshot('پیش از انتخاب نسخه ابری در تعارض همگام‌سازی', false);
         state = conflict.remoteData;
+        state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
         lastSavedState = JSON.parse(JSON.stringify(state));
         const stamp = conflict.remoteUpdatedAt || new Date().toISOString();
         try {
@@ -1425,6 +1426,7 @@
             throw new Error('ذخیره نسخه دریافتی در مرورگر ناموفق بود: ' + storageError.message);
           }
           state = incoming;
+          state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
           lastSavedState = JSON.parse(JSON.stringify(state));
           if (rows[0].updated_at) localStorage.setItem(CLOUD_BASELINE_KEY, rows[0].updated_at);
           await renderCloudSyncStatus();
@@ -3467,6 +3469,7 @@
 
     window.addEventListener('DOMContentLoaded', async () => {
       await prepareLocalStorageMirror();
+      state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
       const roleSelect = document.getElementById('role-select');
       if (roleSelect) roleSelect.value = state.activeRole;
       await renderCloudSyncStatus();
