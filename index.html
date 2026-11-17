@@ -6,9 +6,8 @@
   <meta name="theme-color" content="#0f766e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="هلو جامع شرکتی و نساجی" />
-  <title>نرم‌افزار حسابداری هلو | نسخه جامع شرکتی، واردات و نساجی (Supabase Cloud)</title>
+  <title>نرم‌افزار حسابداری هلو | نسخه محلی بدون نیاز به ورود</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -67,18 +66,6 @@
   <link rel="apple-touch-icon" href="./icons/icon.svg">
 </head>
 <body>
-  <div id="auth-gate" class="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center p-4">
-    <div class="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl space-y-4 text-right" dir="rtl">
-      <div class="text-center space-y-1"><div class="text-4xl">🔐</div><h2 class="text-xl font-black text-slate-900">ورود امن به هلو شرکتی</h2><p class="text-xs text-slate-500">برای مشاهده اطلاعات شرکت، با حساب کاربری تأییدشده وارد شوید.</p></div>
-      <form id="auth-form" class="space-y-3" onsubmit="event.preventDefault(); signInToHoloo();">
-        <div><label class="block text-xs font-bold mb-1">ایمیل</label><input id="auth-email" type="email" autocomplete="username" required class="w-full border rounded-xl px-3 py-3 text-left" dir="ltr" placeholder="name@example.com"></div>
-        <div><label class="block text-xs font-bold mb-1">رمز عبور</label><input id="auth-password" type="password" autocomplete="current-password" required class="w-full border rounded-xl px-3 py-3 text-left" dir="ltr" placeholder="••••••••"></div>
-        <button id="auth-submit" type="submit" class="w-full bg-teal-700 hover:bg-teal-800 text-white font-black rounded-xl py-3">ورود</button>
-      </form>
-      <p id="auth-message" class="text-xs text-rose-700 text-center min-h-5" role="status"></p>
-      <p class="text-[10px] text-slate-400 text-center">اطلاعات مالی تا پیش از تأیید هویت بارگذاری نمی‌شود.</p>
-    </div>
-  </div>
   <div class="erp-layout">
     <!-- ==================== TOP GLOBAL TOOLBAR + SUPABASE CLOUD STATUS ==================== -->
     <header class="glass-header text-white px-3 lg:px-6 py-2.5 shadow-md z-30 shrink-0 flex flex-wrap items-center justify-between gap-2">
@@ -1072,188 +1059,26 @@
 
   <script>
     // =========================================================================
-    // 1. AUTHENTICATED MULTI-USER SUPABASE ENGINE (NO LEGACY holoo_sync WRITES)
+    // 1. LOCAL-ONLY MODE — NO LOGIN OR CLOUD AUTHENTICATION
     // =========================================================================
-    const STORE_KEY = 'holoo_textile_import_erp_v2'; // retained only as a legacy key; financial state is not read/written here
+    const STORE_KEY = 'holoo_textile_import_erp_v2';
     const SNAP_KEY = 'holoo_textile_import_snaps_v2';
     const CLOUD_CFG_KEY = 'holoo_supabase_cfg_v1';
-    const COMPANY_ID = '81832592-9015-4a47-9b99-21649186dde8';
-    const cloudConfig = {
-      url: 'https://qsdlthvnfmjbodtdkbqc.supabase.co',
-      key: 'sb_publishable_pqLUltTUvAEPnE786BFKWw_uc8_RFk'
-    };
-    const supabaseClient = window.supabase?.createClient
-      ? window.supabase.createClient(cloudConfig.url, cloudConfig.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
-      : null;
-    let currentSession = null;
-    let currentMembership = null;
-    let currentRevision = 0;
-    let syncTimer = null;
-    let saveQueue = Promise.resolve();
-    let isSyncing = false;
-    let cloudReady = false;
+    const cloudConfig = { url: '', key: '' };
 
-    function setCloudBadge(text, colorClass) {
+    function setCloudBadge(text, colorClass = 'text-slate-300') {
       const el = document.getElementById('cloud-status-badge');
       if (!el) return;
       el.className = `font-extrabold flex items-center gap-1 ${colorClass}`;
       el.textContent = text;
     }
-    function authMessage(message, isError = true) {
-      const el = document.getElementById('auth-message');
-      if (el) { el.textContent = message || ''; el.className = `text-xs text-center min-h-5 ${isError ? 'text-rose-700' : 'text-emerald-700'}`; }
-    }
-    function setAuthBusy(busy) {
-      const b = document.getElementById('auth-submit');
-      if (b) { b.disabled = busy; b.textContent = busy ? 'در حال بررسی…' : 'ورود'; }
-    }
-    function roleLabel(role) {
-      return ({ ceo: '👑 مدیر عامل', accountant: '📊 حسابدار ارشد', importer: '🚢 بازرگان واردات', warehouse: '📦 انباردار نساجی' })[role] || 'کاربر';
-    }
-    function applyAuthenticatedRole(role) {
-      state.activeRole = role;
-      const sel = document.getElementById('role-select');
-      if (sel) { sel.value = role; sel.disabled = true; sel.title = `نقش تأییدشده حساب: ${roleLabel(role)}`; }
-      const canWrite = role === 'ceo' || role === 'accountant';
-      document.querySelectorAll('#main-workspace button, #main-workspace input, #main-workspace select, #main-workspace textarea').forEach(el => {
-        if (el.closest('[data-nav]') || el.dataset.allowReadonly === 'true') return;
-        el.disabled = !canWrite;
-        if (!canWrite) el.classList.add('opacity-60');
-      });
-      const roleSelect = document.getElementById('role-select');
-      if (roleSelect) roleSelect.title = `${roleLabel(role)} — تعیین‌شده توسط سرور`;
-      document.querySelectorAll('button[onclick=\"pushToSupabase(true)\"]').forEach(el => { el.disabled = !canWrite; });
-    }
-    async function loadCompanyState() {
-      const { data, error } = await supabaseClient.from('holoo_company_state')
-        .select('data,revision').eq('company_id', COMPANY_ID).single();
-      if (error) throw error;
-      if (!data || !data.data || !data.data.vouchers) throw new Error('داده معتبر شرکت در holoo_company_state پیدا نشد.');
-      state = data.data;
-      currentRevision = Number(data.revision || 0);
-      renderAll();
-      applyAuthenticatedRole(currentMembership.role);
-      cloudReady = true;
-      setCloudBadge(`☁️ متصل | نسخه ${currentRevision}`, 'text-emerald-300');
-    }
-    async function establishSession(session) {
-      currentSession = session;
-      if (!session) {
-        currentMembership = null; cloudReady = false;
-        document.getElementById('auth-gate').classList.remove('hidden');
-        setCloudBadge('🔒 ورود لازم است', 'text-amber-300');
-        return;
-      }
-      try {
-        setCloudBadge('🔐 بررسی دسترسی شرکت…', 'text-sky-300');
-        const { data: membership, error } = await supabaseClient.from('holoo_company_members')
-          .select('role,status').eq('company_id', COMPANY_ID).eq('user_id', session.user.id).single();
-        if (error) throw error;
-        if (!membership || membership.status !== 'active') throw new Error('عضویت فعال برای این حساب در شرکت ثبت نشده است.');
-        if (!['ceo','accountant','importer','warehouse'].includes(membership.role)) throw new Error('نقش کاربری معتبر نیست.');
-        currentMembership = membership;
-        await loadCompanyState();
-        document.getElementById('auth-gate').classList.add('hidden');
-        authMessage('', false);
-      } catch (err) {
-        console.error('Holoo session initialization:', err);
-        await supabaseClient.auth.signOut();
-        currentSession = null; currentMembership = null; cloudReady = false;
-        document.getElementById('auth-gate').classList.remove('hidden');
-        authMessage(err.message || 'ورود یا دریافت اطلاعات شرکت ناموفق بود.');
-        setCloudBadge('⚠️ دسترسی تأیید نشد', 'text-rose-300');
-      }
-    }
-    async function signInToHoloo() {
-      if (!supabaseClient) { authMessage('کتابخانه Supabase بارگذاری نشده است. اتصال اینترنت را بررسی کنید.'); return; }
-      const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value;
-      setAuthBusy(true); authMessage('');
-      try {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        await establishSession(data.session);
-      } catch (err) { authMessage(err.message || 'ایمیل یا رمز عبور صحیح نیست.'); }
-      finally { setAuthBusy(false); }
-    }
-    async function signOutFromHoloo() {
-      if (supabaseClient) await supabaseClient.auth.signOut();
-      currentSession = null; currentMembership = null; cloudReady = false;
-      document.getElementById('auth-gate').classList.remove('hidden');
-      authMessage('');
-      setCloudBadge('🔒 خارج شدید', 'text-amber-300');
-    }
-    async function saveCompanyState() {
-      if (!cloudReady || !currentSession || !currentMembership) return;
-      if (!['ceo','accountant'].includes(currentMembership.role)) {
-        setCloudBadge('🔒 دسترسی ذخیره‌سازی ندارید', 'text-rose-300');
-        showToast('نقش شما فقط اجازه مشاهده اطلاعات را دارد.', 'error');
-        return;
-      }
-      const expected = currentRevision;
-      const payload = JSON.parse(JSON.stringify(state));
-      isSyncing = true;
-      setCloudBadge('🔄 ذخیره امن در ابر…', 'text-sky-300');
-      try {
-        const { data, error } = await supabaseClient.rpc('holoo_save_company_state', {
-          p_company_id: COMPANY_ID,
-          p_data: payload,
-          p_expected_revision: expected
-        });
-        if (error) {
-          if ((error.message || '').toLowerCase().includes('revision') || (error.message || '').toLowerCase().includes('conflict')) {
-            cloudReady = false;
-            setCloudBadge('⚠️ تعارض نسخه؛ دریافت مجدد لازم است', 'text-rose-300');
-            showToast('نسخه اطلاعات در سرور تغییر کرده؛ برای جلوگیری از بازنویسی، ذخیره متوقف شد. صفحه را تازه‌سازی و دوباره وارد شوید.', 'error');
-            return;
-          }
-          throw error;
-        }
-        currentRevision = Number(data);
-        setCloudBadge(`☁️ ذخیره شد | نسخه ${currentRevision}`, 'text-emerald-300');
-        const lbl = document.getElementById('sb-last-sync-label');
-        if (lbl) lbl.textContent = `آخرین ذخیره موفق: ${new Date().toLocaleTimeString('fa-IR')}`;
-      } catch (err) {
-        console.error('Holoo save error:', err);
-        setCloudBadge('⚠️ خطا در ذخیره امن', 'text-rose-300');
-        showToast('ذخیره در سرور انجام نشد؛ تغییرات را تا رفع خطا قطعی فرض نکنید.', 'error');
-      } finally { isSyncing = false; }
-    }
-    function pushToSupabase(notify = false) {
-      if (!cloudReady) { if (notify) showToast('ابتدا وارد حساب کاربری شوید.', 'error'); return; }
-      saveQueue = saveQueue.then(() => saveCompanyState()).catch(err => console.error(err));
-      return saveQueue;
-    }
-    async function pullFromSupabase(notify = false) {
-      if (!cloudReady) { if (notify) showToast('ابتدا وارد حساب کاربری شوید.', 'error'); return; }
-      try {
-        setCloudBadge('📥 دریافت آخرین نسخه…', 'text-sky-300');
-        await loadCompanyState();
-        if (notify) showToast('آخرین نسخه شرکت دریافت شد.');
-      } catch (err) {
-        console.error('Holoo refresh error:', err);
-        setCloudBadge('⚠️ دریافت اطلاعات ناموفق', 'text-rose-300');
-        if (notify) showToast('دریافت اطلاعات ناموفق بود.', 'error');
-      }
-    }
-    function saveCloudConfig() {
-      showToast('نشانی و کلید پروژه در نسخه امن ثابت شده‌اند؛ تغییر دستی غیرفعال است.', 'info');
-    }
-    function scheduleCloudSync() {
-      if (!cloudReady || !['ceo','accountant'].includes(currentMembership?.role)) return;
-      clearTimeout(syncTimer);
-      syncTimer = setTimeout(() => pushToSupabase(false), 900);
-    }
-    async function initializeHolooAuth() {
-      if (!supabaseClient) { authMessage('کتابخانه Supabase بارگذاری نشده است.'); return; }
-      const { data: { session }, error } = await supabaseClient.auth.getSession();
-      if (error) { authMessage(error.message); return; }
-      await establishSession(session);
-      supabaseClient.auth.onAuthStateChange((_event, nextSession) => {
-        if (nextSession?.user?.id !== currentSession?.user?.id) setTimeout(() => establishSession(nextSession), 0);
-      });
-    }
-
+    function authMessage() {}
+    function signInToHoloo() { showToast('ورود با رمز عبور در این نسخه غیرفعال است.', 'info'); }
+    async function signOutFromHoloo() {}
+    function pushToSupabase() {}
+    async function pullFromSupabase() { showToast('ذخیره‌سازی ابری غیرفعال است؛ اطلاعات روی همین دستگاه نگهداری می‌شود.', 'info'); }
+    function saveCloudConfig() { showToast('اتصال ابری در این نسخه غیرفعال است.', 'info'); }
+    function scheduleCloudSync() {}
     // =========================================================================
     // 2. CHART OF ACCOUNTS & INITIAL CORPORATE / TEXTILE / IMPORT DATA
     // =========================================================================
@@ -1421,11 +1246,26 @@
       };
     }
 
-    // State is initialized in memory only; financial data is loaded after authenticated membership checks.
-    let state = defaultState();
+    // Load financial data from this device only. No account or password is required.
+    let state = (() => {
+      try {
+        const saved = localStorage.getItem(STORE_KEY);
+        const parsed = saved ? JSON.parse(saved) : null;
+        return parsed && parsed.vouchers ? parsed : defaultState();
+      } catch (error) {
+        console.warn('Local data could not be read; starting with default data.', error);
+        return defaultState();
+      }
+    })();
 
     function saveState() {
-      scheduleCloudSync();
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(state));
+        setCloudBadge('💾 ذخیره روی همین دستگاه', 'text-emerald-200');
+      } catch (error) {
+        console.error('Local save failed:', error);
+        showToast('ذخیره محلی انجام نشد؛ فضای دستگاه را بررسی کنید.', 'error');
+      }
     }
 
     // =========================================================================
@@ -2902,7 +2742,8 @@
 
     window.addEventListener('DOMContentLoaded', async () => {
       navigateTo('dashboard');
-      await initializeHolooAuth();
+      setCloudBadge('💾 حالت محلی — بدون ورود', 'text-emerald-200');
+      renderAll();
     });
   </script>
 
