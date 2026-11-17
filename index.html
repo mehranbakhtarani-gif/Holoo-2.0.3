@@ -1256,7 +1256,21 @@
       setCloudBadge('🔄 در حال بررسی نسخه ابری...', 'text-sky-300');
       let succeeded = false;
       try {
-        // پیش از ارسال، نسخه ابری را با آخرین نسخه‌ای که این دستگاه دیده مقایسه کن.
+        const journalResult = await pushOperationJournalToSupabase();
+        if (journalResult.supported) {
+          if (journalResult.conflict) return false;
+          if (journalResult.applied > 0) {
+            succeeded = true;
+            const nowStr = new Date().toLocaleTimeString('fa-IR');
+            setCloudBadge('☁️ ثبت اتمیک عملیات موفق (' + nowStr + ')', 'text-emerald-300');
+            const lbl = document.getElementById('sb-last-sync-label');
+            if (lbl) lbl.textContent = 'آخرین ثبت اتمیک عملیات: ساعت ' + nowStr;
+            if (notify) showToast('عملیات و سوابق حسابرسی به‌صورت اتمیک ثبت شد.');
+            return true;
+          }
+        }
+        // پیش از ارسال نسخه قدیمی، نسخه ابری با آخرین baseline مقایسه می‌شود.
+
         const baseEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
         const checkRes = await fetch(baseEndpoint, {
           method: 'GET',
@@ -1572,6 +1586,88 @@
         });
       } finally { db.close(); }
     }
+
+    async function pushOperationJournalToSupabase() {
+      const operations = await listPendingOperations(100);
+      if (!operations.length) return { supported: false, applied: 0 };
+      const queuedAtStart = localStorage.getItem(CLOUD_OUTBOX_KEY) || '';
+      const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY) || '';
+      const rpcUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/rpc/holoo_apply_state_operation';
+      let expectedUpdatedAt = localStorage.getItem(CLOUD_BASELINE_KEY) || null;
+      let applied = 0;
+
+      for (const operation of operations) {
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: {
+            'apikey': cloudConfig.key,
+            'Authorization': 'Bearer ' + cloudConfig.key,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            p_record_id: operation.companyRecordId || cloudConfig.recordId,
+            p_expected_updated_at: expectedUpdatedAt,
+            p_data: operation.payload,
+            p_operation_id: operation.operationId,
+            p_actor: operation.actor,
+            p_device_id: operation.deviceId,
+            p_device_sequence: operation.sequence,
+            p_operation_type: operation.operationType,
+            p_summary: operation.summary,
+            p_client_created_at: operation.createdAt
+          })
+        });
+
+        if (response.status === 404) return { supported: false, applied: 0 };
+        const resultBody = await response.json().catch(() => null);
+        if (!response.ok) {
+          if (response.status === 400 && JSON.stringify(resultBody || {}).includes('PGRST202')) {
+            return { supported: false, applied: 0 };
+          }
+          throw new Error('ثبت عملیات اتمیک ناموفق بود: HTTP ' + response.status);
+        }
+        const result = Array.isArray(resultBody) ? resultBody[0] : resultBody;
+        if (!result || !['applied', 'already_applied'].includes(result.status)) {
+          if (result?.status === 'conflict') {
+            const readUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' +
+              encodeURIComponent(cloudConfig.table) + '?id=eq.' +
+              encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
+            const readRes = await fetch(readUrl, {
+              headers: { 'apikey': cloudConfig.key, 'Authorization': 'Bearer ' + cloudConfig.key }
+            });
+            if (readRes.ok) {
+              const rows = await readRes.json();
+              if (Array.isArray(rows) && rows[0]?.data) {
+                await saveCloudConflict({
+                  remoteData: rows[0].data,
+                  remoteUpdatedAt: rows[0].updated_at || result.updated_at || '',
+                  localUpdatedAt,
+                  detectedAt: new Date().toISOString()
+                });
+              }
+            }
+            setCloudBadge('⚠️ تعارض عملیات؛ هیچ نسخه‌ای بازنویسی نشد', 'text-amber-300');
+            showToast('عملیات با نسخه جدیدتری از دستگاه دیگر برخورد کرد؛ انتخاب نسخه لازم است.', 'error');
+            return { supported: true, conflict: true, applied };
+          }
+          throw new Error('پاسخ RPC عملیات معتبر نیست.');
+        }
+
+        expectedUpdatedAt = result.updated_at || expectedUpdatedAt;
+        if (expectedUpdatedAt) localStorage.setItem(CLOUD_BASELINE_KEY, expectedUpdatedAt);
+        await acknowledgeOperations([operation.operationId], expectedUpdatedAt || new Date().toISOString());
+        applied++;
+      }
+
+      const remaining = await listPendingOperations(1);
+      if (!remaining.length &&
+          localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
+          localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart) {
+        localStorage.removeItem(CLOUD_OUTBOX_KEY);
+      }
+      await renderCloudSyncStatus();
+      return { supported: true, applied };
+    }
     async function readLocalMirror() {
       const db = await openLocalDatabase();
       try {
@@ -1633,7 +1729,7 @@
 
     function saveState() {
       const updatedAt = new Date().toISOString();
-      const operationId = createStableId('op');
+      const operationId = createStableId('op').slice(3);
       const sequence = Number(localStorage.getItem(OPERATION_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
@@ -1648,6 +1744,7 @@
         operationType: 'state_snapshot',
         summary: lastAudit?.action || 'به‌روزرسانی اطلاعات شرکت',
         payload: JSON.parse(snapshot),
+        expectedUpdatedAt: localStorage.getItem(CLOUD_BASELINE_KEY) || null,
         acknowledgedAt: null
       };
       try {
