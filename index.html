@@ -1905,7 +1905,7 @@
         deviceId: DEVICE_ID,
         action
       });
-      if (state.auditLogs.length > 50) state.auditLogs.length = 50;
+      // لاگ‌ها append-only می‌مانند؛ فقط نمایش رابط محدود می‌شود.
     }
     function showToast(msg, type = 'success') {
       const box = document.getElementById('toast-container');
@@ -3305,7 +3305,7 @@
         </div>
       `).join('');
 
-      document.getElementById('audit-logs-list').innerHTML = state.auditLogs.map(l => `
+      document.getElementById('audit-logs-list').innerHTML = state.auditLogs.slice(0, 100).map(l => `
         <div class="p-2 rounded-xl bg-slate-50 border flex justify-between gap-2"><span><strong>${l.user}:</strong> ${l.action}<small class="block text-[9px] text-slate-400">${l.actor || '—'} · دستگاه ${l.deviceId ? l.deviceId.slice(-8) : 'قدیمی'}</small></span><span class="text-slate-400 tabular-nums shrink-0">${faNum(l.time)}</span></div>
       `).join('');
     }
