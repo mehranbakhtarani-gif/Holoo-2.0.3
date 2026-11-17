@@ -1275,6 +1275,68 @@
       };
     }
 
+    // ذخیره‌سازی محلی دومرحله‌ای: localStorage برای سازگاری + IndexedDB برای پایداری بیشتر
+    const LOCAL_DB_NAME = 'holoo_local_v1';
+    const LOCAL_DB_STORE = 'state';
+    function openLocalDatabase() {
+      return new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) return reject(new Error('IndexedDB در این مرورگر در دسترس نیست.'));
+        const request = indexedDB.open(LOCAL_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains(LOCAL_DB_STORE)) request.result.createObjectStore(LOCAL_DB_STORE);
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('باز کردن پایگاه محلی ناموفق بود.'));
+      });
+    }
+    async function writeLocalMirror(snapshot) {
+      const db = await openLocalDatabase();
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(LOCAL_DB_STORE, 'readwrite');
+          tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: new Date().toISOString() }, STORE_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('ذخیره نسخه محلی ناموفق بود.'));
+          tx.onabort = () => reject(tx.error || new Error('ذخیره نسخه محلی لغو شد.'));
+        });
+      } finally { db.close(); }
+    }
+    async function readLocalMirror() {
+      const db = await openLocalDatabase();
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(LOCAL_DB_STORE, 'readonly');
+          const request = tx.objectStore(LOCAL_DB_STORE).get(STORE_KEY);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error || new Error('خواندن نسخه محلی ناموفق بود.'));
+        });
+      } finally { db.close(); }
+    }
+    async function prepareLocalStorageMirror() {
+      try {
+        const localRaw = localStorage.getItem(STORE_KEY);
+        const mirror = await readLocalMirror();
+        if (!localRaw && mirror && mirror.payload && typeof mirror.payload === 'object') {
+          state = mirror.payload;
+          localStorage.setItem(STORE_KEY, JSON.stringify(state));
+          localStorage.setItem(LOCAL_UPDATED_KEY, mirror.updatedAt || new Date().toISOString());
+          setCloudBadge('💾 بازیابی از حافظه داخلی گوشی', 'text-emerald-300');
+        } else if (localRaw) {
+          await writeLocalMirror(JSON.parse(localRaw));
+        }
+      } catch (e) {
+        console.warn('Local IndexedDB mirror unavailable:', e);
+        setCloudBadge('⚠️ پشتیبان دوم محلی در دسترس نیست', 'text-amber-300');
+      }
+    }
+    function isValidBackupData(data) {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+      const requiredArrays = ['products', 'warehouses', 'parties', 'invoices', 'vouchers'];
+      if (!requiredArrays.every(key => Array.isArray(data[key]))) return false;
+      if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) return false;
+      return true;
+    }
+
     let state = (() => {
       try {
         const raw = localStorage.getItem(STORE_KEY);
@@ -1297,6 +1359,11 @@
         showToast('ذخیره اطلاعات در مرورگر ناموفق بود؛ فضای ذخیره‌سازی را بررسی کنید.', 'error');
         return false;
       }
+      writeLocalMirror(state).catch(e => {
+        console.error('IndexedDB mirror failed:', e);
+        setCloudBadge('⚠️ ذخیره پشتیبان داخلی ناموفق', 'text-amber-300');
+        showToast('نسخه دوم اطلاعات در حافظه داخلی گوشی ذخیره نشد؛ فضای دستگاه را بررسی کنید.', 'error');
+      });
       scheduleCloudSync();
       return true;
     }
@@ -2830,6 +2897,7 @@
     function createSnapshot(reason = 'بکاپ خودکار', notify = false) {
       try {
         const list = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]');
+        if (!Array.isArray(list)) throw new Error('ساختار فهرست پشتیبان معتبر نیست.');
         const now = new Date();
         const ts = `${state.fiscalYear}/08/27 - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         list.unshift({ id: 'SNAP-' + Date.now(), ts, reason, payload: JSON.stringify(state) });
@@ -2837,14 +2905,25 @@
         localStorage.setItem(SNAP_KEY, JSON.stringify(list));
         renderSnapshots();
         if (notify) showToast('نقطه بازیابی ذخیره شد 💾');
-      } catch (e) {}
+        return true;
+      } catch (e) {
+        console.error('Snapshot failed:', e);
+        if (notify) showToast('ساخت نقطه بازیابی ناموفق بود؛ فضای ذخیره‌سازی را بررسی کنید.', 'error');
+        return false;
+      }
     }
     function restoreSnapshot(id) {
-      const list = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]');
-      const s = list.find(x => x.id === id);
-      if (!s) return;
-      state = JSON.parse(s.payload);
-      saveState(); renderAll(); showToast(`سیستم به نسخه ${faNum(s.ts)} بازگردانی شد ✔`);
+      try {
+        const list = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]');
+        const snap = Array.isArray(list) ? list.find(x => x.id === id) : null;
+        if (!snap) return showToast('نسخه پشتیبان پیدا نشد.', 'error');
+        const restored = JSON.parse(snap.payload);
+        if (!isValidBackupData(restored)) return showToast('ساختار نسخه پشتیبان معتبر نیست.', 'error');
+        const previous = state;
+        state = restored;
+        if (!saveState()) { state = previous; return; }
+        renderAll(); showToast(`سیستم به نسخه ${faNum(snap.ts)} بازگردانی شد ✔`);
+      } catch (e) { console.error(e); showToast('بازیابی نسخه پشتیبان ناموفق بود.', 'error'); }
     }
     function renderSnapshots() {
       const box = document.getElementById('snapshots-container');
@@ -2858,11 +2937,16 @@
       `).join('');
     }
     function downloadBackupJSON() {
-      const a = document.createElement('a');
-      a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(state, null, 2));
-      a.download = `Holoo_Textile_Import_Backup_${state.fiscalYear}.json`;
-      document.body.appendChild(a); a.click(); a.remove();
-      showToast('فایل پشتیبان JSON دانلود شد 📥');
+      try {
+        const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Holoo_Textile_Import_Backup_${state.fiscalYear}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast('فایل پشتیبان JSON آماده دانلود شد 📥');
+      } catch (e) { console.error(e); showToast('ساخت فایل پشتیبان ناموفق بود.', 'error'); }
     }
     function restoreBackupJSON(e) {
       const f = e.target.files[0]; if (!f) return;
@@ -2870,9 +2954,16 @@
       r.onload = ev => {
         try {
           const parsed = JSON.parse(ev.target.result);
-          if (parsed && parsed.vouchers) { state = parsed; saveState(); renderAll(); showToast('پشتیبان JSON بازیابی و با Supabase همگام شد ✔'); }
-        } catch (err) { showToast('فایل نامعتبر است.', 'error'); }
+          if (!isValidBackupData(parsed)) throw new Error('ساختار فایل پشتیبان معتبر نیست.');
+          const previous = state;
+          state = parsed;
+          if (!saveState()) { state = previous; return; }
+          renderAll();
+          showToast('اطلاعات از فایل پشتیبان بازیابی شد؛ همگام‌سازی ابری در صف قرار گرفت.');
+        } catch (err) { console.error(err); showToast('فایل پشتیبان نامعتبر است یا قابل بازیابی نیست.', 'error'); }
+        finally { e.target.value = ''; }
       };
+      r.onerror = () => showToast('خواندن فایل پشتیبان ناموفق بود.', 'error');
       r.readAsText(f);
     }
 
@@ -2906,6 +2997,7 @@
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
+      await prepareLocalStorageMirror();
       if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
       setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
       navigateTo('dashboard');
