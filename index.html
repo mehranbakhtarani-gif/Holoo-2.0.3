@@ -2265,12 +2265,14 @@
         cartonKg: Number(document.getElementById('p-carton-kg').value || 25),
         stock,
         lot: document.getElementById('p-lot').value.trim(),
+        batches: [],
         lastMoveDays: 0,
         buyPrice,
         prices,
         kardex: stock > 0 ? [{ date: `${state.fiscalYear}/08/27`, doc: 'موجودی اولیه', inQty: stock, outQty: 0, bal: stock, price: buyPrice }] : []
       };
       state.products.unshift(newProd);
+      if (stock > 0) addStockBatch(newProd, { lot: newProd.lot || ('OPEN-' + newProd.id), quantity: stock, unitCost: buyPrice, receivedDate: '0000/00/00', sourceType: 'opening', sourceRef: newProd.id });
       const hasOpeningStockVoucher = stock > 0 && buyPrice > 0;
       if (hasOpeningStockVoucher) {
         // postVoucher خودش saveState را اجرا می‌کند؛ ذخیره دوم باعث لاگ snapshot تکراری می‌شد.
@@ -2302,9 +2304,104 @@
     }
 
     // =========================================================================
+    // 7A. BATCH / LOT TRACKING AND FIFO COST LAYER
+    // =========================================================================
+    function ensureProductBatches(product) {
+      if (!product) return [];
+      if (!Array.isArray(product.batches)) product.batches = [];
+      const tracked = product.batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.remainingQty ?? batch.quantity ?? 0)), 0);
+      const untracked = Math.max(0, Number(product.stock || 0) - tracked);
+      if (untracked > 0.000001) {
+        product.batches.push({
+          id: 'LEGACY-' + String(product.id),
+          lot: product.lot || 'LEGACY',
+          receivedDate: '0000/00/00',
+          productionDate: '',
+          expiryDate: '',
+          quantity: untracked,
+          remainingQty: untracked,
+          unitCost: Number(product.buyPrice || 0),
+          sourceType: 'legacy_opening',
+          sourceRef: 'legacy-stock'
+        });
+      }
+      return product.batches;
+    }
+
+    function addStockBatch(product, details = {}) {
+      if (!product) return null;
+      const qty = Number(details.quantity || 0);
+      const unitCost = Number(details.unitCost || 0);
+      if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+        throw new Error('مقدار یا بهای بچ موجودی معتبر نیست.');
+      }
+      const batch = {
+        id: details.id || createStableId('batch'),
+        lot: String(details.lot || ('LOT-' + Date.now())),
+        receivedDate: details.receivedDate || new Date().toISOString().slice(0, 10),
+        productionDate: details.productionDate || '',
+        expiryDate: details.expiryDate || '',
+        quantity: qty,
+        remainingQty: qty,
+        unitCost,
+        sourceType: details.sourceType || 'purchase',
+        sourceRef: details.sourceRef || '',
+        supplierId: details.supplierId || null,
+        warehouseId: details.warehouseId || product.warehouseId || null
+      };
+      ensureProductBatches(product);
+      product.batches.push(batch);
+      return batch;
+    }
+
+    function consumeFifoStock(product, quantity) {
+      const qty = Number(quantity || 0);
+      if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار خروج موجودی معتبر نیست.');
+      const batches = ensureProductBatches(product);
+      const available = batches.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
+      if (available + 0.000001 < qty) throw new Error('موجودی بچ‌ها برای خروج FIFO کافی نیست.');
+      const ordered = batches.filter(b => Number(b.remainingQty || 0) > 0).sort((a, b) => {
+        const ad = String(a.receivedDate || '9999/99/99');
+        const bd = String(b.receivedDate || '9999/99/99');
+        return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id));
+      });
+      let remaining = qty;
+      let totalCost = 0;
+      const allocations = [];
+      for (const batch of ordered) {
+        if (remaining <= 0.000001) break;
+        const take = Math.min(remaining, Number(batch.remainingQty || 0));
+        batch.remainingQty = Math.max(0, Number(batch.remainingQty || 0) - take);
+        totalCost += take * Number(batch.unitCost || 0);
+        allocations.push({ batchId: batch.id, lot: batch.lot, quantity: take, unitCost: Number(batch.unitCost || 0), expiryDate: batch.expiryDate || '' });
+        remaining -= take;
+      }
+      return { totalCost: Math.round(totalCost), unitCost: totalCost / qty, allocations };
+    }
+
+    function restoreFifoAllocations(product, allocations, fallbackQty, fallbackCost, sourceRef) {
+      if (!product) return;
+      const batches = ensureProductBatches(product);
+      if (Array.isArray(allocations) && allocations.length) {
+        allocations.forEach(allocation => {
+          const batch = batches.find(b => b.id === allocation.batchId);
+          if (batch) batch.remainingQty = Number(batch.remainingQty || 0) + Number(allocation.quantity || 0);
+          else addStockBatch(product, {
+            id: allocation.batchId, lot: allocation.lot, quantity: allocation.quantity,
+            unitCost: allocation.unitCost, sourceType: 'sales_return', sourceRef
+          });
+        });
+        return;
+      }
+      if (Number(fallbackQty || 0) > 0) addStockBatch(product, {
+        quantity: fallbackQty, unitCost: fallbackCost, sourceType: 'sales_return', sourceRef
+      });
+    }
+
+    // =========================================================================
     // 7. MODULE 3: MULTI-WAREHOUSE, KARDEX, STAGNANT & STOCKTAKING
     // =========================================================================
-    function setCostingMethod(m) { state.costingMethod = m; saveState(); renderInventoryModule(); showToast(`روش قیمت‌گذاری روی ${m} تنظیم شد.`); }
+    function setCostingMethod(m) { if (!['AVG','FIFO'].includes(m)) return; state.costingMethod = m; saveState(); renderInventoryModule(); showToast(`روش قیمت‌گذاری روی ${m} تنظیم شد.`); }
 
     function renderInventoryModule() {
       document.getElementById('warehouses-summary-cards').innerHTML = state.warehouses.map(w => {
@@ -2321,12 +2418,13 @@
       }).join('');
 
       document.getElementById('inventory-table-body').innerHTML = state.products.map(p => {
+        ensureProductBatches(p);
         const isStagnant = p.lastMoveDays >= 60;
         return `
           <tr class="hover:bg-slate-50">
             <td class="p-2.5 font-bold">${p.name} <span class="block text-[10px] text-slate-400">${p.id}</span></td>
             <td class="p-2.5">${getWhName(p.warehouseId)}</td>
-            <td class="p-2.5 font-mono text-[11px]">${p.lot}</td>
+            <td class="p-2.5 font-mono text-[11px]">${(p.batches || []).filter(b => Number(b.remainingQty || 0) > 0).map(b => b.lot).slice(0, 3).join('، ') || p.lot || '—'}<span class="block text-[9px] text-slate-400">${(p.batches || []).filter(b => Number(b.remainingQty || 0) > 0).length} بچ فعال</span></td>
             <td class="p-2.5 font-black tabular-nums">${faNum(p.stock)} KG</td>
             <td class="p-2.5 tabular-nums">${faNum(Math.round(p.stock / p.cartonKg))} کارتن</td>
             <td class="p-2.5 tabular-nums">${money(p.buyPrice, false)}</td>
@@ -2606,8 +2704,15 @@
         invDraft.lines.forEach(l => {
           const p = state.products.find(x => x.id === l.productId);
           if (p) {
-            p.stock -= l.kg; p.lastMoveDays = 0; cogs += l.kg * p.buyPrice;
-            p.kardex.push({ date, doc: `فاکتور فروش #${id}`, inQty: 0, outQty: l.kg, bal: p.stock, price: l.price });
+            let lineCost = l.kg * p.buyPrice;
+            if (state.costingMethod === 'FIFO') {
+              const fifo = consumeFifoStock(p, l.kg);
+              lineCost = fifo.totalCost;
+              l.fifoAllocations = fifo.allocations;
+              l.costOfGoodsSold = fifo.totalCost;
+            }
+            p.stock -= l.kg; p.lastMoveDays = 0; cogs += lineCost;
+            p.kardex.push({ date, doc: `فاکتور فروش #${id}`, inQty: 0, outQty: l.kg, bal: p.stock, price: state.costingMethod === 'FIFO' ? (lineCost / l.kg) : p.buyPrice, costingMethod: state.costingMethod, fifoAllocations: l.fifoAllocations || [] });
           }
         });
         const debAcc = payMethod === 'credit' ? '1103' : (payMethod === 'bank' ? '1102' : '1101');
@@ -2629,9 +2734,11 @@
         invDraft.lines.forEach(l => {
           const p = state.products.find(x => x.id === l.productId);
           if (p) {
-            p.buyPrice = state.costingMethod === 'AVG' ? Math.round(((p.stock * p.buyPrice) + l.total) / (p.stock + l.kg)) : l.price;
+            const receivedUnitCost = l.kg > 0 ? Math.max(0, Number(l.total || 0) / l.kg) : Number(l.price || 0);
+            if (state.costingMethod === 'AVG') p.buyPrice = Math.round(((p.stock * p.buyPrice) + l.total) / (p.stock + l.kg));
+            addStockBatch(p, { lot: p.lot || ('PUR-' + id + '-' + l.productId), quantity: l.kg, unitCost: receivedUnitCost, receivedDate: date, sourceType: 'purchase', sourceRef: String(id), supplierId: partyId, warehouseId });
             p.stock += l.kg; p.lastMoveDays = 0;
-            p.kardex.push({ date, doc: `فاکتور خرید #${id}`, inQty: l.kg, outQty: 0, bal: p.stock, price: l.price });
+            p.kardex.push({ date, doc: `فاکتور خرید #${id}`, inQty: l.kg, outQty: 0, bal: p.stock, price: receivedUnitCost, batchRef: 'PUR-' + id });
           }
         });
         postVoucher(`ثبت فاکتور خرید #${id}`, [
@@ -2860,9 +2967,10 @@
 
       const p = state.products.find(x => x.id === prodId);
       if (p) {
-        p.buyPrice = state.costingMethod === 'AVG' ? Math.round(((p.stock * p.buyPrice) + totalLandedRial) / (p.stock + weightKg)) : landedCostPerKg;
+        if (state.costingMethod === 'AVG') p.buyPrice = Math.round(((p.stock * p.buyPrice) + totalLandedRial) / (p.stock + weightKg));
+        addStockBatch(p, { lot: impId, quantity: weightKg, unitCost: landedCostPerKg, receivedDate: `${state.fiscalYear}/08/27`, sourceType: 'import', sourceRef: impId, supplierId: null, warehouseId: p.warehouseId });
         p.stock += weightKg; p.lastMoveDays = 0;
-        p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `ترخیص محموله ${impId}`, inQty: weightKg, outQty: 0, bal: p.stock, price: landedCostPerKg });
+        p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `ترخیص محموله ${impId}`, inQty: weightKg, outQty: 0, bal: p.stock, price: landedCostPerKg, batchRef: impId });
       }
 
       postVoucher(`ثبت محموله وارداتی ${impId} - ${supplier}`, [
