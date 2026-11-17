@@ -1754,6 +1754,7 @@
     })();
 
     if (!Array.isArray(state.accountCatalog) || !state.accountCatalog.length) state.accountCatalog = buildAccountCatalog();
+    state.accountCatalog.filter(a => a.level === 'subsidiary').forEach(a => { if (!CHART_ACCOUNTS.some(existing => existing.code === a.code)) CHART_ACCOUNTS.push({ code: a.code, name: a.name }); });
     if (!Array.isArray(state.parties)) state.parties = [];
     state.parties.forEach(p => {
       if (!p.subledgerId) p.subledgerId = 'PARTY-' + String(p.id || createStableId('party'));
@@ -3214,7 +3215,7 @@
       const code = document.getElementById('new-acc-code')?.value.trim();
       const name = document.getElementById('new-acc-name')?.value.trim();
       const parent = (state.accountCatalog || []).find(a => a.id === parentId && a.level === 'general');
-      if (!parent || !/^\\d{4,8}$/.test(code || '') || !code.startsWith(parent.code) || !name) { showToast('کد باید عددی، یکتا و زیرمجموعه حساب کل انتخاب‌شده باشد.', 'error'); return; }
+      if (!parent || !/^\d{4,8}$/.test(code || '') || !code.startsWith(parent.code) || !name) { showToast('کد باید عددی، یکتا و زیرمجموعه حساب کل انتخاب‌شده باشد.', 'error'); return; }
       if (state.accountCatalog.some(a => a.code === code) || CHART_ACCOUNTS.some(a => a.code === code)) { showToast('این کد حساب قبلاً استفاده شده است.', 'error'); return; }
       const account = { code, name };
       CHART_ACCOUNTS.push(account);
