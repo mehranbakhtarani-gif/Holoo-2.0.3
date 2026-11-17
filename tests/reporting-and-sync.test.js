@@ -56,12 +56,16 @@ async function test(name, fn) { await fn(); passed.push(name); }
   await test('operation journal acknowledges an applied operation and clears empty outbox', async () => {
     const op={operationId:'op-1',companyRecordId:'main_company_state',payload:{demo:true},entityChanges:[],rootChanges:{},actor:'mehran',deviceId:'device-a',sequence:1,operationType:'state_snapshot',summary:'synthetic',createdAt:'2026-11-18T00:00:00Z'};
     let listCalls=0, acknowledged=[];
-    const storage=new Map([['cloud_outbox','queued'],['local_updated_at','local-1'],['cloud_baseline','base-1']]);
+    const storage=new Map([['holoo_textile_import_erp_v2_cloud_outbox_v1','queued'],['holoo_textile_import_erp_v2_updated_at','local-1'],['holoo_textile_import_erp_v2_cloud_baseline_v1','base-1']]);
     const localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
     const push=load('pushOperationJournalToSupabase',{
       listPendingOperations:async()=> (++listCalls===1?[op]:[]),
       acknowledgeOperations:async(ids,stamp)=>{acknowledged.push({ids,stamp});},
       cloudConfig:{url:'https://demo.supabase.co',key:'anon',recordId:'main_company_state',table:'holoo_sync'},
+      STORE_KEY:'holoo_textile_import_erp_v2',
+      CLOUD_OUTBOX_KEY:'holoo_textile_import_erp_v2_cloud_outbox_v1',
+      LOCAL_UPDATED_KEY:'holoo_textile_import_erp_v2_updated_at',
+      CLOUD_BASELINE_KEY:'holoo_textile_import_erp_v2_cloud_baseline_v1',
       localStorage,
       fetch:async()=>({status:200,ok:true,json:async()=>({status:'applied',updated_at:'server-2'})}),
       renderCloudSyncStatus:async()=>{},scheduleCloudSync(){},setCloudBadge(){},showToast(){}
@@ -70,14 +74,14 @@ async function test(name, fn) { await fn(); passed.push(name); }
     assert.equal(result.applied,1);
     assert.equal(acknowledged.length,1);
     assert.deepEqual(acknowledged[0].ids,['op-1']);
-    assert.equal(storage.get('cloud_baseline'),'server-2');
-    assert.equal(storage.has('cloud_outbox'),false);
+    assert.equal(storage.get('holoo_textile_import_erp_v2_cloud_baseline_v1'),'server-2');
+    assert.equal(storage.has('holoo_textile_import_erp_v2_cloud_outbox_v1'),false);
   });
 
   await test('operation journal detects CAS conflict and preserves pending operation', async () => {
     const op={operationId:'op-2',companyRecordId:'main_company_state',payload:{local:true},entityChanges:[],rootChanges:{},actor:'ehsan',deviceId:'device-b',sequence:3,operationType:'state_snapshot',summary:'conflict test',createdAt:'2026-11-18T00:00:00Z'};
     let fetchCalls=0, conflictSaved=null, acknowledged=0, badge='';
-    const storage=new Map([['cloud_outbox','queued'],['local_updated_at','local-2'],['cloud_baseline','old-base']]);
+    const storage=new Map([['holoo_textile_import_erp_v2_cloud_outbox_v1','queued'],['holoo_textile_import_erp_v2_updated_at','local-2'],['holoo_textile_import_erp_v2_cloud_baseline_v1','old-base']]);
     const localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
     const push=load('pushOperationJournalToSupabase',{
       listPendingOperations:async()=>[op],
@@ -95,7 +99,7 @@ async function test(name, fn) { await fn(); passed.push(name); }
     assert.equal(acknowledged,0);
     assert.equal(conflictSaved.remoteData.remote,true);
     assert.equal(badge,'⚠️ تعارض عملیات؛ هیچ نسخه‌ای بازنویسی نشد');
-    assert.equal(storage.get('cloud_outbox'),'queued');
+    assert.equal(storage.get('holoo_textile_import_erp_v2_cloud_outbox_v1'),'queued');
   });
 
   console.log(`PASS: ${passed.length} reporting and multi-device journal tests`);
