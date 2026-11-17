@@ -2,9 +2,10 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0f766e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="هلو جامع شرکتی و نساجی" />
   <title>نرم‌افزار حسابداری هلو | نسخه جامع شرکتی، واردات و نساجی (Supabase Cloud)</title>
 
@@ -40,7 +41,10 @@
     .barcode-bars {
       background: repeating-linear-gradient(90deg, #0f172a 0px, #0f172a 2px, transparent 2px, transparent 4px, #0f172a 4px, #0f172a 5px, transparent 5px, transparent 8px, #0f172a 8px, #0f172a 11px, transparent 11px, transparent 13px);
     }
-    .erp-layout { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+    html, body { overscroll-behavior-y: contain; }
+    .erp-layout { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding-top: env(safe-area-inset-top); }
+    .main-workspace { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+    @media (display-mode: standalone) { .main-workspace { padding-bottom: calc(104px + env(safe-area-inset-bottom)); } }
     .erp-body { display: flex; flex: 1; overflow: hidden; }
     .desktop-sidebar { display: none; }
     .main-workspace { flex: 1; overflow-y: auto; padding: 14px 14px 96px 14px; scroll-behavior: smooth; }
@@ -189,6 +193,8 @@
               <button onclick="navigateTo('invoices'); openInvoiceForm('sale')" class="touch-btn bg-holoo-700 hover:bg-holoo-800 text-white font-bold px-3 rounded-xl">+ فاکتور فروش (F2)</button>
               <button onclick="navigateTo('imports')" class="touch-btn bg-sky-700 hover:bg-sky-800 text-white font-bold px-3 rounded-xl">+ محموله وارداتی</button>
               <button onclick="runSystemDiagnostics()" class="touch-btn bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 rounded-xl">🩺 تست سلامت سیستم</button>
+              <button onclick="installAndroidApp()" class="android-install-btn touch-btn bg-amber-400 text-slate-950 font-black px-3 rounded-xl">📲 نصب روی اندروید</button>
+              <button onclick="requestPersistentStorage()" class="touch-btn bg-slate-800 text-white font-bold px-3 rounded-xl">💾 حافظه پایدار</button>
             </div>
           </div>
 
@@ -3991,7 +3997,11 @@
       await renderCloudSyncStatus();
       if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
       setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
-      navigateTo('dashboard');
+      const launchAction = new URLSearchParams(window.location.search).get('action');
+      if (launchAction === 'sale') { navigateTo('invoices'); openInvoiceForm('sale'); }
+      else if (launchAction === 'imports') navigateTo('imports');
+      else if (launchAction === 'treasury') navigateTo('treasury');
+      else navigateTo('dashboard');
       // اگر صف محلی از اجرای قبلی باقی مانده، اول آن را بفرست؛ در غیر این صورت نسخه ابر را بررسی کن.
       if (localStorage.getItem(CLOUD_OUTBOX_KEY)) await pushToSupabase(false);
       else await pullFromSupabase(false);
@@ -4011,8 +4021,48 @@
         pushToSupabase(false);
       }
     });
+    // نصب PWA اندروید و درخواست نگهداری پایدار داده‌های محلی
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', event => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      document.querySelectorAll('.android-install-btn').forEach(button => button.classList.remove('hidden'));
+    });
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      showToast('هلو روی دستگاه نصب شد. برای بازکردن از آیکون برنامه استفاده کنید.');
+    });
+    async function installAndroidApp() {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+        showToast('برنامه هم‌اکنون در حالت نصب‌شده اجرا می‌شود.', 'info'); return;
+      }
+      if (!deferredInstallPrompt) {
+        showToast('در Chrome اندروید، منوی سه‌نقطه را باز کنید و «Install app» یا «Add to Home screen» را بزنید.', 'info'); return;
+      }
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice?.outcome === 'accepted') showToast('درخواست نصب تأیید شد.');
+      deferredInstallPrompt = null;
+    }
+
+    async function requestPersistentStorage() {
+      if (!navigator.storage || typeof navigator.storage.persist !== 'function') {
+        showToast('مرورگر این دستگاه درخواست حافظه پایدار را پشتیبانی نمی‌کند.', 'error'); return;
+      }
+      const granted = await navigator.storage.persist();
+      const estimate = await navigator.storage.estimate?.();
+      const usedMb = estimate?.usage ? (estimate.usage / 1048576).toFixed(1) : '—';
+      showToast(granted ? `حافظه پایدار فعال شد؛ مصرف فعلی ${usedMb} مگابایت.` : 'مرورگر درخواست حافظه پایدار را نپذیرفت؛ پشتیبان‌گیری منظم را ادامه دهید.', granted ? 'success' : 'info');
+    }
+
     // ثبت Service Worker برای اجرای برنامه در حالت آفلاین (فقط روی HTTPS یا localhost)
     if ('serviceWorker' in navigator) {
+      let reloadingForWorkerUpdate = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloadingForWorkerUpdate) return;
+        reloadingForWorkerUpdate = true;
+        window.location.reload();
+      });
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
           .then(reg => {
