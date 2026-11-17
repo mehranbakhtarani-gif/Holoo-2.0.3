@@ -2104,7 +2104,7 @@
           <div class="p-2.5 bg-slate-50 border rounded-lg space-y-1">
             <div class="flex justify-between"><span>جمع ناخالص:</span><strong>${money(inv.subtotal)}</strong></div>
             <div class="flex justify-between text-rose-700"><span>تخفیف:</span><strong>${money(inv.discount || 0)}</strong></div>
-            <div class="flex justify-between"><span>جمع پس از تخفیف:</span><strong>${money(inv.netSubtotal ?? (inv.subtotal - (inv.discount || 0)))}</strong></div>
+            <div class="flex justify-between"><span>جمع پس از تخفیف:</span><strong>${money(inv.netSubtotal ?? inv.subtotal)}</strong></div>
             <div class="flex justify-between"><span>مالیات ارزش افزوده (${faNum(inv.vatRate)}٪):</span><strong>${money(inv.vatAmount)}</strong></div>
             <div class="flex justify-between font-black text-sm text-holoo-900 border-t pt-1"><span>مبلغ قابل پرداخت:</span><span>${money(inv.grandTotal)}</span></div>
           </div>
