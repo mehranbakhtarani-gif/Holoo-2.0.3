@@ -3769,6 +3769,7 @@
       const amt = Number(document.getElementById('mv-amount').value || 0);
       if (!desc || amt <= 0) { showToast('شرح و مبلغ را وارد کنید.', 'error'); return; }
       const operationDate = document.getElementById('mv-date').value.trim() || getTodayJalaliDate();
+      if (jalaliDateOrdinal(operationDate) === null) { showToast('تاریخ سند باید به‌صورت شمسی معتبر مانند 1405/09/02 باشد.', 'error'); return; }
       postVoucher(desc, [
         { code: document.getElementById('mv-deb-acc').value, partyId: null, desc, debit: amt, credit: 0 },
         { code: document.getElementById('mv-cred-acc').value, partyId: null, desc, debit: 0, credit: amt }
