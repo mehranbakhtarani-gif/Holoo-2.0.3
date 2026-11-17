@@ -1,0 +1,26 @@
+name: Accounting smoke tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'tests/accounting-smoke.test.js'
+      - '.github/workflows/accounting-smoke-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  accounting-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run accounting smoke tests
+        run: node tests/accounting-smoke.test.js
