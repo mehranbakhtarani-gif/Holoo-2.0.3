@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].map(m => m[1]).filter(s => s.trim());
+const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
 for (const [i, source] of scripts.entries()) new vm.Script(source, { filename: `index.html:inline-script-${i}` });
 
 function section(startMarker, endMarker) {
@@ -29,7 +29,7 @@ function test(name, fn) {
 test('balanced journals post; unbalanced journals are rejected', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [{ id: 7 }] };
   let saves = 0;
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\\n    // 5. MODULE 1'), 'postVoucher', {
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', {
     state, addAudit() {}, saveState() { saves++; }
   });
   assert.equal(post('test', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }]), 1);
@@ -38,7 +38,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
 });
 test('same source event is idempotent; separate check events remain distinct', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\\n    // 5. MODULE 1'), 'postVoucher', { state, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, addAudit() {}, saveState() {} });
   const lines = [{ code: '1102', debit: 50, credit: 0 }, { code: '1104', debit: 0, credit: 50 }];
   const first = post('clear', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
   const repeated = post('clear again', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
@@ -49,7 +49,7 @@ test('same source event is idempotent; separate check events remain distinct', (
 test('invoice journal stores its source voucher reference', () => {
   const invoice = { id: 7 };
   const state = { fiscalYear: '1405', vouchers: [], checks: [], invoices: [invoice] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\\n    // 5. MODULE 1'), 'postVoucher', { state, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, addAudit() {}, saveState() {} });
   post('invoice', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }], undefined, { type: 'invoice', id: 7 });
   assert.equal(invoice.voucherId, 1);
 });
