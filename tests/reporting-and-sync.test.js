@@ -88,6 +88,10 @@ async function test(name, fn) { await fn(); passed.push(name); }
       acknowledgeOperations:async()=>{acknowledged++;},
       saveCloudConflict:async(c)=>{conflictSaved=c;},
       cloudConfig:{url:'https://demo.supabase.co',key:'anon',recordId:'main_company_state',table:'holoo_sync'},
+      STORE_KEY:'holoo_textile_import_erp_v2',
+      CLOUD_OUTBOX_KEY:'holoo_textile_import_erp_v2_cloud_outbox_v1',
+      LOCAL_UPDATED_KEY:'holoo_textile_import_erp_v2_updated_at',
+      CLOUD_BASELINE_KEY:'holoo_textile_import_erp_v2_cloud_baseline_v1',
       localStorage,
       fetch:async()=> (++fetchCalls===1
         ? {status:200,ok:true,json:async()=>({status:'conflict',updated_at:'remote-3'})}
