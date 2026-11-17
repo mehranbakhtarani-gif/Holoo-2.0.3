@@ -1239,13 +1239,13 @@
         activeRole: 'ceo',
         costingMethod: 'AVG',
         settings: {
-          companyName: 'گروه بازرگانی و نساجی اطلس نخ خاورمیانه',
-          ecoCode: '411489201753',
-          phone: '021-55804400',
-          address: 'تهران، بازار بزرگ، سرای امید، پلاک ۴۲',
+          companyName: 'نام شرکت شما',
+          ecoCode: '',
+          phone: '',
+          address: '',
           logoUrl: '',
           invTemplate: 'A4',
-          footerNote: 'تسویه فاکتور صرفاً با تایید واحد مالی و ثبت در سامانه صیاد معتبر است.',
+          footerNote: '',
           showQr: true,
           showSig: true
         },
@@ -1254,118 +1254,24 @@
           { id: 'carton', name: 'کارتن استاندارد', factor: 25 },
           { id: 'pallet', name: 'پالت صنعتی', factor: 600 }
         ],
-        fxRates: { USD: 685000, CNY: 96000, EUR: 742000 },
+        fxRates: { USD: 0, CNY: 0, EUR: 0 },
         warehouses: [
-          { id: 'WH-1', name: 'انبار مرکزی تهران (شادآباد)' },
-          { id: 'WH-2', name: 'انبار ترانزیت گمرک بندرعباس' },
-          { id: 'WH-3', name: 'انبار ضایعات و مرجوعی' }
+          { id: 'WH-1', name: 'انبار اصلی' }
         ],
-        products: [
-          {
-            id: 'TX-101', barcode: '626100101', name: 'نخ پلی‌استر DTY 150D/48F سفید نیمه‌مات',
-            yarnType: 'DTY', denier: '150D/48F', color: 'سفید خام (Raw White)', twist: 'بدون تاب (Non-Twisted)',
-            customSpec: 'درجه AA - روغن‌کاری استاندارد بافندگی گردباف',
-            warehouseId: 'WH-1', cartonKg: 25, stock: 12500, lot: 'LOT-CN-881', lastMoveDays: 4,
-            buyPrice: 1420000,
-            prices: [1680000, 1650000, 1620000, 1590000, 1560000, 1540000, 1520000, 1500000, 1490000, 1480000],
-            kardex: [{ date: '1405/08/01', doc: 'موجودی اول دوره', inQty: 12500, outQty: 0, bal: 12500, price: 1420000 }]
-          },
-          {
-            id: 'TX-102', barcode: '626100102', name: 'نخ فیلامنت FDY 75D/36F مشکی براق',
-            yarnType: 'FDY', denier: '75D/36F', color: 'مشکی جت (Jet Black)', twist: 'تابیده (Twisted 120 TPM)',
-            customSpec: 'مقاومت کششی بالا - مناسب چله‌پیچی و پرده‌ای',
-            warehouseId: 'WH-1', cartonKg: 24, stock: 6400, lot: 'LOT-TR-402', lastMoveDays: 12,
-            buyPrice: 1750000,
-            prices: [2050000, 2020000, 1990000, 1960000, 1930000, 1900000, 1880000, 1860000, 1840000, 1820000],
-            kardex: [{ date: '1405/08/01', doc: 'موجودی اول دوره', inQty: 6400, outQty: 0, bal: 6400, price: 1750000 }]
-          },
-          {
-            id: 'TX-103', barcode: '626100103', name: 'نخ POY 300D/96F مخصوص تکسچرایزینگ',
-            yarnType: 'POY', denier: '300D/96F', color: 'سفید خام', twist: 'بدون تاب (Non-Twisted)',
-            customSpec: 'بسته‌بندی بوبین ۱۴ کیلویی - پالت ۴۲ تایی',
-            warehouseId: 'WH-2', cartonKg: 28, stock: 4200, lot: 'LOT-IN-119', lastMoveDays: 78,
-            buyPrice: 1180000,
-            prices: [1390000, 1370000, 1350000, 1330000, 1310000, 1290000, 1270000, 1250000, 1230000, 1210000],
-            kardex: [{ date: '1405/06/05', doc: 'ورود محموله هند', inQty: 4200, outQty: 0, bal: 4200, price: 1180000 }]
-          }
-        ],
-        parties: [
-          { id: 'P-1', name: 'کارخانجات نساجی و بافندگی ماهان یزد', role: 'مشتری (بافندگی)', phone: '035-37241000', ecoCode: '10860192834', creditLimit: 15000000000, terms: '۳۰٪ نقد + چک ۴۵ روزه صیادی' },
-          { id: 'P-2', name: 'گروه صنعتی پود و تار اصفهان', role: 'مشتری (بافندگی)', phone: '031-33802210', ecoCode: '10260491820', creditLimit: 10000000000, terms: 'چک ۳۰ و ۶۰ روزه صیادی' },
-          { id: 'P-3', name: 'Zhejiang Hengyi Petrochemical (چین)', role: 'تأمین‌کننده', phone: '+86-571-8287', ecoCode: 'CN-992817', creditLimit: 50000000000, terms: '۲۰٪ پیش‌پرداخت TT + ۸۰٪ زمان بارنامه' }
-        ],
-        invoices: [
-          {
-            id: 1001, type: 'sale', date: '1405/08/18', dueDate: '1405/10/03', partyId: 'P-1', warehouseId: 'WH-1',
-            payMethod: 'credit', salesperson: 'مهندس رامین کاظمی', commRate: 1.5, commAmount: 24750000,
-            subtotal: 1650000000, discount: 0, vatRate: 10, vatAmount: 165000000, grandTotal: 1815000000, paidAmount: 0,
-            status: 'active',
-            items: [{ productId: 'TX-101', name: 'نخ پلی‌استر DTY 150D/48F سفید نیمه‌مات', cartons: 40, kg: 1000, price: 1650000, disc: 0, isGift: false, total: 1650000000, returnedKg: 0 }]
-          }
-        ],
-        orders: [
-          { id: 'ORD-501', date: '1405/08/26', partyId: 'P-2', productId: 'TX-102', kg: 1500, price: 2020000, terms: 'چک ۴۵ روزه صیادی', status: 'باز (در انتظار تبدیل)' }
-        ],
-        imports: [
-          {
-            id: 'IMP-901', date: '1405/08/10', supplier: 'Zhejiang Hengyi Petrochemical', origin: 'چین (بندر نینگبو)',
-            containerNo: 'TCNU-4829104 (40HQ)', productId: 'TX-101', weightKg: 22000, cartons: 880,
-            currency: 'USD', fxTotal: 38500, fxRate: 685000, fxPaid: 15000,
-            expenses: { freight: 1400000000, insurance: 180000000, customs: 2100000000, port: 320000000, clearance: 250000000, inland: 190000000, warehouse: 110000000, bankFee: 240000000 },
-            landedCostPerKg: 1416477, totalLandedRial: 31162500000, postedToWh: true
-          }
-        ],
-        bankAccounts: [
-          { id: 'B-1', name: 'بانک ملت - حساب جاری بازار', accNo: '4829104821', type: 'bank', balance: 8450000000 },
-          { id: 'B-2', name: 'بانک سامان - حساب ارزی و ریالی', accNo: '801-40-9281', type: 'bank', balance: 4200000000 },
-          { id: 'B-3', name: 'صندوق نقدی دفتر مرکزی', accNo: 'صندوق ۱', type: 'cash', balance: 350000000 }
-        ],
-        checks: [
-          { id: 'CHK-1', dir: 'receive', sayad: '1049283746519283', checkNo: '482910', issueDate: '1405/08/18', dueDate: '1405/09/25', amount: 1815000000, bank: 'بانک صادرات شعبه یزد', partyId: 'P-1', status: 'in_progress' },
-          { id: 'CHK-2', dir: 'pay', sayad: '9928174650192834', checkNo: '771042', issueDate: '1405/08/12', dueDate: '1405/08/25', amount: 950000000, bank: 'بانک ملت شعبه بازار', partyId: 'P-3', status: 'overdue' }
-        ],
-        treasuryTxs: [
-          { id: 'TR-101', date: '1405/08/15', dir: 'receive', partyId: 'P-2', method: 'حواله بانکی', amount: 2500000000, allocInv: '—', desc: 'پیش‌پرداخت سفارش نخ FDY' }
-        ],
-        bankReconcileItems: [
-          { id: 'REC-1', date: '1405/08/15', desc: 'واریز ساتنا گروه صنعتی پود و تار', amount: 2500000000, ref: 'SAT-9910', matched: true },
-          { id: 'REC-2', date: '1405/08/26', desc: 'کارمزد گشایش اعتبار و حواله ارزی', amount: -4500000, ref: 'FEE-102', matched: false }
-        ],
-        employees: [
-          { id: 'EMP-1', name: 'مهندس رامین کاظمی', role: 'مدیر فروش و بازرگانی نساجی', base: 220000000, benefits: 45000000, deductions: 15000000 },
-          { id: 'EMP-2', name: 'سارا محمدی', role: 'حسابدار ارشد و امور گمرک', base: 180000000, benefits: 35000000, deductions: 0 }
-        ],
-        fixedAssets: [
-          { id: 'AST-1', name: 'دستگاه بوبین‌پیچ و تست استحکام نخ', date: '1404/02/15', location: 'انبار مرکزی تهران', lifeYears: 10, cost: 3600000000, accDep: 540000000 }
-        ],
-        vouchers: [
-          {
-            id: 1, date: '1405/08/01', locked: true, desc: 'سند افتتاحیه سال مالی ۱۴۰۵',
-            lines: [
-              { code: '1102', partyId: null, desc: 'موجودی افتتاحیه بانک‌ها', debit: 12650000000, credit: 0 },
-              { code: '1101', partyId: null, desc: 'موجودی افتتاحیه صندوق', debit: 350000000, credit: 0 },
-              { code: '1105', partyId: null, desc: 'موجودی افتتاحیه انبار نخ', debit: 33906000000, credit: 0 },
-              { code: '1201', partyId: null, desc: 'دارایی‌های ثابت', debit: 3600000000, credit: 0 },
-              { code: '3101', partyId: null, desc: 'سرمایه ثبت‌شده شرکت', debit: 0, credit: 50506000000 }
-            ]
-          },
-          {
-            id: 2, date: '1405/08/18', locked: false, desc: 'صدور فاکتور فروش #1001 - کارخانجات ماهان یزد',
-            lines: [
-              { code: '1103', partyId: 'P-1', desc: 'بدهکار بابت فاکتور #1001', debit: 1815000000, credit: 0 },
-              { code: '4101', partyId: 'P-1', desc: 'فروش نخ DTY', debit: 0, credit: 1650000000 },
-              { code: '2103', partyId: null, desc: 'مالیات ارزش افزوده فروش', debit: 0, credit: 165000000 },
-              { code: '5101', partyId: null, desc: 'بهای تمام‌شده کالای فروش‌رفته', debit: 1420000000, credit: 0 },
-              { code: '1105', partyId: null, desc: 'خروج ۱۰۰۰ کیلو نخ از انبار', debit: 0, credit: 1420000000 }
-            ]
-          }
-        ],
-        approvals: [
-          { id: 'APR-1', title: 'تایید نهایی و قفل سخت‌گیرانه سند فروش #2', voucherId: 2, requester: 'حسابدار ارشد', status: 'pending' }
-        ],
-        auditLogs: [
-          { time: '1405/08/27 - 09:00', user: 'مدیر عامل', action: 'راه‌اندازی نسخه جامع شرکتی، واردات و نساجی هلو متصل به Supabase' }
-        ]
+        products: [],
+        parties: [],
+        invoices: [],
+        orders: [],
+        imports: [],
+        bankAccounts: [],
+        checks: [],
+        treasuryTxs: [],
+        bankReconcileItems: [],
+        employees: [],
+        fixedAssets: [],
+        vouchers: [],
+        approvals: [],
+        auditLogs: []
       };
     }
 
