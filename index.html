@@ -1208,6 +1208,7 @@
         // نسخه محلی پیش از جایگزینی در یک snapshot مستقل نگه داشته می‌شود.
         createSnapshot('پیش از انتخاب نسخه ابری در تعارض همگام‌سازی', false);
         state = conflict.remoteData;
+        lastSavedState = JSON.parse(JSON.stringify(state));
         const stamp = conflict.remoteUpdatedAt || new Date().toISOString();
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
@@ -1424,6 +1425,7 @@
             throw new Error('ذخیره نسخه دریافتی در مرورگر ناموفق بود: ' + storageError.message);
           }
           state = incoming;
+          lastSavedState = JSON.parse(JSON.stringify(state));
           if (rows[0].updated_at) localStorage.setItem(CLOUD_BASELINE_KEY, rows[0].updated_at);
           await renderCloudSyncStatus();
           renderAll();
@@ -1608,6 +1610,8 @@
             p_record_id: operation.companyRecordId || cloudConfig.recordId,
             p_expected_updated_at: expectedUpdatedAt,
             p_data: operation.payload,
+            p_entity_changes: operation.entityChanges || [],
+            p_root_changes: operation.rootChanges || {},
             p_operation_id: operation.operationId,
             p_actor: operation.actor,
             p_device_id: operation.deviceId,
@@ -1687,6 +1691,7 @@
         const mirror = await readLocalMirror();
         if (!localRaw && mirror && mirror.payload && typeof mirror.payload === 'object') {
           state = mirror.payload;
+          lastSavedState = JSON.parse(JSON.stringify(state));
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
           localStorage.setItem(LOCAL_UPDATED_KEY, mirror.updatedAt || new Date().toISOString());
           setCloudBadge('💾 بازیابی از حافظه داخلی گوشی', 'text-emerald-300');
@@ -1729,12 +1734,49 @@
       state.activeRole = LEGACY_ROLE_MAP[state.activeRole] || 'mehran';
     }
 
+    const SYNC_ENTITY_COLLECTIONS = [
+      'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
+      'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
+      'employees', 'fixedAssets', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
+    ];
+    let lastSavedState = JSON.parse(JSON.stringify(state));
+
+    function buildEntityChangeSet(previous, current, sequence) {
+      const changes = [];
+      SYNC_ENTITY_COLLECTIONS.forEach(entityType => {
+        const before = Array.isArray(previous?.[entityType]) ? previous[entityType] : [];
+        const after = Array.isArray(current?.[entityType]) ? current[entityType] : [];
+        const beforeById = new Map(before.filter(x => x && x.id !== undefined && x.id !== null).map(x => [String(x.id), x]));
+        const afterById = new Map(after.filter(x => x && x.id !== undefined && x.id !== null).map(x => [String(x.id), x]));
+        afterById.forEach((entity, entityId) => {
+          const oldEntity = beforeById.get(entityId);
+          if (!oldEntity || JSON.stringify(oldEntity) !== JSON.stringify(entity)) {
+            changes.push({ entityType, entityId, changeType: 'upsert', entityVersion: DEVICE_ID + ':' + sequence, payload: entity });
+          }
+        });
+        beforeById.forEach((entity, entityId) => {
+          if (!afterById.has(entityId)) {
+            changes.push({ entityType, entityId, changeType: 'delete', entityVersion: DEVICE_ID + ':' + sequence, payload: null });
+          }
+        });
+      });
+      const rootChanges = {};
+      const rootKeys = new Set([...Object.keys(previous || {}), ...Object.keys(current || {})]);
+      rootKeys.forEach(key => {
+        if (SYNC_ENTITY_COLLECTIONS.includes(key) || Array.isArray(previous?.[key]) || Array.isArray(current?.[key])) return;
+        if (!Object.prototype.hasOwnProperty.call(current || {}, key)) rootChanges[key] = { changeType: 'delete' };
+        else if (JSON.stringify(previous?.[key]) !== JSON.stringify(current[key])) rootChanges[key] = { changeType: 'upsert', value: current[key] };
+      });
+      return { entityChanges: changes, rootChanges };
+    }
+
     function saveState() {
       const updatedAt = new Date().toISOString();
       const operationId = createStableId('op').slice(3);
       const sequence = Number(localStorage.getItem(OPERATION_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
+      const changeSet = buildEntityChangeSet(lastSavedState, state, sequence);
       const operation = {
         operationId,
         sequence,
@@ -1746,6 +1788,8 @@
         operationType: 'state_snapshot',
         summary: lastAudit?.action || 'به‌روزرسانی اطلاعات شرکت',
         payload: JSON.parse(snapshot),
+        entityChanges: changeSet.entityChanges,
+        rootChanges: changeSet.rootChanges,
         expectedUpdatedAt: localStorage.getItem(CLOUD_BASELINE_KEY) || null,
         acknowledgedAt: null
       };
@@ -1753,6 +1797,7 @@
         localStorage.setItem(STORE_KEY, snapshot);
         localStorage.setItem(LOCAL_UPDATED_KEY, updatedAt);
         localStorage.setItem(OPERATION_SEQUENCE_KEY, String(sequence));
+        lastSavedState = JSON.parse(snapshot);
         // صف snapshot قدیمی تا زمان مهاجرت کامل سرور حفظ می‌شود.
         localStorage.setItem(CLOUD_OUTBOX_KEY, updatedAt);
       } catch (e) {
@@ -1761,13 +1806,16 @@
         showToast('ذخیره اطلاعات در مرورگر ناموفق بود؛ فضای ذخیره‌سازی را بررسی کنید.', 'error');
         return false;
       }
-      writeLocalMirror(state, operation).then(() => renderDeviceIdentityStatus()).catch(e => {
-        console.error('IndexedDB mirror failed:', e);
-        setCloudBadge('⚠️ ذخیره پشتیبان داخلی ناموفق', 'text-amber-300');
-        showToast('نسخه دوم اطلاعات در حافظه داخلی گوشی ذخیره نشد؛ فضای دستگاه را بررسی کنید.', 'error');
+      writeLocalMirror(state, operation).then(() => {
+        renderDeviceIdentityStatus();
+        scheduleCloudSync();
+      }).catch(e => {
+        console.error('IndexedDB mirror / operation journal failed:', e);
+        setCloudBadge('⚠️ ذخیره دفتر عملیات محلی ناموفق', 'text-amber-300');
+        showToast('دفتر عملیات در حافظه داخلی ثبت نشد؛ همگام‌سازی عملیات جدید تا رفع مشکل متوقف می‌ماند.', 'error');
+        scheduleCloudSync();
       });
       renderCloudSyncStatus();
-      scheduleCloudSync();
       return true;
     }
 
