@@ -277,12 +277,12 @@ begin
           raise exception 'upsert entity id does not match its payload';
         end if;
         select coalesce(jsonb_agg(item), '[]'::jsonb) into v_array
-        from jsonb_array_elements(v_array) item
+        from jsonb_array_elements(v_array) as items(item)
         where item->>'id' is distinct from v_entity_id;
         v_array := v_array || jsonb_build_array(v_change->'payload');
       elsif v_change_type = 'delete' then
         select coalesce(jsonb_agg(item), '[]'::jsonb) into v_array
-        from jsonb_array_elements(v_array) item
+        from jsonb_array_elements(v_array) as items(item)
         where item->>'id' is distinct from v_entity_id;
       else
         raise exception 'unsupported entity change type: %', v_change_type;
