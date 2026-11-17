@@ -1981,13 +1981,24 @@
       renderDeviceIdentityStatus();
     }
     const USER_ROLE_LABELS = { mehran: 'مهران', ehsan: 'احسان' };
-    function addAudit(action) {
+    function getTodayJalaliDate(date = new Date()) {
+      const parts = new Intl.DateTimeFormat('en-u-ca-persian', { year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(date);
+      const get = type => Number(parts.find(p => p.type === type)?.value || 0);
+      return `${get('year')}/${String(get('month')).padStart(2, '0')}/${String(get('day')).padStart(2, '0')}`;
+    }
+
+    function addAudit(action, metadata = {}) {
       const roles = USER_ROLE_LABELS;
       const now = new Date();
-      const t = `${state.fiscalYear}/08/27 - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      const operationDate = metadata.operationDate || getTodayJalaliDate(now);
+      const t = `${operationDate} - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
       state.auditLogs.unshift({
         id: createStableId('audit'),
         time: t,
+        operationDate,
+        createdAt: now.toISOString(),
+        operationMode: metadata.mode === 'automatic' ? 'automatic' : 'manual',
+        sourceType: metadata.sourceType || 'user_action',
         user: roles[state.activeRole] || 'کاربر',
         actor: state.activeRole || 'mehran',
         deviceId: DEVICE_ID,
@@ -2076,7 +2087,7 @@
       return net;
     }
 
-    function postVoucher(desc, lines, date = `${state.fiscalYear}/08/27`, source = null) {
+    function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
       const d = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
       const c = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
       if (!Array.isArray(lines) || lines.length < 2 || !Number.isFinite(d) || !Number.isFinite(c) || Math.round(d) !== Math.round(c) || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: حداقل دو ردیف و توازن کامل لازم است.');
@@ -2084,10 +2095,11 @@
       if (source?.type && source?.id) { const sourceEvent = source.event || 'default';
         const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
-      state.vouchers.unshift({ id, date, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
+      const operationMode = source?.mode === 'manual' ? 'manual' : 'automatic';
+      state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: DEVICE_ID, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
       if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
-      addAudit(`صدور سند حسابداری #${id}: ${desc}`);
+      addAudit(`صدور سند حسابداری #${id}: ${desc}`, { mode: operationMode, operationDate: date, sourceType: source?.type || 'accounting_voucher' });
       saveState();
       return id;
     }
@@ -3646,6 +3658,7 @@
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2.5">
             <h3 class="font-black text-sm">ثبت سند حسابداری دستی (با کنترل توازن بدهکار و بستانکار)</h3>
             <input type="text" id="mv-desc" placeholder="شرح سند حسابداری *" class="touch-btn w-full border rounded-xl px-3" />
+            <div><label class="block text-[10px] font-bold mb-1">تاریخ عملیات / تاریخ سند (شمسی)</label><input type="text" id="mv-date" value="${getTodayJalaliDate()}" class="touch-btn w-full border rounded-xl px-3 tabular-nums" /></div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
               <select id="mv-deb-acc" class="touch-btn border rounded-xl px-2">${CHART_ACCOUNTS.map(a => `<option value="${a.code}">${faNum(a.code)} - ${a.name}</option>`).join('')}</select>
               <select id="mv-cred-acc" class="touch-btn border rounded-xl px-2">${CHART_ACCOUNTS.map(a => `<option value="${a.code}">${faNum(a.code)} - ${a.name}</option>`).join('')}</select>
@@ -3683,10 +3696,11 @@
       const desc = document.getElementById('mv-desc').value.trim();
       const amt = Number(document.getElementById('mv-amount').value || 0);
       if (!desc || amt <= 0) { showToast('شرح و مبلغ را وارد کنید.', 'error'); return; }
+      const operationDate = document.getElementById('mv-date').value.trim() || getTodayJalaliDate();
       postVoucher(desc, [
         { code: document.getElementById('mv-deb-acc').value, partyId: null, desc, debit: amt, credit: 0 },
         { code: document.getElementById('mv-cred-acc').value, partyId: null, desc, debit: 0, credit: amt }
-      ]);
+      ], operationDate, { type: 'manual_voucher', id: createStableId('manual'), event: 'issued', mode: 'manual' });
       renderAll(); setAccTab('journal'); showToast('سند دستی صادر شد ✔');
     }
 
@@ -3765,7 +3779,7 @@
       `).join('');
 
       document.getElementById('audit-logs-list').innerHTML = state.auditLogs.slice(0, 100).map(l => `
-        <div class="p-2 rounded-xl bg-slate-50 border flex justify-between gap-2"><span><strong>${l.user}:</strong> ${l.action}<small class="block text-[9px] text-slate-400">${l.actor || '—'} · دستگاه ${l.deviceId ? l.deviceId.slice(-8) : 'قدیمی'}</small></span><span class="text-slate-400 tabular-nums shrink-0">${faNum(l.time)}</span></div>
+        <div class="p-2 rounded-xl bg-slate-50 border flex justify-between gap-2"><span><strong>${l.user}:</strong> ${l.action}<small class="block text-[9px] text-slate-400">${l.actor || '—'} · دستگاه ${l.deviceId ? l.deviceId.slice(-8) : 'قدیمی'} · ${l.operationMode === 'automatic' ? 'اتوماتیک' : (l.operationMode === 'manual' ? 'دستی' : 'قدیمی')}</small></span><span class="text-slate-400 tabular-nums shrink-0">${faNum(l.operationDate || l.time)}</span></div>
       `).join('');
     }
     function saveApprovalReq() {
