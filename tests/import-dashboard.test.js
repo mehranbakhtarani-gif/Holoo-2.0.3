@@ -1,0 +1,13 @@
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const html = fs.readFileSync('index.html', 'utf8');
+assert.match(html, /id="imports-dashboard-summary"/);
+assert.match(html, /function updateImportStatus\(/);
+assert.match(html, /statusHistory: \[\{ status:/);
+assert.match(html, /function renderImportsModule\(/);
+assert.match(html, /تأخیر در ETA/);
+assert.match(html, /id="imp-eta"/);
+assert.match(html, /id="imp-bl"/);
+assert.match(html, /id="imp-port"/);
+assert.match(html, /Object\.values\(expenses\)\.some\(v => !Number\.isFinite\(v\) \|\| v < 0\)/);
+console.log('PASS: 9 import dashboard and shipment tracking checks');
