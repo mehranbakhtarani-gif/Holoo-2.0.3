@@ -468,6 +468,7 @@
             </div>
             <button onclick="openModal('modal-new-import')" class="touch-btn bg-amber-400 text-slate-950 px-4 rounded-xl text-xs font-black">+ ثبت محموله وارداتی جدید</button>
           </div>
+          <div id="imports-dashboard-summary" class="grid grid-cols-2 md:grid-cols-5 gap-2"></div>
           <div id="imports-list-container" class="space-y-3"></div>
         </section>
 
@@ -913,6 +914,12 @@
         <div class="sm:col-span-2"><label class="block text-[10px] font-bold">کالای وارداتی:</label><select id="imp-prod" class="touch-btn w-full border rounded-xl px-2 font-bold"></select></div>
         <div><label class="block text-[10px] font-bold">وزن خالص محموله (KG):</label><input type="number" id="imp-weight" value="22000" class="touch-btn w-full border rounded-xl px-2 tabular-nums font-bold" /></div>
         <div><label class="block text-[10px] font-bold">تعداد کارتن:</label><input type="number" id="imp-cartons" value="880" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div><label class="block text-[10px] font-bold">مرحله محموله:</label><select id="imp-status" class="touch-btn w-full border rounded-xl px-2"><option value="registered">ثبت اولیه</option><option value="ordered">سفارش تأییدشده</option><option value="in_transit">در حمل</option><option value="arrived">رسیده به بندر</option><option value="customs">در گمرک</option><option value="cleared">ترخیص‌شده</option><option value="received">تحویل انبار</option></select></div>
+        <div><label class="block text-[10px] font-bold">تاریخ تخمینی ورود (ETA):</label><input type="text" id="imp-eta" placeholder="1405/09/15" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+        <div><label class="block text-[10px] font-bold">شماره بارنامه (B/L):</label><input type="text" id="imp-bl" placeholder="شماره بارنامه" class="touch-btn w-full border rounded-xl px-2" /></div>
+        <div><label class="block text-[10px] font-bold">بندر مقصد:</label><input type="text" id="imp-port" placeholder="بندرعباس" class="touch-btn w-full border rounded-xl px-2" /></div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <div><label class="block text-[10px] font-bold">شماره بچ / LOT:</label><input type="text" id="imp-lot" placeholder="شماره بچ تولیدکننده" class="touch-btn w-full border rounded-xl px-2" /></div>
@@ -3029,7 +3036,10 @@
       state.imports.unshift({
         id: impId, date: `${state.fiscalYear}/08/27`, supplier, origin: document.getElementById('imp-origin').value,
         containerNo: document.getElementById('imp-container').value, productId: prodId, weightKg, cartons,
-        currency, fxTotal, fxRate, fxPaid: 0, expenses, landedCostPerKg, totalLandedRial, postedToWh: true
+        currency, fxTotal, fxRate, fxPaid: 0, expenses, landedCostPerKg, totalLandedRial, postedToWh: true,
+        status: document.getElementById('imp-status').value, eta: document.getElementById('imp-eta').value.trim(),
+        billOfLading: document.getElementById('imp-bl').value.trim(), destinationPort: document.getElementById('imp-port').value.trim(),
+        statusUpdatedAt: new Date().toISOString(), statusHistory: [{ status: document.getElementById('imp-status').value, at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }]
       });
 
       const p = state.products.find(x => x.id === prodId);
@@ -3050,9 +3060,39 @@
       showToast(`محموله وارداتی ثبت شد! بهای تمام‌شده هر کیلوگرم: ${money(landedCostPerKg)} 🚢`);
     }
 
+    const IMPORT_STATUS_LABELS = {
+      registered: 'ثبت اولیه', ordered: 'سفارش تأییدشده', in_transit: 'در حمل',
+      arrived: 'رسیده به بندر', customs: 'در گمرک', cleared: 'ترخیص‌شده',
+      received: 'تحویل انبار', cancelled: 'لغوشده'
+    };
+    function updateImportStatus(importId, nextStatus) {
+      const shipment = state.imports.find(x => x.id === importId);
+      if (!shipment || !Object.prototype.hasOwnProperty.call(IMPORT_STATUS_LABELS, nextStatus)) return;
+      if (shipment.status === 'received' || shipment.status === 'cancelled') {
+        showToast('وضعیت نهایی محموله قابل تغییر نیست.', 'error'); renderImportsModule(); return;
+      }
+      shipment.status = nextStatus;
+      shipment.statusUpdatedAt = new Date().toISOString();
+      shipment.statusHistory = [...(shipment.statusHistory || []), { status: nextStatus, at: shipment.statusUpdatedAt, actor: state.activeRole, deviceId: DEVICE_ID }];
+      addAudit(`تغییر وضعیت محموله ${importId} به ${IMPORT_STATUS_LABELS[nextStatus]}`);
+      saveState(); renderImportsModule();
+      showToast('مرحله محموله وارداتی به‌روزرسانی شد.');
+    }
+
     function renderImportsModule() {
       document.getElementById('imp-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-      document.getElementById('imports-list-container').innerHTML = state.imports.map(m => {
+      const imports = state.imports || [];
+      const openFx = imports.reduce((sum, m) => sum + Math.max(0, Number(m.fxTotal || 0) - Number(m.fxPaid || 0)), 0);
+      const today = currentJalaliOrdinal();
+      const delayed = imports.filter(m => !['received','cleared','cancelled'].includes(m.status) && m.eta && today !== null && jalaliDateOrdinal(m.eta) !== null && jalaliDateOrdinal(m.eta) < today).length;
+      document.getElementById('imports-dashboard-summary').innerHTML = [
+        ['کل محموله‌ها', imports.length],
+        ['در حمل', imports.filter(m => m.status === 'in_transit').length],
+        ['در گمرک', imports.filter(m => m.status === 'customs').length],
+        ['تأخیر در ETA', delayed],
+        ['مانده تعهد ارزی', money(openFx)]
+      ].map(([label,value]) => `<div class="bg-white rounded-xl border p-3"><span class="block text-[10px] text-slate-500">${label}</span><strong class="text-sm tabular-nums">${value}</strong></div>`).join('');
+      document.getElementById('imports-list-container').innerHTML = imports.map(m => {
         const p = state.products.find(x => x.id === m.productId);
         const estRev = p ? m.weightKg * (p.prices[1] || p.prices[0]) : 0;
         const estProfit = estRev - m.totalLandedRial;
@@ -3061,6 +3101,14 @@
             <div class="flex flex-wrap justify-between items-center gap-2">
               <div><span class="font-black text-sky-900">${m.id}</span> • <strong>${m.supplier}</strong> (${m.origin})</div>
               <span class="px-2.5 py-0.5 rounded-lg bg-sky-100 text-sky-900 font-mono font-bold">کانتینر: ${m.containerNo}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+              <div><span class="block text-[10px] text-slate-500">وضعیت عملیات</span><strong>${IMPORT_STATUS_LABELS[m.status || 'registered'] || 'ثبت اولیه'}</strong></div>
+              <div><span class="block text-[10px] text-slate-500">ETA / بندر</span><strong>${faNum(m.eta || '—')} • ${m.destinationPort || '—'}</strong></div>
+              <div><span class="block text-[10px] text-slate-500">بارنامه</span><strong>${m.billOfLading || '—'}</strong></div>
+              <select aria-label="تغییر مرحله محموله" onchange="updateImportStatus('${m.id}', this.value)" class="touch-btn border rounded-lg px-2 bg-slate-50">
+                ${Object.entries(IMPORT_STATUS_LABELS).map(([value,label]) => `<option value="${value}" ${(m.status || 'registered') === value ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-50 border tabular-nums">
               <div><span class="text-slate-400 block">وزن و کارتن:</span><strong>${faNum(m.weightKg)} KG (${faNum(m.cartons)} کارتن)</strong></div>
