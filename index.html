@@ -2096,7 +2096,7 @@
         const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
       const operationMode = source?.mode === 'manual' ? 'manual' : 'automatic';
-      state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: DEVICE_ID, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
+      state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
       if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
       addAudit(`صدور سند حسابداری #${id}: ${desc}`, { mode: operationMode, operationDate: date, sourceType: source?.type || 'accounting_voucher' });
