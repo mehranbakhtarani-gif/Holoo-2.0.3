@@ -22,6 +22,7 @@ jobs:
           node-version: 22
       - name: Run accounting and integrity test suite
         run: |
+          node tests/fifo-batch.test.js
           node tests/accounting-smoke.test.js
           node tests/extended-workflow.test.js
           node tests/advanced-accounting-lifecycle.test.js
