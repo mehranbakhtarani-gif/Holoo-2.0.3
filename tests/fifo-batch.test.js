@@ -38,8 +38,8 @@ test('FIFO consumes oldest available batches first and calculates exact cost', (
   ] };
   const result = consumeFifoStock(p, 6);
   assert.equal(result.totalCost, 700);
-  assert.deepEqual(result.allocations.map(x => x.quantity), [4, 2]);
-  assert.deepEqual(result.allocations.map(x => x.lot), ['L1', 'L2']);
+  assert.deepEqual(Array.from(result.allocations, x => x.quantity), [4, 2]);
+  assert.deepEqual(Array.from(result.allocations, x => x.lot), ['L1', 'L2']);
   assert.equal(p.batches[0].remainingQty, 0);
   assert.equal(p.batches[1].remainingQty, 4);
 });
