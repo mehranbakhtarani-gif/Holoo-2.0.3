@@ -2460,7 +2460,9 @@
 
     function saveParty() {
       const name = document.getElementById('np-name').value.trim();
-      if (!name) return;
+      if (!name) { showToast('نام طرف حساب را وارد کنید.', 'error'); return; }
+      const phone = document.getElementById('np-phone').value.trim();
+      if (state.parties.some(p => p.name.trim().toLowerCase() === name.toLowerCase() || (phone && p.phone && p.phone.trim() === phone))) { showToast('طرف حسابی با همین نام یا شماره تماس قبلاً ثبت شده است.', 'error'); return; }
       state.parties.push({
         id: 'P-' + Date.now(), name, role: document.getElementById('np-role').value,
         subledgerId: 'PARTY-' + Date.now(), ledgerAccountCode: document.getElementById('np-role').value.includes('تأمین') ? '2101' : '1103', accountingStatus: 'active',
@@ -2707,10 +2709,12 @@
         }
       });
       if (retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
+      const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       postVoucher(`برگشت جزئی ردیف‌های فاکتور #${invId}`, inv.type === 'sale'
         ? [{ code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 }, { code: '1103', partyId: inv.partyId, desc: 'کاهش بدهی مشتری', debit: 0, credit: retTotal }]
         : [{ code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal, credit: 0 }, { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }]
-      );
+      , undefined, { type: 'invoice_return', id: returnId, event: String(invId) });
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, createdAt: new Date().toISOString() }];
       saveState(); closeModal('modal-partial-return'); renderAll();
       showToast('برگشت جزئی ردیف‌ها ثبت، انبار اصلاح و سند حسابداری صادر شد ✔');
     }
@@ -2718,6 +2722,7 @@
     function cancelInvoice(invId) {
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv || inv.status === 'cancelled') return;
+      if (Number(inv.paidAmount || 0) > 0) { showToast('این فاکتور دریافت/پرداخت دارد؛ ابتدا تسویه‌های مرتبط را تعیین‌تکلیف کنید.', 'error'); return; }
       inv.status = 'cancelled';
       inv.items.forEach(it => {
         const netKg = it.kg - (it.returnedKg || 0);
@@ -2726,7 +2731,8 @@
       });
       postVoucher(`ابطال فاکتور #${invId}`, inv.type === 'sale'
         ? [{ code: '4103', partyId: inv.partyId, desc: `ابطال فاکتور #${invId}`, debit: inv.grandTotal, credit: 0 }, { code: '1103', partyId: inv.partyId, desc: `ابطال بدهی #${invId}`, debit: 0, credit: inv.grandTotal }]
-        : [{ code: '2101', partyId: inv.partyId, desc: `ابطال خرید #${invId}`, debit: inv.grandTotal, credit: 0 }, { code: '1105', partyId: null, desc: `ابطال ورود انبار #${invId}`, debit: 0, credit: inv.grandTotal }]
+        : [{ code: '2101', partyId: inv.partyId, desc: `ابطال خرید #${invId}`, debit: inv.grandTotal, credit: 0 }, { code: '1105', partyId: null, desc: `ابطال ورود انبار #${invId}`, debit: 0, credit: inv.grandTotal }],
+        undefined, { type: 'invoice_cancel', id: invId, event: 'cancel' }
       );
       saveState(); renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info');
     }
