@@ -1371,9 +1371,12 @@
         succeeded = true;
         // فقط همان نسخه‌ای را از صف خارج کن که واقعاً ارسال شده؛ اگر حین ارسال تغییری رخ داد، صف حفظ می‌شود.
         if (localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
-            localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart) {
+            localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart &&
+            syncRevision === revisionAtStart) {
           localStorage.removeItem(CLOUD_OUTBOX_KEY);
           localStorage.setItem(CLOUD_BASELINE_KEY, localUpdatedAt);
+          // نسخه کامل legacy که همین الان تأیید شد، عملیات محلیِ داخل همان snapshot را پوشش می‌دهد.
+          await acknowledgeOperations(journalResult.pendingOperationIds || [], localUpdatedAt);
         }
         await renderCloudSyncStatus();
         const nowStr = new Date().toLocaleTimeString('fa-IR');
@@ -1595,7 +1598,7 @@
 
     async function pushOperationJournalToSupabase() {
       const operations = await listPendingOperations(100);
-      if (!operations.length) return { supported: false, applied: 0 };
+      if (!operations.length) return { supported: false, applied: 0, pendingOperationIds: [] };
       const queuedAtStart = localStorage.getItem(CLOUD_OUTBOX_KEY) || '';
       const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY) || '';
       const rpcUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/rpc/holoo_apply_state_operation';
@@ -1626,11 +1629,11 @@
           })
         });
 
-        if (response.status === 404) return { supported: false, applied: 0 };
+        if (response.status === 404) return { supported: false, applied: 0, pendingOperationIds: operations.map(op => op.operationId) };
         const resultBody = await response.json().catch(() => null);
         if (!response.ok) {
           if (response.status === 400 && JSON.stringify(resultBody || {}).includes('PGRST202')) {
-            return { supported: false, applied: 0 };
+            return { supported: false, applied: 0, pendingOperationIds: operations.map(op => op.operationId) };
           }
           throw new Error('ثبت عملیات اتمیک ناموفق بود: HTTP ' + response.status);
         }
