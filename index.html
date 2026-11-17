@@ -3246,11 +3246,21 @@
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
       else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
-      postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId });
-      c.paidAmount = Number(c.paidAmount || 0) + amount;
+      const previous = { paidAmount: Number(c.paidAmount || 0), status: c.status, payments: [...(c.payments || [])], bankBalance: bank ? Number(bank.balance || 0) : null };
+      c.paidAmount = previous.paidAmount + amount;
       c.status = c.paidAmount + 0.000001 >= c.amount ? 'paid' : 'partial';
-      c.payments = [...(c.payments || []), { id: paymentId, amount, currency: c.currency, rate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
+      c.payments = [...previous.payments, { id: paymentId, amount, currency: c.currency, rate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
       if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
+      try {
+        postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId });
+      } catch (error) {
+        c.paidAmount = previous.paidAmount;
+        c.status = previous.status;
+        c.payments = previous.payments;
+        if (bank) bank.balance = previous.bankBalance;
+        showToast('ثبت سند پرداخت تعهد ارزی ناموفق بود؛ اطلاعات تعهد بدون تغییر ماند.', 'error');
+        return;
+      }
       addAudit(`پرداخت ${amount} ${c.currency} از تعهد ${c.id}`);
       saveState(); renderFxModule();
       showToast('پرداخت تعهد ارزی و سند تسعیر ثبت شد.');
