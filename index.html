@@ -1391,8 +1391,9 @@
         if (notify) showToast('اطلاعات در Supabase ذخیره شد ☁️✔');
       } catch (err) {
         console.warn('Supabase Push Error:', err);
-        setCloudBadge('⚠️ خطای ذخیره ابری؛ نسخه محلی حفظ شد', 'text-amber-300');
-        if (notify) showToast('ذخیره ابری ناموفق بود؛ اطلاعات محلی حفظ شده است.', 'error');
+        const diagnostic = String(err?.message || err || 'خطای نامشخص').slice(0, 220);
+        setCloudBadge('⚠️ خطای ابر: ' + diagnostic, 'text-amber-300');
+        showToast('ذخیره ابری ناموفق بود؛ نسخه محلی حفظ شد. علت: ' + diagnostic, 'error');
       } finally {
         isSyncing = false;
         if (syncPending || syncRevision !== revisionAtStart) scheduleCloudSync();
@@ -1641,7 +1642,8 @@
           if (response.status === 400 && JSON.stringify(resultBody || {}).includes('PGRST202')) {
             return { supported: false, applied: 0, pendingOperationIds: operations.map(op => op.operationId) };
           }
-          throw new Error('ثبت عملیات اتمیک ناموفق بود: HTTP ' + response.status);
+          const detail = resultBody?.message || resultBody?.details || resultBody?.hint || (resultBody ? JSON.stringify(resultBody).slice(0, 240) : '');
+          throw new Error('ثبت عملیات اتمیک ناموفق بود: HTTP ' + response.status + (detail ? ' — ' + detail : ''));
         }
         const result = Array.isArray(resultBody) ? resultBody[0] : resultBody;
         if (!result || !['applied', 'already_applied'].includes(result.status)) {
