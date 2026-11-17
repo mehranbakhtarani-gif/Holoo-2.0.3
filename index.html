@@ -1537,25 +1537,95 @@
       }
     }
 
-    function runSystemDiagnostics() {
-      const bal = getAccountBalances();
-      let totDeb = 0, totCred = 0;
-      Object.values(bal).forEach(b => { totDeb += b.debTurn; totCred += b.credTurn; });
-      const balanced = Math.round(totDeb) === Math.round(totCred);
+    async function runSystemDiagnostics() {
       const box = document.getElementById('diagnostic-box');
       box.classList.remove('hidden');
+      box.innerHTML = '<div class="text-amber-200 font-bold">در حال اجرای آزمون‌های سلامت...</div>';
+
+      const results = [];
+      const add = (name, ok, detail) => results.push({ name, ok: !!ok, detail: String(detail || '') });
+      const isArray = (v) => Array.isArray(v);
+      const requiredArrays = ['products','warehouses','parties','invoices','vouchers','orders','imports','bankAccounts','checks','treasuryTxs','employees','fixedAssets','approvals','auditLogs'];
+      const missingArrays = requiredArrays.filter(k => !isArray(state[k]));
+      add('ساختار داده‌های اصلی', missingArrays.length === 0, missingArrays.length ? 'فیلدهای نامعتبر: ' + missingArrays.join(', ') : requiredArrays.length + ' مجموعه داده معتبر');
+
+      const productErrors = (state.products || []).filter(p =>
+        !p || !p.id || !p.name || !Number.isFinite(Number(p.stock)) ||
+        !Number.isFinite(Number(p.buyPrice)) || !p.warehouseId ||
+        !(state.warehouses || []).some(w => w.id === p.warehouseId)
+      );
+      add('اطلاعات کالا و انبار', productErrors.length === 0, productErrors.length ? productErrors.length + ' رکورد کالا دارای فیلد ناقص یا انبار نامعتبر' : (state.products || []).length + ' رکورد کالا بررسی شد');
+
+      const voucherErrors = [];
+      (state.vouchers || []).forEach(v => {
+        if (!v || !isArray(v.lines) || !v.lines.length) { voucherErrors.push('سند بدون ردیف'); return; }
+        const debit = v.lines.reduce((sum,l) => sum + Number(l.debit || 0), 0);
+        const credit = v.lines.reduce((sum,l) => sum + Number(l.credit || 0), 0);
+        if (!Number.isFinite(debit) || !Number.isFinite(credit) || Math.round(debit) !== Math.round(credit)) voucherErrors.push('سند #' + v.id);
+      });
+      add('توازن اسناد حسابداری', voucherErrors.length === 0, voucherErrors.length ? voucherErrors.slice(0,5).join('، ') : (state.vouchers || []).length + ' سند متوازن');
+
+      const invoiceErrors = (state.invoices || []).filter(inv =>
+        !inv || !Number.isFinite(Number(inv.grandTotal)) ||
+        !isArray(inv.items) ||
+        inv.items.some(it => !it || !Number.isFinite(Number(it.total)) || !Number.isFinite(Number(it.kg)))
+      );
+      add('ساختار فاکتورها', invoiceErrors.length === 0, invoiceErrors.length ? invoiceErrors.length + ' فاکتور دارای داده ناقص' : (state.invoices || []).length + ' فاکتور بررسی شد');
+
+      const requiredFunctions = ['renderDashboard','renderProductsModule','renderInventoryModule','renderPartiesModule','renderInvoicesModule','renderOrdersModule','renderImportsModule','renderFxModule','renderTreasuryModule','renderReconcileModule','renderCashflowModule','renderAccountingModule','renderHrModule','renderAssetsModule','renderApprovalsModule','renderSettingsModule','renderAll','saveState'];
+      const missingFunctions = requiredFunctions.filter(name => typeof window[name] !== 'function');
+      add('توابع ماژول‌های اصلی', missingFunctions.length === 0, missingFunctions.length ? 'توابع در دسترس نیست: ' + missingFunctions.join(', ') : requiredFunctions.length + ' تابع اصلی در دسترس');
+
+      const storageOk = (() => {
+        try {
+          const key = '__holoo_diag_test__';
+          localStorage.setItem(key, 'ok');
+          const ok = localStorage.getItem(key) === 'ok';
+          localStorage.removeItem(key);
+          return ok;
+        } catch (e) { return false; }
+      })();
+      add('ذخیره‌سازی محلی مرورگر', storageOk, storageOk ? 'خواندن و نوشتن localStorage موفق' : 'مرورگر اجازه خواندن/نوشتن localStorage نمی‌دهد');
+
+      let cloudOk = false;
+      let cloudDetail = 'تنظیمات URL یا کلید Supabase ناقص است';
+      if (cloudConfig.url && cloudConfig.key && cloudConfig.table && cloudConfig.recordId) {
+        try {
+          const endpoint = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' + encodeURIComponent(cloudConfig.table) + '?id=eq.' + encodeURIComponent(cloudConfig.recordId) + '&select=id';
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: { apikey: cloudConfig.key, Authorization: 'Bearer ' + cloudConfig.key }
+          });
+          cloudOk = response.ok;
+          cloudDetail = response.ok ? 'پاسخ HTTP ' + response.status + ' از جدول ' + cloudConfig.table : 'خطای HTTP ' + response.status;
+        } catch (e) {
+          cloudDetail = 'خطای ارتباط: ' + (e && e.message ? e.message : 'نامشخص');
+        }
+      }
+      add('اتصال واقعی Supabase', cloudOk, cloudDetail);
+
+      const passed = results.filter(x => x.ok).length;
+      const failed = results.length - passed;
       box.innerHTML = `
         <div class="flex justify-between font-black text-amber-300 border-b border-white/15 pb-1.5">
-          <span>🩺 گزارش تست سلامت یکپارچه دیتابیس، حسابداری و Supabase</span>
+          <span>🩺 گزارش آزمون سلامت سیستم</span>
           <button onclick="document.getElementById('diagnostic-box').classList.add('hidden')">✕</button>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1 tabular-nums">
-          <div class="p-2 rounded-xl bg-white/10">✅ تراز کل دفتر روزنامه: <strong>${balanced ? 'کاملاً متوازن (بدهکار = بستانکار)' : 'خطا'}</strong></div>
-          <div class="p-2 rounded-xl bg-white/10">✅ ماژول‌های عملیاتی: <strong>۱۹ از ۱۹ ماژول فعال</strong></div>
-          <div class="p-2 rounded-xl bg-white/10">✅ همگام‌سازی ابری: <strong>${cloudConfig.url}</strong></div>
+        <div class="grid grid-cols-2 gap-2 pt-2 tabular-nums">
+          <div class="p-2 rounded-xl bg-white/10">آزمون‌های موفق: <strong class="text-emerald-300">${passed} از ${results.length}</strong></div>
+          <div class="p-2 rounded-xl bg-white/10">نیازمند بررسی: <strong class="${failed ? 'text-rose-300' : 'text-emerald-300'}">${failed}</strong></div>
         </div>
+        <div class="space-y-1.5 pt-2">
+          ${results.map(x => `
+            <div class="p-2 rounded-lg bg-white/10 flex gap-2 items-start text-xs">
+              <span>${x.ok ? '✅' : '❌'}</span>
+              <div><strong>${x.name}</strong><div class="text-slate-300">${x.detail}</div></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="text-[10px] text-slate-400 pt-2">این آزمون‌ها بررسی ایستا و اتصال شبکه را پوشش می‌دهند؛ جایگزین تست عملی گردش‌کارها در مرورگر نیستند.</div>
       `;
-      showToast('تست سلامت کل سیستم با موفقیت کامل پاس شد ✔');
+      showToast(failed ? 'آزمون سلامت تمام شد؛ ' + failed + ' مورد نیازمند بررسی است.' : 'همه آزمون‌های تعریف‌شده موفق بودند؛ تست عملی ماژول‌ها همچنان لازم است.', failed ? 'error' : 'success');
     }
 
     // =========================================================================
