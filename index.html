@@ -1498,6 +1498,18 @@
       { code: '6104', name: 'کسری انبارگردانی و زیان تسعیر ارز' }
     ];
 
+    function buildAccountCatalog() {
+      const groupNames = { '1': 'دارایی‌ها', '2': 'بدهی‌ها', '3': 'حقوق مالکانه', '4': 'درآمدها', '5': 'بهای تمام‌شده', '6': 'هزینه‌ها' };
+      const generalNames = { '11': 'دارایی‌های جاری', '12': 'دارایی‌های غیرجاری', '21': 'بدهی‌های جاری', '31': 'حقوق صاحبان سهام', '41': 'درآمدهای عملیاتی و غیرعملیاتی', '51': 'بهای تمام‌شده', '61': 'هزینه‌های عملیاتی و اداری' };
+      const nodes = [];
+      const groups = [...new Set(CHART_ACCOUNTS.map(a => a.code.slice(0, 1)))];
+      groups.forEach(code => nodes.push({ id: 'GR-' + code, code, name: groupNames[code] || ('گروه ' + code), level: 'group', parentId: null, system: true, active: true }));
+      const generals = [...new Set(CHART_ACCOUNTS.map(a => a.code.slice(0, 2)))];
+      generals.forEach(code => nodes.push({ id: 'GL-' + code, code, name: generalNames[code] || ('حساب کل ' + code), level: 'general', parentId: 'GR-' + code.slice(0, 1), system: true, active: true }));
+      CHART_ACCOUNTS.forEach(a => nodes.push({ id: 'SUB-' + a.code, code: a.code, name: a.name, level: 'subsidiary', parentId: 'GL-' + a.code.slice(0, 2), system: true, active: true }));
+      return nodes;
+    }
+
     function defaultState() {
       return {
         fiscalYear: '1405',
@@ -1536,6 +1548,7 @@
         employees: [],
         fixedAssets: [],
         vouchers: [],
+        accountCatalog: [],
         approvals: [],
         auditLogs: []
       };
@@ -1739,6 +1752,14 @@
       } catch (e) { return defaultState(); }
     })();
 
+    if (!Array.isArray(state.accountCatalog) || !state.accountCatalog.length) state.accountCatalog = buildAccountCatalog();
+    if (!Array.isArray(state.parties)) state.parties = [];
+    state.parties.forEach(p => {
+      if (!p.subledgerId) p.subledgerId = 'PARTY-' + String(p.id || createStableId('party'));
+      if (!p.ledgerAccountCode) p.ledgerAccountCode = String(p.role || '').includes('تأمین') ? '2101' : '1103';
+      if (!p.accountingStatus) p.accountingStatus = 'active';
+    });
+
     // سازگاری با نقش‌های نسخه‌های قبلی؛ مدیرعامل به مهران و سایر نقش‌ها به احسان منتقل می‌شوند.
     const LEGACY_ROLE_MAP = { ceo: 'mehran', accountant: 'ehsan', importer: 'ehsan', warehouse: 'ehsan' };
     const VALID_USER_ROLES = ['mehran', 'ehsan'];
@@ -1753,7 +1774,7 @@
     const SYNC_ENTITY_COLLECTIONS = [
       'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
       'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
-      'employees', 'fixedAssets', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
+      'employees', 'fixedAssets', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits'
     ];
     let lastSavedState = JSON.parse(JSON.stringify(state));
 
@@ -1979,9 +2000,13 @@
     }
 
     function getPartyNetBalance(partyId) {
+      const party = state.parties.find(p => String(p.id) === String(partyId));
+      const ledgerCode = party?.ledgerAccountCode || '1103';
       let net = 0;
       state.vouchers.forEach(v => v.lines.forEach(l => {
-        if (l.partyId === partyId && (l.code === '1103' || l.code === '2101')) net += Number(l.debit || 0) - Number(l.credit || 0);
+        if (String(l.partyId) === String(partyId) && (l.code === ledgerCode || l.code === '1103' || l.code === '2101')) {
+          net += Number(l.debit || 0) - Number(l.credit || 0);
+        }
       }));
       return net;
     }
@@ -2419,7 +2444,8 @@
               <span class="text-[10px] text-slate-400 tabular-nums">${faNum(p.phone)}</span>
             </div>
             <div class="font-black text-sm text-slate-900">${p.name}</div>
-            <div class="text-[11px] text-slate-500">کد اقتصادی: ${faNum(p.ecoCode)} | شرایط: ${p.terms}</div>
+            <div class="text-[11px] text-slate-500">کد اقتصادی: ${faNum(p.ecoCode)} | تفصیلی: ${p.subledgerId || p.id} ← ${faNum(p.ledgerAccountCode || '1103')}</div>
+            <div class="text-[10px] text-slate-500">شرایط: ${p.terms}</div>
             <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center tabular-nums">
               <span>مانده حساب:</span>
               <strong class="${bal >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(bal))} (${bal >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
@@ -2435,6 +2461,7 @@
       if (!name) return;
       state.parties.push({
         id: 'P-' + Date.now(), name, role: document.getElementById('np-role').value,
+        subledgerId: 'PARTY-' + Date.now(), ledgerAccountCode: document.getElementById('np-role').value.includes('تأمین') ? '2101' : '1103', accountingStatus: 'active',
         phone: document.getElementById('np-phone').value, ecoCode: document.getElementById('np-eco').value,
         creditLimit: Number(document.getElementById('np-credit').value || 5000000000),
         terms: document.getElementById('np-terms').value
