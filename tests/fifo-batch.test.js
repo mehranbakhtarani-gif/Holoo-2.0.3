@@ -60,10 +60,35 @@ test('sales return restores the original consumed batch quantities', () => {
   assert.equal(p.batches[0].remainingQty, 6);
 });
 
+test('multiple partial returns restore only quantities not yet returned', () => {
+  const p = { id: 'P6', stock: 4, batches: [
+    { id: 'B1', lot: 'L1', receivedDate: '1405/01/01', remainingQty: 0, quantity: 4, unitCost: 100 },
+    { id: 'B2', lot: 'L2', receivedDate: '1405/02/01', remainingQty: 4, quantity: 6, unitCost: 150 }
+  ] };
+  const allocations = [
+    { batchId: 'B1', lot: 'L1', quantity: 4, unitCost: 100 },
+    { batchId: 'B2', lot: 'L2', quantity: 2, unitCost: 150 }
+  ];
+  const first = restoreFifoAllocations(p, allocations, 3, 0, 'RET-2');
+  const second = restoreFifoAllocations(p, allocations, 3, 0, 'RET-3', first);
+  assert.equal(p.batches[0].remainingQty, 4);
+  assert.equal(p.batches[1].remainingQty, 6);
+  assert.equal(first.reduce((n, x) => n + x.quantity, 0) + second.reduce((n, x) => n + x.quantity, 0), 6);
+});
+
+test('purchase and import forms retain batch, production and expiry metadata', () => {
+  assert.match(html, /id="inv-line-lot"/);
+  assert.match(html, /id="inv-line-prod-date"/);
+  assert.match(html, /id="inv-line-expiry"/);
+  assert.match(html, /id="imp-lot"/);
+  assert.match(html, /id="imp-production-date"/);
+  assert.match(html, /id="imp-expiry-date"/);
+});
+
 test('FIFO sales costing is wired to invoice lines and cost-of-goods-sold voucher', () => {
   assert.match(html, /const fifo = consumeFifoStock\(p, l\.kg\)/);
   assert.match(html, /l\.costOfGoodsSold = fifo\.totalCost/);
   assert.match(html, /cogs \+= lineCost/);
 });
 
-console.log('PASS: 6 FIFO batch tests');
+console.log('PASS: 8 FIFO batch tests');
