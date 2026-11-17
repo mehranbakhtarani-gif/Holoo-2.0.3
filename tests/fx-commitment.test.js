@@ -59,6 +59,7 @@ const importSandbox = {
   document: { getElementById(id) { return id.startsWith('fx-import-pay-') ? importAmount : importBank; } },
   createStableId: (() => { let n = 0; return p => p + '-' + (++n); })(),
   getTodayJalaliDate: () => '1405/09/01',
+  faNum: String,
   postVoucher(...args) { importVouchers.push(args); },
   addAudit() {}, saveState() {}, renderAll() {}, showToast() {}
 };
