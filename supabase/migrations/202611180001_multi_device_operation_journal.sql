@@ -208,8 +208,8 @@ begin
     select exists (
       select 1
       from public.holoo_operation_log prior
-      cross join lateral jsonb_array_elements(prior.entity_changes) prior_change
-      cross join lateral jsonb_array_elements(p_entity_changes) incoming_change
+      cross join lateral jsonb_array_elements(prior.entity_changes) as prior_items(prior_change)
+      cross join lateral jsonb_array_elements(p_entity_changes) as incoming_items(incoming_change)
       where prior.company_record_id = p_record_id
         and prior.server_applied_at > v_baseline_applied_at
         and (
@@ -253,7 +253,8 @@ begin
       v_entity_id := v_change->>'entityId';
       v_change_type := v_change->>'changeType';
 
-      if v_entity_type not in (
+      if v_entity_type is null or v_entity_id is null or v_change_type is null
+         or v_entity_type not in (
         'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
         'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
         'employees', 'fixedAssets', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
@@ -306,6 +307,7 @@ begin
            updated_at = clock_timestamp()
      where id = p_record_id
        and updated_at is not distinct from v_current_updated_at
+       and data = v_current_data
     returning updated_at into v_updated_at;
 
     if v_updated_at is null then
