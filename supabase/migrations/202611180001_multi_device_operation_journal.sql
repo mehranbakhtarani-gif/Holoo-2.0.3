@@ -5,7 +5,7 @@
 create table if not exists public.holoo_operation_log (
   operation_id uuid primary key,
   company_record_id text not null,
-  actor text not null check (actor in ('mehran', 'ehsan')),
+  actor text not null check (actor in ('mehran', 'ehsan', 'unknown')),
   device_id text not null,
   device_sequence bigint not null,
   operation_type text not null,
@@ -23,6 +23,23 @@ create index if not exists holoo_operation_log_company_time_idx
 create index if not exists holoo_operation_log_device_sequence_idx
   on public.holoo_operation_log (device_id, device_sequence);
 
+-- Mark the pre-migration cloud state as an opaque checkpoint. Devices with an
+-- older baseline must resolve a conflict instead of silently merging unknown history.
+insert into public.holoo_operation_log (
+  operation_id, company_record_id, actor, device_id, device_sequence,
+  operation_type, summary, entity_changes, root_changes,
+  client_created_at, server_updated_at
+)
+select
+  gen_random_uuid(), id, 'unknown', 'migration-baseline', 0,
+  'migration_baseline', 'Opaque checkpoint created during migration',
+  '[{"entityType":"*","entityId":"*","changeType":"replace","payload":null}]'::jsonb,
+  '{"*":{"changeType":"replace"}}'::jsonb,
+  coalesce(updated_at, clock_timestamp()),
+  coalesce(updated_at, clock_timestamp())
+from public.holoo_sync
+on conflict (operation_id) do nothing;
+
 create or replace function public.reject_holoo_operation_log_mutation()
 returns trigger
 language plpgsql
@@ -37,6 +54,35 @@ drop trigger if exists holoo_operation_log_immutable on public.holoo_operation_l
 create trigger holoo_operation_log_immutable
 before update or delete on public.holoo_operation_log
 for each row execute function public.reject_holoo_operation_log_mutation();
+
+create or replace function public.record_untracked_holoo_sync_write()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $
+begin
+  if current_setting('holoo.operation_rpc', true) = 'on' then
+    return new;
+  end if;
+  insert into public.holoo_operation_log (
+    operation_id, company_record_id, actor, device_id, device_sequence,
+    operation_type, summary, entity_changes, root_changes,
+    client_created_at, server_updated_at
+  ) values (
+    gen_random_uuid(), new.id, 'unknown', 'legacy-untracked', 0,
+    'legacy_untracked', 'Untracked write from a legacy client; automatic merge blocked',
+    '[{"entityType":"*","entityId":"*","changeType":"replace","payload":null}]'::jsonb,
+    '{"*":{"changeType":"replace"}}'::jsonb,
+    clock_timestamp(), coalesce(new.updated_at, clock_timestamp())
+  );
+  return new;
+end;
+$;
+
+drop trigger if exists holoo_sync_capture_untracked_write on public.holoo_sync;
+create trigger holoo_sync_capture_untracked_write
+after insert or update on public.holoo_sync
+for each row execute function public.record_untracked_holoo_sync_write();
 
 revoke all on table public.holoo_operation_log from public, anon, authenticated;
 grant select, insert on table public.holoo_operation_log to anon, authenticated;
@@ -63,6 +109,19 @@ as $$
 declare
   v_updated_at timestamptz;
   v_existing public.holoo_operation_log%rowtype;
+  v_current_data jsonb;
+  v_current_updated_at timestamptz;
+  v_baseline_applied_at timestamptz;
+  v_merged_data jsonb;
+  v_change jsonb;
+  v_entity_type text;
+  v_entity_id text;
+  v_change_type text;
+  v_array jsonb;
+  v_root_key text;
+  v_root_value jsonb;
+  v_overlap boolean;
+  v_merged boolean := false;
 begin
   if p_record_id is null or p_record_id = '' then
     raise exception 'record id is required';
@@ -103,6 +162,8 @@ begin
     );
   end if;
 
+  perform set_config('holoo.operation_rpc', 'on', true);
+
   -- A null baseline means create-only. It must never overwrite an existing row.
   if p_expected_updated_at is null then
     insert into public.holoo_sync (id, data, updated_at)
@@ -119,15 +180,139 @@ begin
   end if;
 
   if v_updated_at is null then
-    select updated_at into v_updated_at
+    -- The snapshot changed since this device's baseline. Attempt a safe
+    -- entity-level merge only when the audit trail proves the intervening writes.
+    select data, updated_at into v_current_data, v_current_updated_at
     from public.holoo_sync
     where id = p_record_id;
 
-    return jsonb_build_object(
-      'status', 'conflict',
-      'operation_id', p_operation_id,
-      'updated_at', v_updated_at
-    );
+    if not found or p_expected_updated_at is null or v_current_updated_at is null then
+      return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id, 'updated_at', v_current_updated_at);
+    end if;
+
+    select min(server_applied_at) into v_baseline_applied_at
+    from public.holoo_operation_log
+    where company_record_id = p_record_id
+      and server_updated_at = p_expected_updated_at;
+
+    -- No checkpoint means history is incomplete; do not guess.
+    if v_baseline_applied_at is null
+       or not exists (
+         select 1 from public.holoo_operation_log
+         where company_record_id = p_record_id
+           and server_updated_at = v_current_updated_at
+       ) then
+      return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id, 'updated_at', v_current_updated_at);
+    end if;
+
+    select exists (
+      select 1
+      from public.holoo_operation_log prior
+      cross join lateral jsonb_array_elements(prior.entity_changes) prior_change
+      cross join lateral jsonb_array_elements(p_entity_changes) incoming_change
+      where prior.company_record_id = p_record_id
+        and prior.server_applied_at > v_baseline_applied_at
+        and (
+          prior_change->>'entityType' = '*'
+          or incoming_change->>'entityType' = '*'
+          or (
+            prior_change->>'entityType' = incoming_change->>'entityType'
+            and (
+              prior_change->>'entityId' = incoming_change->>'entityId'
+              or prior_change->>'entityId' = '*'
+              or incoming_change->>'entityId' = '*'
+            )
+          )
+        )
+    ) into v_overlap;
+
+    if not v_overlap then
+      select exists (
+        select 1
+        from public.holoo_operation_log prior
+        cross join lateral jsonb_object_keys(prior.root_changes) prior_key(key)
+        cross join lateral jsonb_object_keys(p_root_changes) incoming_key(key)
+        where prior.company_record_id = p_record_id
+          and prior.server_applied_at > v_baseline_applied_at
+          and (
+            prior_key.key = '*'
+            or incoming_key.key = '*'
+            or prior_key.key = incoming_key.key
+          )
+      ) into v_overlap;
+    end if;
+
+    if v_overlap then
+      return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id, 'updated_at', v_current_updated_at);
+    end if;
+
+    v_merged_data := v_current_data;
+    for v_change in select value from jsonb_array_elements(p_entity_changes)
+    loop
+      v_entity_type := v_change->>'entityType';
+      v_entity_id := v_change->>'entityId';
+      v_change_type := v_change->>'changeType';
+
+      if v_entity_type not in (
+        'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
+        'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
+        'employees', 'fixedAssets', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
+      ) then
+        raise exception 'unsupported entity collection: %', v_entity_type;
+      end if;
+
+      v_array := coalesce(v_merged_data->v_entity_type, '[]'::jsonb);
+      if jsonb_typeof(v_array) <> 'array' then
+        raise exception 'entity collection is not an array: %', v_entity_type;
+      end if;
+
+      if v_change_type = 'replace' then
+        if jsonb_typeof(v_change->'payload') <> 'array' then
+          raise exception 'replacement payload must be an array';
+        end if;
+        v_array := v_change->'payload';
+      elsif v_change_type = 'upsert' then
+        if jsonb_typeof(v_change->'payload') <> 'object'
+           or v_change->'payload'->>'id' is distinct from v_entity_id then
+          raise exception 'upsert entity id does not match its payload';
+        end if;
+        select coalesce(jsonb_agg(item), '[]'::jsonb) into v_array
+        from jsonb_array_elements(v_array) item
+        where item->>'id' is distinct from v_entity_id;
+        v_array := v_array || jsonb_build_array(v_change->'payload');
+      elsif v_change_type = 'delete' then
+        select coalesce(jsonb_agg(item), '[]'::jsonb) into v_array
+        from jsonb_array_elements(v_array) item
+        where item->>'id' is distinct from v_entity_id;
+      else
+        raise exception 'unsupported entity change type: %', v_change_type;
+      end if;
+      v_merged_data := jsonb_set(v_merged_data, array[v_entity_type], v_array, true);
+    end loop;
+
+    for v_root_key, v_root_value in select key, value from jsonb_each(p_root_changes)
+    loop
+      if v_root_value->>'changeType' = 'delete' then
+        v_merged_data := v_merged_data - v_root_key;
+      elsif v_root_value->>'changeType' = 'upsert' then
+        v_merged_data := jsonb_set(v_merged_data, array[v_root_key], v_root_value->'value', true);
+      else
+        raise exception 'unsupported root change type for key: %', v_root_key;
+      end if;
+    end loop;
+
+    update public.holoo_sync
+       set data = v_merged_data,
+           updated_at = clock_timestamp()
+     where id = p_record_id
+       and updated_at is not distinct from v_current_updated_at
+    returning updated_at into v_updated_at;
+
+    if v_updated_at is null then
+      select updated_at into v_current_updated_at from public.holoo_sync where id = p_record_id;
+      return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id, 'updated_at', v_current_updated_at);
+    end if;
+    v_merged := true;
   end if;
 
   -- Snapshot update and audit insert commit or roll back as one transaction.
@@ -147,10 +332,11 @@ begin
   return jsonb_build_object(
     'status', 'applied',
     'operation_id', p_operation_id,
-    'updated_at', v_updated_at
+    'updated_at', v_updated_at,
+    'merged', v_merged
   );
 end;
-$$;
+$;
 
 revoke all on function public.holoo_apply_state_operation(
   text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
