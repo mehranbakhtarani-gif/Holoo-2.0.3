@@ -1078,6 +1078,7 @@
     let isSyncing = false;
     let syncRevision = 0;
     let syncPending = false;
+    let operationJournalBarrier = Promise.resolve();
     const LOCAL_UPDATED_KEY = STORE_KEY + '_updated_at';
     // صف پایدار همگام‌سازی: تا تأیید Supabase باقی می‌ماند.
     const CLOUD_OUTBOX_KEY = STORE_KEY + '_cloud_outbox_v1';
@@ -1260,6 +1261,7 @@
       setCloudBadge('🔄 در حال بررسی نسخه ابری...', 'text-sky-300');
       let succeeded = false;
       try {
+        await operationJournalBarrier;
         const journalResult = await pushOperationJournalToSupabase();
         if (journalResult.supported) {
           if (journalResult.conflict) return false;
@@ -1823,7 +1825,9 @@
         showToast('ذخیره اطلاعات در مرورگر ناموفق بود؛ فضای ذخیره‌سازی را بررسی کنید.', 'error');
         return false;
       }
-      writeLocalMirror(state, operation).then(() => {
+      const journalWrite = writeLocalMirror(JSON.parse(snapshot), operation);
+      operationJournalBarrier = Promise.all([operationJournalBarrier, journalWrite.catch(() => {})]);
+      journalWrite.then(() => {
         lastSavedState = JSON.parse(snapshot);
         renderDeviceIdentityStatus();
         scheduleCloudSync();
