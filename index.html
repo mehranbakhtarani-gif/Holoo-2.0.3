@@ -1750,6 +1750,15 @@
       SYNC_ENTITY_COLLECTIONS.forEach(entityType => {
         const before = Array.isArray(previous?.[entityType]) ? previous[entityType] : [];
         const after = Array.isArray(current?.[entityType]) ? current[entityType] : [];
+        const hasUnkeyedEntity = before.concat(after).some(x => x && typeof x === 'object' && (x.id === undefined || x.id === null));
+        if (hasUnkeyedEntity) {
+          changes.push({
+            entityType, entityId: '*', changeType: 'replace',
+            entityVersion: DEVICE_ID + ':' + sequence,
+            payload: after
+          });
+          return;
+        }
         const beforeById = new Map(before.filter(x => x && x.id !== undefined && x.id !== null).map(x => [String(x.id), x]));
         const afterById = new Map(after.filter(x => x && x.id !== undefined && x.id !== null).map(x => [String(x.id), x]));
         afterById.forEach((entity, entityId) => {
