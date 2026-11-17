@@ -59,7 +59,7 @@ create or replace function public.record_untracked_holoo_sync_write()
 returns trigger
 language plpgsql
 set search_path = public, pg_temp
-as $
+as $$
 begin
   if current_setting('holoo.operation_rpc', true) = 'on' then
     return new;
@@ -77,7 +77,7 @@ begin
   );
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists holoo_sync_capture_untracked_write on public.holoo_sync;
 create trigger holoo_sync_capture_untracked_write
@@ -336,7 +336,7 @@ begin
     'merged', v_merged
   );
 end;
-$;
+$$;
 
 revoke all on function public.holoo_apply_state_operation(
   text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
