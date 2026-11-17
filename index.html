@@ -547,7 +547,10 @@
               <h2 class="text-base font-black text-slate-900">💱 مدیریت ارز، تعهدات ارزی و تسعیر ارز (USD / CNY / EUR)</h2>
               <p class="text-xs text-slate-500">ثبت پرداخت‌های مرحله‌ای ارزی بابت محموله‌های وارداتی و محاسبه سود/زیان تسعیر تحقق‌یافته و تحقق‌نیافته</p>
             </div>
-            <button onclick="openModal('modal-fx-rates')" class="touch-btn bg-indigo-700 text-white px-4 rounded-xl text-xs font-extrabold">🔄 به‌روزرسانی نرخ روز ارزها</button>
+            <div class="flex gap-2">
+                <button onclick="openModal('modal-new-fx-commitment')" class="touch-btn bg-emerald-700 text-white px-3 rounded-xl text-xs font-extrabold">+ ثبت تعهد ارزی</button>
+                <button onclick="openModal('modal-fx-rates')" class="touch-btn bg-indigo-700 text-white px-3 rounded-xl text-xs font-extrabold">🔄 نرخ روز ارزها</button>
+              </div>
           </div>
           <div id="fx-rates-cards" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
           <div id="fx-commitments-list" class="space-y-3"></div>
@@ -1013,6 +1016,23 @@
         <div><label class="block text-[10px] font-bold">یورو (EUR):</label><input type="number" id="fx-eur" class="touch-btn w-full border rounded-xl px-2 tabular-nums font-bold" /></div>
       </div>
       <button onclick="updateFxRates()" class="touch-btn w-full bg-indigo-700 text-white font-extrabold rounded-xl">✔ اعمال نرخ جدید و محاسبه سود/زیان تسعیر</button>
+    </div>
+  </div>
+
+  <div id="modal-new-fx-commitment" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-3xl w-full max-w-lg p-4 space-y-2.5 text-xs">
+      <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">ثبت تعهد ارزی مستقل</h3><button onclick="closeModal('modal-new-fx-commitment')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <input type="text" id="fxc-counterparty" placeholder="ذی‌نفع / فروشنده خارجی *" class="touch-btn w-full border rounded-xl px-3 font-bold" />
+      <div class="grid grid-cols-2 gap-2">
+        <input type="text" id="fxc-reference" placeholder="شماره قرارداد / پروفرما" class="touch-btn border rounded-xl px-2" />
+        <select id="fxc-currency" class="touch-btn border rounded-xl px-2"><option value="USD">USD دلار</option><option value="CNY">CNY یوان</option><option value="EUR">EUR یورو</option></select>
+        <input type="number" id="fxc-amount" min="0.01" step="any" placeholder="مبلغ تعهد ارزی *" class="touch-btn border rounded-xl px-2 tabular-nums" />
+        <input type="number" id="fxc-rate" min="0.01" step="any" placeholder="نرخ ثبت اولیه ریال *" class="touch-btn border rounded-xl px-2 tabular-nums" />
+        <input type="text" id="fxc-due-date" placeholder="سررسید شمسی (مثلاً 1405/09/30)" class="touch-btn border rounded-xl px-2 tabular-nums" />
+        <input type="text" id="fxc-purpose" placeholder="شرح / نوع تعهد" class="touch-btn border rounded-xl px-2" />
+      </div>
+      <textarea id="fxc-notes" rows="2" placeholder="توضیحات و شرایط پرداخت" class="w-full border rounded-xl p-2"></textarea>
+      <button onclick="saveFxCommitment()" class="touch-btn w-full bg-emerald-700 text-white font-extrabold rounded-xl">✔ ثبت تعهد و ایجاد سابقه ارزی</button>
     </div>
   </div>
 
@@ -1582,6 +1602,7 @@
         invoices: [],
         orders: [],
         imports: [],
+        fxCommitments: [],
         bankAccounts: [],
         checks: [],
         treasuryTxs: [],
@@ -1795,6 +1816,8 @@
 
     if (!Array.isArray(state.accountCatalog) || !state.accountCatalog.length) state.accountCatalog = buildAccountCatalog();
     state.accountCatalog.filter(a => a.level === 'subsidiary').forEach(a => { if (!CHART_ACCOUNTS.some(existing => existing.code === a.code)) CHART_ACCOUNTS.push({ code: a.code, name: a.name }); });
+    if (!Array.isArray(state.fxCommitments)) state.fxCommitments = [];
+    if (!state.fxRates || typeof state.fxRates !== 'object') state.fxRates = { USD: 0, CNY: 0, EUR: 0 };
     if (!Array.isArray(state.parties)) state.parties = [];
     state.parties.forEach(p => {
       if (!p.subledgerId) p.subledgerId = 'PARTY-' + String(p.id || createStableId('party'));
@@ -1814,7 +1837,7 @@
     }
 
     const SYNC_ENTITY_COLLECTIONS = [
-      'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
+      'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports', 'fxCommitments',
       'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
       'employees', 'fixedAssets', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits'
     ];
@@ -3152,7 +3175,85 @@
             ${remFx > 0 ? `<button onclick="payFxStage('${m.id}')" class="touch-btn bg-indigo-700 text-white px-4 rounded-xl font-bold">💸 ثبت پرداخت مرحله‌ای ارزی (۵,۰۰۰ ${m.currency} با نرخ روز)</button>` : '<span class="text-emerald-700 font-bold">تسویه کامل ارزی ✔</span>'}
           </div>
         `;
+      }).join('') + (state.fxCommitments || []).map(c => {
+        const remFx = Math.max(0, Number(c.amount || 0) - Number(c.paidAmount || 0));
+        const curRate = Number(state.fxRates[c.currency] || c.initialRate || 0);
+        const unrealizedDiff = (Number(c.initialRate || 0) - curRate) * remFx;
+        const dueOrdinal = jalaliDateOrdinal(c.dueDate);
+        const todayOrdinal = currentJalaliOrdinal();
+        const overdue = remFx > 0 && dueOrdinal !== null && todayOrdinal !== null && todayOrdinal > dueOrdinal;
+        const bankOptions = (state.bankAccounts || []).map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        return `
+          <div class="bg-white rounded-2xl p-4 border border-indigo-200 space-y-2 text-xs">
+            <div class="flex flex-wrap justify-between gap-2"><strong>تعهد ${c.reference || c.id} — ${c.counterparty}</strong><span class="font-black tabular-nums">${faNum(c.amount)} ${c.currency}</span></div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-2.5 rounded-xl bg-slate-50 border tabular-nums">
+              <div>پرداخت‌شده: <strong>${faNum(c.paidAmount || 0)} ${c.currency}</strong></div>
+              <div>مانده: <strong class="text-rose-700">${faNum(remFx)} ${c.currency}</strong></div>
+              <div>سررسید: <strong>${faNum(c.dueDate || '—')}</strong></div>
+              <div>تسعیر باز: <strong class="${unrealizedDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(unrealizedDiff))}</strong></div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <input type="number" id="fx-pay-amount-${c.id}" min="0.01" max="${remFx}" step="any" value="${remFx}" class="touch-btn border rounded-lg px-2 tabular-nums" aria-label="مبلغ پرداخت ارزی" />
+              <select id="fx-pay-bank-${c.id}" class="touch-btn border rounded-lg px-2"><option value="">بدون تخصیص بانک</option>${bankOptions}</select>
+              <span class="self-center ${overdue ? 'text-rose-700 font-bold' : 'text-slate-500'}">${overdue ? 'سررسید گذشته' : (remFx <= 0 ? 'تسویه کامل' : 'باز')}</span>
+              ${remFx > 0 ? `<button onclick="payFxCommitmentStage('${c.id}')" class="touch-btn bg-indigo-700 text-white rounded-lg font-bold">ثبت پرداخت</button>` : ''}
+            </div>
+          </div>
+        `;
       }).join('');
+    }
+
+    function saveFxCommitment() {
+      const counterparty = document.getElementById('fxc-counterparty').value.trim();
+      const currency = document.getElementById('fxc-currency').value;
+      const amount = Number(document.getElementById('fxc-amount').value || 0);
+      const initialRate = Number(document.getElementById('fxc-rate').value || 0);
+      if (!counterparty || !['USD','CNY','EUR'].includes(currency) || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(initialRate) || initialRate <= 0) {
+        showToast('ذی‌نفع، مبلغ و نرخ اولیه تعهد باید معتبر باشند.', 'error'); return;
+      }
+      const id = createStableId('fxc');
+      const commitment = {
+        id, counterparty, reference: document.getElementById('fxc-reference').value.trim(),
+        currency, amount, initialRate, paidAmount: 0, dueDate: document.getElementById('fxc-due-date').value.trim(),
+        purpose: document.getElementById('fxc-purpose').value.trim(), notes: document.getElementById('fxc-notes').value.trim(),
+        status: 'open', payments: [], createdAt: new Date().toISOString(), createdBy: state.activeRole, deviceId: DEVICE_ID
+      };
+      state.fxCommitments.unshift(commitment);
+      addAudit(`ثبت تعهد ارزی ${id} به مبلغ ${amount} ${currency}`);
+      saveState(); closeModal('modal-new-fx-commitment'); renderFxModule();
+      showToast('تعهد ارزی ثبت شد.');
+    }
+
+    function payFxCommitmentStage(commitmentId) {
+      const c = (state.fxCommitments || []).find(x => x.id === commitmentId);
+      if (!c || c.status === 'paid') return;
+      const amount = Number(document.getElementById(`fx-pay-amount-${c.id}`).value || 0);
+      const remaining = Math.max(0, Number(c.amount || 0) - Number(c.paidAmount || 0));
+      if (!Number.isFinite(amount) || amount <= 0 || amount > remaining + 0.000001) {
+        showToast('مبلغ پرداخت باید مثبت و حداکثر برابر مانده تعهد باشد.', 'error'); return;
+      }
+      const rate = Number(state.fxRates[c.currency] || c.initialRate || 0);
+      if (!Number.isFinite(rate) || rate <= 0) { showToast('نرخ روز ارز معتبر نیست؛ ابتدا نرخ را ثبت کنید.', 'error'); return; }
+      const bankId = document.getElementById(`fx-pay-bank-${c.id}`).value;
+      const bank = (state.bankAccounts || []).find(x => x.id === bankId);
+      const bookRial = Math.round(amount * Number(c.initialRate));
+      const paidRial = Math.round(amount * rate);
+      const diff = bookRial - paidRial;
+      const paymentId = createStableId('fxpay');
+      const lines = [
+        { code: '2105', partyId: null, desc: `تسویه تعهد ارزی ${c.id} — ${amount} ${c.currency}`, debit: bookRial, credit: 0 },
+        { code: '1102', partyId: null, desc: 'پرداخت ارزی به ذی‌نفع خارجی', debit: 0, credit: paidRial }
+      ];
+      if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
+      else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId });
+      c.paidAmount = Number(c.paidAmount || 0) + amount;
+      c.status = c.paidAmount + 0.000001 >= c.amount ? 'paid' : 'partial';
+      c.payments = [...(c.payments || []), { id: paymentId, amount, currency: c.currency, rate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
+      if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
+      addAudit(`پرداخت ${amount} ${c.currency} از تعهد ${c.id}`);
+      saveState(); renderFxModule();
+      showToast('پرداخت تعهد ارزی و سند تسعیر ثبت شد.');
     }
 
     function updateFxRates() {
