@@ -73,7 +73,7 @@ async function test(name, fn) { await fn(); passed.push(name); }
     const result=await push();
     assert.equal(result.applied,1);
     assert.equal(acknowledged.length,1);
-    assert.deepEqual(acknowledged[0].ids,['op-1']);
+    assert.equal(Array.from(acknowledged[0].ids).join(','),'op-1');
     assert.equal(storage.get('holoo_textile_import_erp_v2_cloud_baseline_v1'),'server-2');
     assert.equal(storage.has('holoo_textile_import_erp_v2_cloud_outbox_v1'),false);
   });
