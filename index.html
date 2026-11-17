@@ -1072,6 +1072,9 @@
 
     let syncTimer = null;
     let isSyncing = false;
+    let syncRevision = 0;
+    let syncPending = false;
+    const LOCAL_UPDATED_KEY = STORE_KEY + '_updated_at';
 
     function setCloudBadge(text, colorClass) {
       const el = document.getElementById('cloud-status-badge');
@@ -1086,17 +1089,27 @@
       if (!u || !k) { showToast('لطفاً URL و Key سوپابیس را وارد کنید.', 'error'); return; }
       cloudConfig.url = u;
       cloudConfig.key = k;
-      localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cloudConfig));
+      try { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cloudConfig)); }
+      catch (e) { showToast('ذخیره تنظیمات ابری در مرورگر ناموفق بود.', 'error'); return; }
       closeModal('modal-cloud-settings');
       pushToSupabase(true);
     }
 
     async function pushToSupabase(notify = false) {
-      if (!cloudConfig.url || !cloudConfig.key || isSyncing) return;
+      if (!cloudConfig.url || !cloudConfig.key) {
+        setCloudBadge('⚠️ تنظیمات ابر ناقص است', 'text-amber-300');
+        return false;
+      }
+      if (isSyncing) { syncPending = true; return false; }
       isSyncing = true;
+      syncPending = false;
+      const revisionAtStart = syncRevision;
+      const snapshot = JSON.stringify(state);
+      const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY) || new Date().toISOString();
       setCloudBadge('🔄 در حال ذخیره در Supabase...', 'text-sky-300');
+      let succeeded = false;
       try {
-        const endpoint = `${cloudConfig.url}/rest/v1/${cloudConfig.table}?on_conflict=id`;
+        const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?on_conflict=id`;
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -1107,61 +1120,84 @@
           },
           body: JSON.stringify({
             id: cloudConfig.recordId,
-            data: state,
-            updated_at: new Date().toISOString()
+            data: JSON.parse(snapshot),
+            updated_at: localUpdatedAt
           })
         });
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`HTTP ${res.status}: ${errText}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        succeeded = true;
         const nowStr = new Date().toLocaleTimeString('fa-IR');
-        setCloudBadge(`☁️ متصل به Supabase (${nowStr})`, 'text-emerald-300');
+        setCloudBadge(`☁️ ذخیره ابری موفق (${nowStr})`, 'text-emerald-300');
         const lbl = document.getElementById('sb-last-sync-label');
         if (lbl) lbl.textContent = `آخرین ذخیره موفق در ابر: ساعت ${nowStr}`;
-        if (notify) showToast('اطلاعات با موفقیت در دیتابیس ابری Supabase ذخیره شد ☁️✔');
+        if (notify) showToast('اطلاعات در Supabase ذخیره شد ☁️✔');
       } catch (err) {
         console.warn('Supabase Push Error:', err);
-        setCloudBadge('⚠️ آفلاین / خطای جدول Supabase', 'text-amber-300');
-        if (notify) showToast('خطا در اتصال به جدول holoo_sync (مطابق راهنمای SQL جدول را بسازید)', 'error');
+        setCloudBadge('⚠️ خطای ذخیره ابری؛ نسخه محلی حفظ شد', 'text-amber-300');
+        if (notify) showToast('ذخیره ابری ناموفق بود؛ اطلاعات محلی حفظ شده است.', 'error');
+      } finally {
+        isSyncing = false;
+        if (syncPending || syncRevision !== revisionAtStart) scheduleCloudSync();
+      }
+      return succeeded;
+    }
+
+    async function pullFromSupabase(notify = false) {
+      if (!cloudConfig.url || !cloudConfig.key) {
+        setCloudBadge('⚠️ تنظیمات ابر ناقص است', 'text-amber-300');
+        return false;
+      }
+      if (isSyncing) { showToast('همگام‌سازی دیگری در حال اجراست؛ کمی بعد دوباره تلاش کنید.', 'info'); return false; }
+      isSyncing = true;
+      setCloudBadge('📥 در حال بررسی نسخه ابری...', 'text-sky-300');
+      try {
+        const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
+        const res = await fetch(endpoint, {
+          method: 'GET',
+          headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0 && rows[0].data && rows[0].data.vouchers) {
+          const cloudTime = Date.parse(rows[0].updated_at || '');
+          const localTime = Date.parse(localStorage.getItem(LOCAL_UPDATED_KEY) || '');
+          if (Number.isFinite(localTime) && Number.isFinite(cloudTime) && localTime > cloudTime) {
+            setCloudBadge('⚠️ نسخه محلی جدیدتر است؛ ارسال در صف', 'text-amber-300');
+            isSyncing = false;
+            await pushToSupabase(notify);
+            return false;
+          }
+          const incoming = rows[0].data;
+          if (!incoming || !Array.isArray(incoming.vouchers)) throw new Error('ساختار داده ابری معتبر نیست');
+          try {
+            localStorage.setItem(STORE_KEY, JSON.stringify(incoming));
+            if (rows[0].updated_at) localStorage.setItem(LOCAL_UPDATED_KEY, rows[0].updated_at);
+          } catch (storageError) {
+            throw new Error('ذخیره نسخه دریافتی در مرورگر ناموفق بود: ' + storageError.message);
+          }
+          state = incoming;
+          renderAll();
+          const nowStr = new Date().toLocaleTimeString('fa-IR');
+          setCloudBadge(`☁️ دریافت و همگام‌سازی موفق (${nowStr})`, 'text-emerald-300');
+          const lbl = document.getElementById('sb-last-sync-label');
+          if (lbl) lbl.textContent = `آخرین دریافت موفق از ابر: ساعت ${nowStr}`;
+          if (notify) showToast('نسخه ابری دریافت و ذخیره شد 📥✔');
+          return true;
+        }
+        isSyncing = false;
+        return await pushToSupabase(notify);
+      } catch (err) {
+        console.warn('Supabase Pull Error:', err);
+        setCloudBadge('⚠️ دریافت ناموفق؛ نسخه محلی حفظ شد', 'text-amber-300');
+        if (notify) showToast('دریافت از ابر ناموفق بود؛ اطلاعات محلی دست‌نخورده ماند.', 'error');
+        return false;
       } finally {
         isSyncing = false;
       }
     }
 
-    async function pullFromSupabase(notify = false) {
-      if (!cloudConfig.url || !cloudConfig.key) return;
-      setCloudBadge('📥 در حال دریافت از Supabase...', 'text-sky-300');
-      try {
-        const endpoint = `${cloudConfig.url}/rest/v1/${cloudConfig.table}?id=eq.${cloudConfig.recordId}&select=data,updated_at`;
-        const res = await fetch(endpoint, {
-          method: 'GET',
-          headers: {
-            'apikey': cloudConfig.key,
-            'Authorization': `Bearer ${cloudConfig.key}`
-          }
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0 && rows[0].data && rows[0].data.vouchers) {
-          state = rows[0].data;
-          localStorage.setItem(STORE_KEY, JSON.stringify(state));
-          renderAll();
-          const nowStr = new Date().toLocaleTimeString('fa-IR');
-          setCloudBadge(`☁️ متصل و همگام (${nowStr})`, 'text-emerald-300');
-          if (notify) showToast('آخرین نسخه اطلاعات از دیتابیس ابری Supabase دریافت شد 📥✔');
-        } else {
-          // اگر جدول خالی بود، داده اولیه فعلی را در ابر ذخیره کن
-          await pushToSupabase(notify);
-        }
-      } catch (err) {
-        console.warn('Supabase Pull Error:', err);
-        setCloudBadge('⚠️ حالت آفلاین (ذخیره محلی فعال)', 'text-amber-300');
-        if (notify) showToast('ارتباط با Supabase برقرار نشد؛ برنامه در حالت آفلاین کار می‌کند.', 'info');
-      }
-    }
-
     function scheduleCloudSync() {
+      syncRevision++;
       clearTimeout(syncTimer);
       syncTimer = setTimeout(() => pushToSupabase(false), 1500);
     }
@@ -1339,8 +1375,17 @@
     })();
 
     function saveState() {
-      try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(state));
+        localStorage.setItem(LOCAL_UPDATED_KEY, new Date().toISOString());
+      } catch (e) {
+        console.error('Local save failed:', e);
+        setCloudBadge('⚠️ خطا در ذخیره محلی مرورگر', 'text-rose-300');
+        showToast('ذخیره اطلاعات در مرورگر ناموفق بود؛ فضای ذخیره‌سازی را بررسی کنید.', 'error');
+        return false;
+      }
       scheduleCloudSync();
+      return true;
     }
 
     // =========================================================================
