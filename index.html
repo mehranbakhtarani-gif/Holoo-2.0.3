@@ -1986,12 +1986,16 @@
       return net;
     }
 
-    function postVoucher(desc, lines, date = `${state.fiscalYear}/08/27`) {
-      const d = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
-      const c = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
-      if (Math.round(d) !== Math.round(c) || d === 0) throw new Error('عدم توازن بدهکار و بستانکار');
-      const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => v.id)) + 1 : 1;
-      state.vouchers.unshift({ id, date, locked: false, desc, lines });
+    function postVoucher(desc, lines, date = `${state.fiscalYear}/08/27`, source = null) {
+      const d = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
+      const c = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+      if (!Array.isArray(lines) || lines.length < 2 || !Number.isFinite(d) || !Number.isFinite(c) || Math.round(d) !== Math.round(c) || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: حداقل دو ردیف و توازن کامل لازم است.');
+      if (lines.some(line => !line.code || Number(line.debit || 0) < 0 || Number(line.credit || 0) < 0 || (Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0))) throw new Error('ردیف سند دارای کد حساب یا مبلغ نامعتبر است.');
+      if (source?.type && source?.id) { const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id)); if (existing) return existing.id; }
+      const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
+      state.vouchers.unshift({ id, date, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id) } : {}) });
+      if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
+      if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
       addAudit(`صدور سند حسابداری #${id}: ${desc}`);
       saveState();
       return id;
@@ -2588,7 +2592,7 @@
           lines.push({ code: '6101', partyId: null, desc: `پورسانت فروش #${id}`, debit: commAmount, credit: 0 });
           lines.push({ code: '2101', partyId: null, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
         }
-        postVoucher(`صدور فاکتور فروش #${id}`, lines, date);
+        postVoucher(`صدور فاکتور فروش #${id}`, lines, date, { type: 'invoice', id });
       } else {
         invDraft.lines.forEach(l => {
           const p = state.products.find(x => x.id === l.productId);
@@ -2602,7 +2606,7 @@
           { code: '1105', partyId: null, desc: `ورود کالا #${id}`, debit: sub, credit: 0 },
           { code: '1106', partyId: null, desc: `اعتبار ارزش افزوده #${id}`, debit: vatAmount, credit: 0 },
           { code: '2101', partyId, desc: `بستانکار بابت خرید #${id}`, debit: 0, credit: grandTotal }
-        ], date);
+        ], date, { type: 'invoice', id });
       }
 
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
@@ -3051,18 +3055,24 @@
     }
 
     function updateCheckStatus(id, st) {
-      const c = state.checks.find(x => x.id === id);
+      const c = state.checks.find(x => String(x.id) === String(id));
       if (!c) return;
-      c.status = st;
+      if (!['cleared', 'bounced', 'endorsed', 'voided'].includes(st)) { showToast('وضعیت انتخاب‌شده معتبر نیست.', 'error'); return; }
+      if (!['in_progress', 'overdue'].includes(c.status)) { showToast('این چک قبلاً تعیین‌تکلیف شده است؛ ثبت سند تکراری مجاز نیست.', 'error'); return; }
+      const amount = Number(c.amount || 0);
+      if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ چک معتبر نیست.', 'error'); return; }
       if (st === 'cleared') {
-        state.bankAccounts[0].balance += c.dir === 'receive' ? c.amount : -c.amount;
-        postVoucher(`وصول چک صیادی ${c.sayad}`, c.dir === 'receive'
-          ? [{ code: '1102', partyId: null, desc: 'واریز چک به بانک', debit: c.amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'تسویه اسناد دریافتنی', debit: 0, credit: c.amount }]
-          : [{ code: '2102', partyId: c.partyId, desc: 'تسویه اسناد پرداختنی', debit: c.amount, credit: 0 }, { code: '1102', partyId: null, desc: 'برداشت بانک', debit: 0, credit: c.amount }]
-        );
+        const bank = state.bankAccounts.find(x => x.id === c.bankAccountId) || state.bankAccounts.find(x => x.type !== 'cash');
+        if (!bank) { showToast('حساب بانکی برای ثبت وصول/پرداخت چک تعریف نشده است.', 'error'); return; }
+        const lines = c.dir === 'receive' ? [{ code: '1102', partyId: null, desc: 'واریز چک به بانک', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'تسویه اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'تسویه اسناد پرداختنی', debit: amount, credit: 0 }, { code: '1102', partyId: null, desc: 'برداشت بانک', debit: 0, credit: amount }];
+        postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
+        bank.balance = Number(bank.balance || 0) + (c.dir === 'receive' ? amount : -amount);
       } else if (st === 'bounced') {
-        postVoucher(`برگشت چک صیادی ${c.sayad}`, [{ code: '1103', partyId: c.partyId, desc: 'بدهکار مجدد چک برگشتی', debit: c.amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'حذف از اسناد دریافتنی', debit: 0, credit: c.amount }]);
+        const lines = c.dir === 'receive' ? [{ code: '1103', partyId: c.partyId, desc: 'برگشت چک دریافتی و احیای مطالبات', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'خروج از اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'ابطال اثر چک پرداختی برگشتی', debit: amount, credit: 0 }, { code: '2101', partyId: c.partyId, desc: 'بازگشت بدهی به تأمین‌کننده', debit: 0, credit: amount }];
+        postVoucher('برگشت چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
       }
+      c.status = st; c.statusUpdatedAt = new Date().toISOString();
+      addAudit('تغییر وضعیت چک ' + c.sayad + ' به ' + st);
       saveState(); renderAll(); showToast('وضعیت چک صیادی به‌روزرسانی شد.');
     }
 
