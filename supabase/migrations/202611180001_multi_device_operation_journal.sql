@@ -10,6 +10,8 @@ create table if not exists public.holoo_operation_log (
   device_sequence bigint not null,
   operation_type text not null,
   summary text not null default '',
+  entity_changes jsonb not null default '[]'::jsonb,
+  root_changes jsonb not null default '{}'::jsonb,
   client_created_at timestamptz not null,
   server_applied_at timestamptz not null default clock_timestamp(),
   server_updated_at timestamptz not null
@@ -43,6 +45,8 @@ create or replace function public.holoo_apply_state_operation(
   p_record_id text,
   p_expected_updated_at timestamptz,
   p_data jsonb,
+  p_entity_changes jsonb,
+  p_root_changes jsonb,
   p_operation_id uuid,
   p_actor text,
   p_device_id text,
@@ -65,6 +69,12 @@ begin
   end if;
   if p_data is null or jsonb_typeof(p_data) <> 'object' then
     raise exception 'state payload must be a JSON object';
+  end if;
+  if p_entity_changes is null or jsonb_typeof(p_entity_changes) <> 'array' then
+    raise exception 'entity changes must be a JSON array';
+  end if;
+  if p_root_changes is null or jsonb_typeof(p_root_changes) <> 'object' then
+    raise exception 'root changes must be a JSON object';
   end if;
   if p_operation_id is null then
     raise exception 'operation id is required';
@@ -123,11 +133,13 @@ begin
   -- Snapshot update and audit insert commit or roll back as one transaction.
   insert into public.holoo_operation_log (
     operation_id, company_record_id, actor, device_id, device_sequence,
-    operation_type, summary, client_created_at, server_updated_at
+    operation_type, summary, entity_changes, root_changes, client_created_at, server_updated_at
   ) values (
     p_operation_id, p_record_id, p_actor, p_device_id, p_device_sequence,
     coalesce(nullif(p_operation_type, ''), 'state_snapshot'),
     coalesce(p_summary, ''),
+    p_entity_changes,
+    p_root_changes,
     coalesce(p_client_created_at, clock_timestamp()),
     v_updated_at
   );
@@ -141,15 +153,15 @@ end;
 $$;
 
 revoke all on function public.holoo_apply_state_operation(
-  text, timestamptz, jsonb, uuid, text, text, bigint, text, text, timestamptz
+  text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
 ) from public;
 grant execute on function public.holoo_apply_state_operation(
-  text, timestamptz, jsonb, uuid, text, text, bigint, text, text, timestamptz
+  text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
 ) to anon, authenticated;
 
 comment on table public.holoo_operation_log is
   'Append-only operational audit metadata for multi-device Holoo state commits. Actor/device ids are operational labels, not authentication.';
 comment on function public.holoo_apply_state_operation(
-  text, timestamptz, jsonb, uuid, text, text, bigint, text, text, timestamptz
+  text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
 ) is
   'Atomically compare-and-swaps the company snapshot and appends an idempotent operation audit record. Does not modify RLS policies.';
