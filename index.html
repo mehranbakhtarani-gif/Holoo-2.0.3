@@ -1245,22 +1245,66 @@
           return false;
         }
         setCloudBadge('🔄 در حال ذخیره در Supabase...', 'text-sky-300');
-        const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?on_conflict=id`;
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'apikey': cloudConfig.key,
-            'Authorization': `Bearer ${cloudConfig.key}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'resolution=merge-duplicates'
-          },
-          body: JSON.stringify({
-            id: cloudConfig.recordId,
-            data: JSON.parse(snapshot),
-            updated_at: localUpdatedAt
-          })
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        const payload = {
+          id: cloudConfig.recordId,
+          data: JSON.parse(snapshot),
+          updated_at: localUpdatedAt
+        };
+        let res;
+        if (currentRemote && currentRemote.updated_at) {
+          // Compare-and-swap: فقط اگر timestamp رکورد هنوز همان نسخه خوانده‌شده باشد، به‌روزرسانی کن.
+          const conditionalEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&updated_at=eq.${encodeURIComponent(currentRemote.updated_at)}`;
+          res = await fetch(conditionalEndpoint, {
+            method: 'PATCH',
+            headers: {
+              'apikey': cloudConfig.key,
+              'Authorization': `Bearer ${cloudConfig.key}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({ data: payload.data, updated_at: payload.updated_at })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+          const changedRows = await res.json().catch(() => []);
+          if (!Array.isArray(changedRows) || changedRows.length === 0) {
+            const latestRes = await fetch(baseEndpoint, {
+              method: 'GET',
+              headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
+            });
+            if (!latestRes.ok) throw new Error('بررسی نسخه جدیدتر ابری ناموفق بود.');
+            const latestRows = await latestRes.json();
+            const latest = Array.isArray(latestRows) ? latestRows[0] : null;
+            if (latest && latest.data) {
+              await saveCloudConflict({
+                remoteData: latest.data,
+                remoteUpdatedAt: latest.updated_at || '',
+                localUpdatedAt,
+                detectedAt: new Date().toISOString()
+              });
+            }
+            setCloudBadge('⚠️ تغییر هم‌زمان شناسایی شد؛ انتخاب لازم است', 'text-amber-300');
+            showToast('هم‌زمان دستگاه دیگری اطلاعات را تغییر داد؛ هیچ تغییری بازنویسی نشد.', 'error');
+            return false;
+          }
+        } else {
+          // ساخت اولین رکورد شرکت؛ در حالت معمول تنها یک بار رخ می‌دهد.
+          const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?on_conflict=id`;
+          res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'apikey': cloudConfig.key,
+              'Authorization': `Bearer ${cloudConfig.key}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=ignore-duplicates,return=representation'
+            },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+          const insertedRows = await res.json().catch(() => []);
+          if (!Array.isArray(insertedRows) || insertedRows.length === 0) {
+            throw new Error('رکورد اولیه ساخته نشد؛ احتمالاً دستگاه دیگری هم‌زمان آن را ایجاد کرده است. دوباره دریافت کنید.');
+          }
+        }
         succeeded = true;
         // فقط همان نسخه‌ای را از صف خارج کن که واقعاً ارسال شده؛ اگر حین ارسال تغییری رخ داد، صف حفظ می‌شود.
         if (localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
