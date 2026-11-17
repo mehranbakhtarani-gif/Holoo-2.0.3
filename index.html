@@ -77,6 +77,11 @@
         <!-- Supabase Live Sync Pill & Quick Actions -->
         <div class="flex items-center gap-1 bg-black/30 px-2.5 py-1 rounded-xl border border-white/15 text-[11px]">
           <span id="cloud-status-badge" class="font-extrabold text-amber-300 flex items-center gap-1">⏳ در حال اتصال به Supabase...</span>
+          <span id="cloud-queue-status" class="text-[10px] font-bold text-amber-200 px-1.5 py-0.5 rounded bg-white/10">صف: ۰</span>
+          <span id="cloud-conflict-actions" class="hidden items-center gap-1">
+            <button onclick="resolveCloudConflict('local')" class="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-lg font-bold text-[10px]">حفظ نسخه این دستگاه</button>
+            <button onclick="resolveCloudConflict('remote')" class="bg-rose-600 text-white px-2 py-0.5 rounded-lg font-bold text-[10px]">استفاده از نسخه ابر</button>
+          </span>
           <button onclick="pushToSupabase(true)" title="ارسال و ذخیره فوری در ابر" class="bg-emerald-600/80 hover:bg-emerald-500 text-white px-2 py-0.5 rounded-lg font-bold text-[10px]">☁️ ذخیره</button>
           <button onclick="pullFromSupabase(true)" title="دریافت آخرین داده‌ها از ابر" class="bg-sky-600/80 hover:bg-sky-500 text-white px-2 py-0.5 rounded-lg font-bold text-[10px]">📥 دریافت</button>
           <button onclick="openModal('modal-cloud-settings')" title="تنظیمات اتصال Supabase" class="bg-white/15 hover:bg-white/25 text-white px-1.5 py-0.5 rounded-lg text-[10px]">⚙️</button>
@@ -1077,12 +1082,106 @@
     const LOCAL_UPDATED_KEY = STORE_KEY + '_updated_at';
     // صف پایدار همگام‌سازی: تا تأیید Supabase باقی می‌ماند.
     const CLOUD_OUTBOX_KEY = STORE_KEY + '_cloud_outbox_v1';
+    const CLOUD_BASELINE_KEY = STORE_KEY + '_cloud_baseline_v1';
+    const CLOUD_CONFLICT_DB_KEY = STORE_KEY + '_cloud_conflict_v1';
 
     function setCloudBadge(text, colorClass) {
       const el = document.getElementById('cloud-status-badge');
       if (!el) return;
       el.className = `font-extrabold flex items-center gap-1 ${colorClass}`;
       el.textContent = text;
+    }
+
+    async function renderCloudSyncStatus() {
+      const pending = !!localStorage.getItem(CLOUD_OUTBOX_KEY);
+      const queue = document.getElementById('cloud-queue-status');
+      if (queue) {
+        queue.textContent = pending ? '۱ نسخه در انتظار ارسال' : 'صف: ۰';
+        queue.className = pending
+          ? 'text-[10px] font-bold text-amber-200 px-1.5 py-0.5 rounded bg-amber-900/40'
+          : 'text-[10px] font-bold text-emerald-100 px-1.5 py-0.5 rounded bg-white/10';
+      }
+      const actions = document.getElementById('cloud-conflict-actions');
+      if (actions) {
+        const conflict = await readCloudConflict();
+        actions.classList.toggle('hidden', !conflict);
+        actions.classList.toggle('flex', !!conflict);
+      }
+    }
+
+    async function saveCloudConflict(conflict) {
+      const db = await openLocalDatabase();
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(LOCAL_DB_STORE, 'readwrite');
+          tx.objectStore(LOCAL_DB_STORE).put(conflict, CLOUD_CONFLICT_DB_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('ذخیره نسخه متعارض ناموفق بود.'));
+          tx.onabort = () => reject(tx.error || new Error('ذخیره نسخه متعارض لغو شد.'));
+        });
+      } finally { db.close(); }
+      await renderCloudSyncStatus();
+    }
+
+    async function readCloudConflict() {
+      try {
+        const db = await openLocalDatabase();
+        try {
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_DB_STORE, 'readonly');
+            const req = tx.objectStore(LOCAL_DB_STORE).get(CLOUD_CONFLICT_DB_KEY);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error || new Error('خواندن نسخه متعارض ناموفق بود.'));
+          });
+        } finally { db.close(); }
+      } catch (e) {
+        console.warn('Cloud conflict read failed:', e);
+        return null;
+      }
+    }
+
+    async function clearCloudConflict() {
+      const db = await openLocalDatabase();
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(LOCAL_DB_STORE, 'readwrite');
+          tx.objectStore(LOCAL_DB_STORE).delete(CLOUD_CONFLICT_DB_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('پاک‌کردن نسخه متعارض ناموفق بود.'));
+        });
+      } finally { db.close(); }
+      await renderCloudSyncStatus();
+    }
+
+    async function resolveCloudConflict(choice) {
+      const conflict = await readCloudConflict();
+      if (!conflict || !conflict.remoteData) {
+        showToast('نسخه متعارضی برای تصمیم‌گیری پیدا نشد.', 'error');
+        return;
+      }
+      if (choice === 'remote') {
+        // نسخه محلی پیش از جایگزینی در یک snapshot مستقل نگه داشته می‌شود.
+        createSnapshot('پیش از انتخاب نسخه ابری در تعارض همگام‌سازی', false);
+        state = conflict.remoteData;
+        const stamp = conflict.remoteUpdatedAt || new Date().toISOString();
+        try {
+          localStorage.setItem(STORE_KEY, JSON.stringify(state));
+          localStorage.setItem(LOCAL_UPDATED_KEY, stamp);
+          localStorage.removeItem(CLOUD_OUTBOX_KEY);
+          await writeLocalMirror(state);
+          await clearCloudConflict();
+          renderAll();
+          setCloudBadge('☁️ نسخه ابری انتخاب شد', 'text-emerald-300');
+          showToast('نسخه ابری اعمال شد؛ نسخه قبلی محلی در پشتیبان‌ها باقی مانده است.');
+        } catch (e) {
+          showToast('اعمال نسخه ابری ناموفق بود؛ نسخه محلی حفظ شد.', 'error');
+        }
+        return;
+      }
+      // انتخاب نسخه محلی: baseline روی نسخه مشاهده‌شده تنظیم می‌شود تا ارسال بعدی تعارض قبلی را دوباره تشخیص ندهد.
+      localStorage.setItem(CLOUD_BASELINE_KEY, conflict.remoteUpdatedAt || '');
+      await clearCloudConflict();
+      await pushToSupabase(true);
     }
 
     function saveCloudConfig() {
@@ -1109,9 +1208,43 @@
       const snapshot = JSON.stringify(state);
       const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY) || new Date().toISOString();
       const queuedAtStart = localStorage.getItem(CLOUD_OUTBOX_KEY) || '';
-      setCloudBadge('🔄 در حال ذخیره در Supabase...', 'text-sky-300');
+      setCloudBadge('🔄 در حال بررسی نسخه ابری...', 'text-sky-300');
       let succeeded = false;
       try {
+        // پیش از ارسال، نسخه ابری را با آخرین نسخه‌ای که این دستگاه دیده مقایسه کن.
+        const baseEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
+        const checkRes = await fetch(baseEndpoint, {
+          method: 'GET',
+          headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
+        });
+        if (!checkRes.ok) throw new Error(`HTTP ${checkRes.status} هنگام بررسی تعارض`);
+        const currentRows = await checkRes.json();
+        const currentRemote = Array.isArray(currentRows) ? currentRows[0] : null;
+        const baseline = localStorage.getItem(CLOUD_BASELINE_KEY) || '';
+        if (currentRemote && currentRemote.updated_at && baseline && currentRemote.updated_at !== baseline) {
+          await saveCloudConflict({
+            remoteData: currentRemote.data,
+            remoteUpdatedAt: currentRemote.updated_at,
+            localUpdatedAt,
+            detectedAt: new Date().toISOString()
+          });
+          setCloudBadge('⚠️ تعارض نسخه‌ها؛ انتخاب لازم است', 'text-amber-300');
+          showToast('نسخه ابری پس از آخرین دریافت تغییر کرده؛ هیچ نسخه‌ای بازنویسی نشد.', 'error');
+          return false;
+        }
+        if (currentRemote && currentRemote.updated_at && !baseline) {
+          // بدون baseline قابل اعتماد، ارسال خودکار به رکورد موجود ایمن نیست.
+          await saveCloudConflict({
+            remoteData: currentRemote.data,
+            remoteUpdatedAt: currentRemote.updated_at,
+            localUpdatedAt,
+            detectedAt: new Date().toISOString()
+          });
+          setCloudBadge('⚠️ نیاز به تعیین نسخه مرجع', 'text-amber-300');
+          showToast('برای جلوگیری از بازنویسی، نسخه ابری و محلی را مشخص کنید.', 'error');
+          return false;
+        }
+        setCloudBadge('🔄 در حال ذخیره در Supabase...', 'text-sky-300');
         const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?on_conflict=id`;
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -1133,7 +1266,9 @@
         if (localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
             localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart) {
           localStorage.removeItem(CLOUD_OUTBOX_KEY);
+          localStorage.setItem(CLOUD_BASELINE_KEY, localUpdatedAt);
         }
+        await renderCloudSyncStatus();
         const nowStr = new Date().toLocaleTimeString('fa-IR');
         setCloudBadge(`☁️ ذخیره ابری موفق (${nowStr})`, 'text-emerald-300');
         const lbl = document.getElementById('sb-last-sync-label');
@@ -1186,6 +1321,8 @@
             throw new Error('ذخیره نسخه دریافتی در مرورگر ناموفق بود: ' + storageError.message);
           }
           state = incoming;
+          if (rows[0].updated_at) localStorage.setItem(CLOUD_BASELINE_KEY, rows[0].updated_at);
+          await renderCloudSyncStatus();
           renderAll();
           const nowStr = new Date().toLocaleTimeString('fa-IR');
           setCloudBadge(`☁️ دریافت و همگام‌سازی موفق (${nowStr})`, 'text-emerald-300');
@@ -1377,6 +1514,7 @@
         setCloudBadge('⚠️ ذخیره پشتیبان داخلی ناموفق', 'text-amber-300');
         showToast('نسخه دوم اطلاعات در حافظه داخلی گوشی ذخیره نشد؛ فضای دستگاه را بررسی کنید.', 'error');
       });
+      renderCloudSyncStatus();
       scheduleCloudSync();
       return true;
     }
@@ -3011,6 +3149,7 @@
 
     window.addEventListener('DOMContentLoaded', async () => {
       await prepareLocalStorageMirror();
+      await renderCloudSyncStatus();
       if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
       setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
       navigateTo('dashboard');
