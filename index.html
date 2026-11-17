@@ -1211,6 +1211,7 @@
         state = conflict.remoteData;
         state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
         lastSavedState = JSON.parse(JSON.stringify(state));
+        ensureAuditLogIds(state);
         const stamp = conflict.remoteUpdatedAt || new Date().toISOString();
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
@@ -1437,6 +1438,7 @@
           state = incoming;
           state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
           lastSavedState = JSON.parse(JSON.stringify(state));
+          ensureAuditLogIds(state);
           if (rows[0].updated_at) localStorage.setItem(CLOUD_BASELINE_KEY, rows[0].updated_at);
           await renderCloudSyncStatus();
           renderAll();
@@ -1703,6 +1705,7 @@
         if (!localRaw && mirror && mirror.payload && typeof mirror.payload === 'object') {
           state = mirror.payload;
           lastSavedState = JSON.parse(JSON.stringify(state));
+          ensureAuditLogIds(state);
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
           localStorage.setItem(LOCAL_UPDATED_KEY, mirror.updatedAt || new Date().toISOString());
           setCloudBadge('💾 بازیابی از حافظه داخلی گوشی', 'text-emerald-300');
@@ -1751,6 +1754,21 @@
       'employees', 'fixedAssets', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
     ];
     let lastSavedState = JSON.parse(JSON.stringify(state));
+
+    function ensureAuditLogIds(target) {
+      if (!Array.isArray(target.auditLogs)) target.auditLogs = [];
+      target.auditLogs.forEach((entry, index) => {
+        if (!entry || typeof entry !== 'object' || entry.id !== undefined && entry.id !== null) return;
+        const seed = [entry.time || '', entry.user || '', entry.action || '', index].join('|');
+        let hash = 2166136261;
+        for (let i = 0; i < seed.length; i++) {
+          hash ^= seed.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        entry.id = 'audit_' + (hash >>> 0).toString(16) + '_' + index;
+      });
+    }
+    ensureAuditLogIds(state);
 
     function buildEntityChangeSet(previous, current, sequence) {
       const changes = [];
@@ -1878,6 +1896,7 @@
       const now = new Date();
       const t = `${state.fiscalYear}/08/27 - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       state.auditLogs.unshift({
+        id: createStableId('audit'),
         time: t,
         user: roles[state.activeRole] || 'کاربر',
         actor: state.activeRole || 'mehran',
@@ -3490,6 +3509,7 @@
     window.addEventListener('DOMContentLoaded', async () => {
       await prepareLocalStorageMirror();
       state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
+      ensureAuditLogIds(state);
       const roleSelect = document.getElementById('role-select');
       if (roleSelect) roleSelect.value = state.activeRole;
       await renderCloudSyncStatus();
