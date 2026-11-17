@@ -16,6 +16,14 @@ create table if not exists public.holoo_operation_log (
   server_applied_at timestamptz not null default clock_timestamp(),
   server_updated_at timestamptz not null
 );
+alter table public.holoo_operation_log
+  add column if not exists entity_changes jsonb not null default '[]'::jsonb,
+  add column if not exists root_changes jsonb not null default '{}'::jsonb;
+alter table public.holoo_operation_log
+  drop constraint if exists holoo_operation_log_actor_check;
+alter table public.holoo_operation_log
+  add constraint holoo_operation_log_actor_check
+  check (actor in ('mehran', 'ehsan', 'unknown'));
 
 create index if not exists holoo_operation_log_company_time_idx
   on public.holoo_operation_log (company_record_id, server_applied_at desc);
@@ -31,7 +39,7 @@ insert into public.holoo_operation_log (
   client_created_at, server_updated_at
 )
 select
-  gen_random_uuid(), id, 'unknown', 'migration-baseline', 0,
+  md5('holoo-migration-baseline:' || id)::uuid, id, 'unknown', 'migration-baseline', 0,
   'migration_baseline', 'Opaque checkpoint created during migration',
   '[{"entityType":"*","entityId":"*","changeType":"replace","payload":null}]'::jsonb,
   '{"*":{"changeType":"replace"}}'::jsonb,
@@ -86,6 +94,10 @@ for each row execute function public.record_untracked_holoo_sync_write();
 
 revoke all on table public.holoo_operation_log from public, anon, authenticated;
 grant select, insert on table public.holoo_operation_log to anon, authenticated;
+
+drop function if exists public.holoo_apply_state_operation(
+  text, timestamptz, jsonb, uuid, text, text, bigint, text, text, timestamptz
+);
 
 create or replace function public.holoo_apply_state_operation(
   p_record_id text,
