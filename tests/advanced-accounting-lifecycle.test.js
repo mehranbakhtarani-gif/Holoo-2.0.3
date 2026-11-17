@@ -70,7 +70,7 @@ test('partial sales return restores only returned quantity and posts a linked jo
     products:[{id:'X1',stock:12,kardex:[]}]
   };
   const posted=[]; let saves=0;
-  const submit=load(section('function submitPartialReturn()', 'function renderInvoicesModule()'), 'submitPartialReturn', {
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, document:doc({'partial-ret-inv-id':'2003','pret-qty-0':'3'}),
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
@@ -92,7 +92,7 @@ test('partial return rejects quantity above remaining invoice quantity', () => {
     products:[{id:'X1',stock:1,kardex:[]}]
   };
   const posted=[]; let saves=0;
-  const submit=load(section('function submitPartialReturn()', 'function renderInvoicesModule()'), 'submitPartialReturn', {
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, document:doc({'partial-ret-inv-id':'2004','pret-qty-0':'2'}),
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
