@@ -19,7 +19,8 @@ console.log('PASS: 13 import dashboard and shipment tracking checks');
 
 const vm = require('node:vm');
 const helperStart = html.indexOf('    function ensureProductBatches(');
-const helperEnd = html.indexOf('    // =========================================================================\\n    // 7. MODULE 3:', helperStart);
+const moduleMarker = html.indexOf('7. MODULE 3:', helperStart);
+const helperEnd = html.lastIndexOf('    //', moduleMarker);
 const receiptStart = html.indexOf('    function receiveImportShipment(');
 const receiptEnd = html.indexOf('    function updateImportStatus(', receiptStart);
 const product = { id: 'P-IMPORT', stock: 100, buyPrice: 5, batches: [], kardex: [], lastMoveDays: 8 };
