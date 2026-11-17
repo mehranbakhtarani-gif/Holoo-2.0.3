@@ -89,6 +89,7 @@ function runInvoice(type) {
   let saves = 0;
   const submit = load(extractFunction('submitInvoice', 'function renderInvoicesModule()'), 'submitInvoice', {
     state, invDraft: draft, document: fakeDocument(values),
+    addStockBatch(product, details) { product.batches = product.batches || []; product.batches.push({ ...details, id: 'TEST-BATCH-' + product.batches.length, remainingQty: details.quantity }); },
     postVoucher(...args) { posted.push(args); }, saveState() { saves++; }, renderAll() {}, showToast() {}, faNum: String
   });
   submit();
