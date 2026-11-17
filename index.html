@@ -1370,8 +1370,15 @@
     }
 
     let state = (() => {
-      try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : defaultState(); }
-      catch (e) { return defaultState(); }
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) {
+          // نسخه‌های محلی قدیمی که timestamp ندارند، در اولین اجرا محافظت می‌شوند.
+          if (!localStorage.getItem(LOCAL_UPDATED_KEY)) localStorage.setItem(LOCAL_UPDATED_KEY, new Date().toISOString());
+          return JSON.parse(raw);
+        }
+        return defaultState();
+      } catch (e) { return defaultState(); }
     })();
 
     function saveState() {
