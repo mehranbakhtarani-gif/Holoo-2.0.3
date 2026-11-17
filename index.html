@@ -1801,7 +1801,6 @@
         localStorage.setItem(STORE_KEY, snapshot);
         localStorage.setItem(LOCAL_UPDATED_KEY, updatedAt);
         localStorage.setItem(OPERATION_SEQUENCE_KEY, String(sequence));
-        lastSavedState = JSON.parse(snapshot);
         // صف snapshot قدیمی تا زمان مهاجرت کامل سرور حفظ می‌شود.
         localStorage.setItem(CLOUD_OUTBOX_KEY, updatedAt);
       } catch (e) {
@@ -1811,6 +1810,7 @@
         return false;
       }
       writeLocalMirror(state, operation).then(() => {
+        lastSavedState = JSON.parse(snapshot);
         renderDeviceIdentityStatus();
         scheduleCloudSync();
       }).catch(e => {
