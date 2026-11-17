@@ -87,6 +87,7 @@
           <button onclick="openModal('modal-cloud-settings')" title="تنظیمات اتصال Supabase" class="bg-white/15 hover:bg-white/25 text-white px-1.5 py-0.5 rounded-lg text-[10px]">⚙️</button>
         </div>
 
+        <span id="device-identity-status" title="شناسه پایدار این نصب" class="text-[9px] text-teal-100 bg-black/20 px-2 py-1 rounded-lg">دستگاه: در حال شناسایی</span>
         <select id="role-select" onchange="changeUserRole(this.value)" class="bg-holoo-950 text-amber-300 text-[11px] font-extrabold px-2 py-1.5 rounded-xl border border-amber-400/30 outline-none">
           <option value="mehran">👤 مهران</option>
           <option value="ehsan">👤 احسان</option>
@@ -1082,6 +1083,28 @@
     const CLOUD_OUTBOX_KEY = STORE_KEY + '_cloud_outbox_v1';
     const CLOUD_BASELINE_KEY = STORE_KEY + '_cloud_baseline_v1';
     const CLOUD_CONFLICT_DB_KEY = STORE_KEY + '_cloud_conflict_v1';
+    const DEVICE_ID_KEY = STORE_KEY + '_device_id_v1';
+    const DEVICE_ACTOR_KEY = STORE_KEY + '_device_actor_v1';
+    const OPERATION_SEQUENCE_KEY = STORE_KEY + '_operation_sequence_v1';
+    const OPERATION_DB_STORE = 'operations';
+    const OPERATION_SCHEMA_VERSION = 1;
+
+    function createStableId(prefix = 'op') {
+      if (window.crypto && typeof crypto.randomUUID === 'function') return prefix + '_' + crypto.randomUUID();
+      const bytes = new Uint8Array(16);
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+      else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+      return prefix + '_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    const DEVICE_ID = (() => {
+      let id = localStorage.getItem(DEVICE_ID_KEY);
+      if (!id) {
+        id = createStableId('device');
+        localStorage.setItem(DEVICE_ID_KEY, id);
+      }
+      return id;
+    })();
 
     function setCloudBadge(text, colorClass) {
       const el = document.getElementById('cloud-status-badge');
@@ -1090,7 +1113,31 @@
       el.textContent = text;
     }
 
+    async function renderDeviceIdentityStatus() {
+      const el = document.getElementById('device-identity-status');
+      if (el) {
+        const actor = localStorage.getItem(DEVICE_ACTOR_KEY) || state.activeRole || 'mehran';
+        const actorLabel = actor === 'ehsan' ? 'احسان' : 'مهران';
+        el.textContent = actorLabel + ' · ' + DEVICE_ID.slice(-8);
+        el.title = 'شناسه دستگاه: ' + DEVICE_ID + ' | شناسه اپراتور: ' + actor;
+      }
+      try {
+        const db = await openLocalDatabase();
+        try {
+          const count = await new Promise((resolve, reject) => {
+            const tx = db.transaction(OPERATION_DB_STORE, 'readonly');
+            const req = tx.objectStore(OPERATION_DB_STORE).count();
+            req.onsuccess = () => resolve(req.result || 0);
+            req.onerror = () => reject(req.error);
+          });
+          const queue = document.getElementById('cloud-queue-status');
+          if (queue) queue.title = 'دفتر عملیات محلی: ' + count + ' رکورد ثبت‌شده';
+        } finally { db.close(); }
+      } catch (e) { console.warn('Operation journal count unavailable:', e); }
+    }
+
     async function renderCloudSyncStatus() {
+      await renderDeviceIdentityStatus();
       const pending = !!localStorage.getItem(CLOUD_OUTBOX_KEY);
       const queue = document.getElementById('cloud-queue-status');
       if (queue) {
@@ -1470,23 +1517,58 @@
     function openLocalDatabase() {
       return new Promise((resolve, reject) => {
         if (!('indexedDB' in window)) return reject(new Error('IndexedDB در این مرورگر در دسترس نیست.'));
-        const request = indexedDB.open(LOCAL_DB_NAME, 1);
+        const request = indexedDB.open(LOCAL_DB_NAME, 2);
         request.onupgradeneeded = () => {
           if (!request.result.objectStoreNames.contains(LOCAL_DB_STORE)) request.result.createObjectStore(LOCAL_DB_STORE);
+          if (!request.result.objectStoreNames.contains(OPERATION_DB_STORE)) {
+            request.result.createObjectStore(OPERATION_DB_STORE, { keyPath: 'operationId' });
+          }
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error || new Error('باز کردن پایگاه محلی ناموفق بود.'));
       });
     }
-    async function writeLocalMirror(snapshot) {
+    async function writeLocalMirror(snapshot, operation = null) {
       const db = await openLocalDatabase();
       try {
         await new Promise((resolve, reject) => {
-          const tx = db.transaction(LOCAL_DB_STORE, 'readwrite');
-          tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: new Date().toISOString() }, STORE_KEY);
+          const tx = db.transaction([LOCAL_DB_STORE, OPERATION_DB_STORE], 'readwrite');
+          tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: operation?.createdAt || new Date().toISOString() }, STORE_KEY);
+          if (operation) tx.objectStore(OPERATION_DB_STORE).add(operation);
           tx.oncomplete = resolve;
-          tx.onerror = () => reject(tx.error || new Error('ذخیره نسخه محلی ناموفق بود.'));
-          tx.onabort = () => reject(tx.error || new Error('ذخیره نسخه محلی لغو شد.'));
+          tx.onerror = () => reject(tx.error || new Error('ذخیره نسخه محلی/دفتر عملیات ناموفق بود.'));
+          tx.onabort = () => reject(tx.error || new Error('ذخیره نسخه محلی/دفتر عملیات لغو شد.'));
+        });
+      } finally { db.close(); }
+    }
+
+    async function listPendingOperations(limit = 100) {
+      const db = await openLocalDatabase();
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(OPERATION_DB_STORE, 'readonly');
+          const req = tx.objectStore(OPERATION_DB_STORE).getAll();
+          req.onsuccess = () => resolve((req.result || []).filter(op => !op.acknowledgedAt).sort((a,b) => a.sequence - b.sequence).slice(0, limit));
+          req.onerror = () => reject(req.error || new Error('خواندن دفتر عملیات ناموفق بود.'));
+        });
+      } finally { db.close(); }
+    }
+
+    async function acknowledgeOperations(operationIds, serverTimestamp = new Date().toISOString()) {
+      if (!Array.isArray(operationIds) || !operationIds.length) return;
+      const db = await openLocalDatabase();
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(OPERATION_DB_STORE, 'readwrite');
+          const store = tx.objectStore(OPERATION_DB_STORE);
+          operationIds.forEach(id => {
+            const req = store.get(id);
+            req.onsuccess = () => {
+              if (req.result) store.put({ ...req.result, acknowledgedAt: serverTimestamp });
+            };
+          });
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('ثبت تأیید عملیات ناموفق بود.'));
         });
       } finally { db.close(); }
     }
@@ -1541,16 +1623,38 @@
     // سازگاری با نقش‌های نسخه‌های قبلی؛ مدیرعامل به مهران و سایر نقش‌ها به احسان منتقل می‌شوند.
     const LEGACY_ROLE_MAP = { ceo: 'mehran', accountant: 'ehsan', importer: 'ehsan', warehouse: 'ehsan' };
     const VALID_USER_ROLES = ['mehran', 'ehsan'];
+    if (!localStorage.getItem(DEVICE_ACTOR_KEY)) {
+      localStorage.setItem(DEVICE_ACTOR_KEY, VALID_USER_ROLES.includes(state.activeRole) ? state.activeRole : 'mehran');
+    }
+    state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
     if (!VALID_USER_ROLES.includes(state.activeRole)) {
       state.activeRole = LEGACY_ROLE_MAP[state.activeRole] || 'mehran';
     }
 
     function saveState() {
+      const updatedAt = new Date().toISOString();
+      const operationId = createStableId('op');
+      const sequence = Number(localStorage.getItem(OPERATION_SEQUENCE_KEY) || 0) + 1;
+      const snapshot = JSON.stringify(state);
+      const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
+      const operation = {
+        operationId,
+        sequence,
+        schemaVersion: OPERATION_SCHEMA_VERSION,
+        companyRecordId: cloudConfig.recordId,
+        actor: localStorage.getItem(DEVICE_ACTOR_KEY) || state.activeRole || 'mehran',
+        deviceId: DEVICE_ID,
+        createdAt: updatedAt,
+        operationType: 'state_snapshot',
+        summary: lastAudit?.action || 'به‌روزرسانی اطلاعات شرکت',
+        payload: JSON.parse(snapshot),
+        acknowledgedAt: null
+      };
       try {
-        localStorage.setItem(STORE_KEY, JSON.stringify(state));
-        const updatedAt = new Date().toISOString();
+        localStorage.setItem(STORE_KEY, snapshot);
         localStorage.setItem(LOCAL_UPDATED_KEY, updatedAt);
-        // نشانگر کوچک و پایدار؛ خود داده در STORE_KEY و نسخه پشتیبان IndexedDB نگهداری می‌شود.
+        localStorage.setItem(OPERATION_SEQUENCE_KEY, String(sequence));
+        // صف snapshot قدیمی تا زمان مهاجرت کامل سرور حفظ می‌شود.
         localStorage.setItem(CLOUD_OUTBOX_KEY, updatedAt);
       } catch (e) {
         console.error('Local save failed:', e);
@@ -1558,7 +1662,7 @@
         showToast('ذخیره اطلاعات در مرورگر ناموفق بود؛ فضای ذخیره‌سازی را بررسی کنید.', 'error');
         return false;
       }
-      writeLocalMirror(state).catch(e => {
+      writeLocalMirror(state, operation).then(() => renderDeviceIdentityStatus()).catch(e => {
         console.error('IndexedDB mirror failed:', e);
         setCloudBadge('⚠️ ذخیره پشتیبان داخلی ناموفق', 'text-amber-300');
         showToast('نسخه دوم اطلاعات در حافظه داخلی گوشی ذخیره نشد؛ فضای دستگاه را بررسی کنید.', 'error');
@@ -1594,15 +1698,23 @@
         return;
       }
       state.activeRole = r;
+      localStorage.setItem(DEVICE_ACTOR_KEY, r);
       addAudit(`تغییر کاربر فعال به ${USER_ROLE_LABELS[r]}`);
       saveState();
+      renderDeviceIdentityStatus();
     }
     const USER_ROLE_LABELS = { mehran: 'مهران', ehsan: 'احسان' };
     function addAudit(action) {
       const roles = USER_ROLE_LABELS;
       const now = new Date();
       const t = `${state.fiscalYear}/08/27 - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-      state.auditLogs.unshift({ time: t, user: roles[state.activeRole] || 'کاربر', action });
+      state.auditLogs.unshift({
+        time: t,
+        user: roles[state.activeRole] || 'کاربر',
+        actor: state.activeRole || 'mehran',
+        deviceId: DEVICE_ID,
+        action
+      });
       if (state.auditLogs.length > 50) state.auditLogs.length = 50;
     }
     function showToast(msg, type = 'success') {
