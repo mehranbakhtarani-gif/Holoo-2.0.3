@@ -1718,12 +1718,54 @@
       const p = state.products.find(x => x.id === document.getElementById('tr-prod').value);
       const destWh = document.getElementById('tr-dest-wh').value;
       const qty = Number(document.getElementById('tr-qty').value || 0);
-      if (!p || qty <= 0 || qty > p.stock) { showToast('مقدار انتقال نامعتبر است.', 'error'); return; }
-      p.warehouseId = destWh;
-      p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `حواله انتقال به ${getWhName(destWh)}`, inQty: 0, outQty: 0, bal: p.stock, price: p.buyPrice });
-      addAudit(`انتقال ${qty} کیلوگرم ${p.name} به ${getWhName(destWh)}`);
+      const sourceWh = p?.warehouseId;
+      if (!p || !Number.isFinite(qty) || qty <= 0 || qty > Number(p.stock || 0)) {
+        showToast('مقدار انتقال نامعتبر است.', 'error'); return;
+      }
+      if (!destWh || !state.warehouses.some(w => w.id === destWh)) {
+        showToast('انبار مقصد معتبر نیست.', 'error'); return;
+      }
+      if (destWh === sourceWh) {
+        showToast('انبار مبدأ و مقصد نمی‌توانند یکسان باشند.', 'error'); return;
+      }
+
+      const date = `${state.fiscalYear}/08/27`;
+      const rootProductId = p.baseProductId || p.id;
+      const destId = `${rootProductId}::${destWh}`;
+      let destination = state.products.find(x =>
+        x.warehouseId === destWh && (x.baseProductId || x.id) === rootProductId
+      );
+
+      // کاهش موجودی مبدأ؛ موجودی کل شرکت تغییر نمی‌کند.
+      p.stock = Number(p.stock || 0) - qty;
+      p.kardex = p.kardex || [];
+      p.kardex.push({
+        date, doc: `حواله خروج انتقال به ${getWhName(destWh)}`,
+        inQty: 0, outQty: qty, bal: p.stock, price: p.buyPrice
+      });
+
+      // در صورت نبود رکورد این کالا در مقصد، رکورد انبار مستقل بساز.
+      if (!destination) {
+        destination = {
+          ...p,
+          id: destId,
+          baseProductId: rootProductId,
+          warehouseId: destWh,
+          stock: 0,
+          kardex: []
+        };
+        state.products.push(destination);
+      }
+      destination.stock = Number(destination.stock || 0) + qty;
+      destination.kardex = destination.kardex || [];
+      destination.kardex.push({
+        date, doc: `حواله ورود انتقال از ${getWhName(sourceWh)}`,
+        inQty: qty, outQty: 0, bal: destination.stock, price: p.buyPrice
+      });
+
+      addAudit(`انتقال ${qty} کیلوگرم ${p.name} از ${getWhName(sourceWh)} به ${getWhName(destWh)}`);
       saveState(); closeModal('modal-wh-transfer'); renderAll();
-      showToast('حواله انتقال بین انبارها ثبت شد 🔄');
+      showToast('انتقال ثبت شد؛ موجودی هر دو انبار و کاردکس به‌روزرسانی شد ✔');
     }
 
     function submitPhysicalStocktaking() {
