@@ -2272,7 +2272,7 @@
         kardex: stock > 0 ? [{ date: `${state.fiscalYear}/08/27`, doc: 'موجودی اولیه', inQty: stock, outQty: 0, bal: stock, price: buyPrice }] : []
       };
       state.products.unshift(newProd);
-      if (stock > 0) { newProd.stock = 0; addStockBatch(newProd, { lot: newProd.lot || ('OPEN-' + newProd.id), quantity: stock, unitCost: buyPrice, receivedDate: '0000/00/00', sourceType: 'opening', sourceRef: newProd.id }); newProd.stock = stock; }
+      if (stock > 0) newProd.batches.push({ id: 'OPEN-' + newProd.id, lot: newProd.lot || ('OPEN-' + newProd.id), receivedDate: '0000/00/00', productionDate: '', expiryDate: '', quantity: stock, remainingQty: stock, unitCost: buyPrice, sourceType: 'opening', sourceRef: newProd.id, warehouseId: newProd.warehouseId });
       const hasOpeningStockVoucher = stock > 0 && buyPrice > 0;
       if (hasOpeningStockVoucher) {
         // postVoucher خودش saveState را اجرا می‌کند؛ ذخیره دوم باعث لاگ snapshot تکراری می‌شد.
@@ -2336,7 +2336,7 @@
         throw new Error('مقدار یا بهای بچ موجودی معتبر نیست.');
       }
       const batch = {
-        id: details.id || createStableId('batch'),
+        id: details.id || (typeof createStableId === 'function' ? createStableId('batch') : ('BATCH-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8))),
         lot: String(details.lot || ('LOT-' + Date.now())),
         receivedDate: details.receivedDate || new Date().toISOString().slice(0, 10),
         productionDate: details.productionDate || '',
