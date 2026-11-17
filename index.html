@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="هلو جامع شرکتی و نساجی" />
   <title>نرم‌افزار حسابداری هلو | نسخه جامع شرکتی، واردات و نساجی (Supabase Cloud)</title>
 
-  <link rel="manifest" href='data:application/manifest+json,{"name":"نرم‌افزار حسابداری هلو - نسخه جامع شرکتی و نساجی","short_name":"هلو نساجی و واردات","start_url":".","display":"standalone","background_color":"#f1f5f9","theme_color":"#0f766e","dir":"rtl","lang":"fa"}' />
+  <link rel="manifest" href="./manifest.json" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -3004,6 +3004,18 @@
       // همگام‌سازی خودکار اولیه با دیتابیس Supabase شما
       await pullFromSupabase(false);
     });
+    // ثبت Service Worker برای اجرای برنامه در حالت آفلاین (فقط روی HTTPS یا localhost)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => {
+            console.info('Holoo offline worker registered:', reg.scope);
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          })
+          .catch(err => console.error('ثبت حالت آفلاین ناموفق بود:', err));
+      });
+    }
+
   </script>
 </body>
 </html>
