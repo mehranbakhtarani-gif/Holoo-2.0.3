@@ -2389,7 +2389,7 @@
 
     function restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
       if (!product || Number(quantityToRestore || 0) <= 0) return [];
-      const batches = ensureProductBatches(product);
+      const batches = Array.isArray(product.batches) ? product.batches : (product.batches = []);
       const restored = [];
       if (Array.isArray(allocations) && allocations.length) {
         let remaining = Number(quantityToRestore);
@@ -2408,8 +2408,9 @@
         if (remaining > 0.000001) throw new Error('مقدار برگشتی از تخصیص بچ فاکتور بیشتر است.');
         return restored;
       }
-      addStockBatch(product, { quantity: quantityToRestore, unitCost: fallbackCost, sourceType: 'sales_return', sourceRef });
-      return [{ batchId: product.batches.at(-1).id, quantity: quantityToRestore }];
+      const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: `${state.fiscalYear}/08/27`, productionDate: '', expiryDate: '', quantity: quantityToRestore, remainingQty: quantityToRestore, unitCost: Number(fallbackCost || 0), sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
+      batches.push(fallbackBatch);
+      return [{ batchId: fallbackBatch.id, quantity: quantityToRestore }];
     }
 
     // =========================================================================
