@@ -7,10 +7,13 @@ for (const [i, m] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   if (m[1].trim()) new vm.Script(m[1], { filename: `index.html:inline-${i}` });
 }
 function functionSource(name) {
-  const start = html.indexOf(`function ${name}(`);
+  let start = html.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
+  if (html.slice(Math.max(0, start - 6), start) === 'async ') start -= 6;
   const next = html.indexOf('\n    function ', start + 10);
-  return html.slice(start, next > 0 ? next : html.length).trim();
+  const nextAsync = html.indexOf('\n    async function ', start + 10);
+  const ends = [next, nextAsync].filter(x => x > 0);
+  return html.slice(start, ends.length ? Math.min(...ends) : html.length).trim();
 }
 function load(name, context) {
   const sandbox = { ...context };
