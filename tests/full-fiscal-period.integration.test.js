@@ -40,7 +40,7 @@ const state = {
     {id:7001,type:'purchase',status:'active',partyId:'S-001',grandTotal:3000000,paidAmount:1200000,items:[{productId:'FAB-01',kg:100}]},
     {id:7002,type:'sale',status:'active',partyId:'C-001',grandTotal:5000000,paidAmount:3000000,items:[{productId:'FAB-01',kg:60}]}
   ],
-  products:[{id:'FAB-01',name:'پارچه آزمایشی',stock:40}],
+  products:[{id:'FAB-01',name:'پارچه آزمایشی',stock:0}],
   treasuryTxs:[], auditLogs:[]
 };
 let saves=0;
@@ -72,6 +72,7 @@ const purchaseVoucher=postEntry('فاکتور خرید پارچه #7001',[
   {code:'1105',partyId:null,desc:'افزایش موجودی پارچه',debit:3000000,credit:0},
   {code:'2101',partyId:'S-001',desc:'بدهی تأمین‌کننده',debit:0,credit:3000000}
 ],{type:'invoice',id:7001,event:'posted'});
+state.products[0].stock += 100;
 state.invoices[0].voucherId=purchaseVoucher;
 
 // Pay part of the supplier balance from cash.
@@ -86,6 +87,7 @@ const salesVoucher=postEntry('فاکتور فروش پارچه #7002',[
   {code:'1103',partyId:'C-001',desc:'مطالبات مشتری',debit:5000000,credit:0},
   {code:'4101',partyId:null,desc:'فروش پارچه',debit:0,credit:5000000}
 ],{type:'invoice',id:7002,event:'posted'});
+state.products[0].stock -= 60;
 state.invoices[1].voucherId=salesVoucher;
 postEntry('ثبت بهای تمام‌شده فروش',[
   {code:'5101',desc:'بهای تمام‌شده 60 کیلو پارچه',debit:2000000,credit:0},
