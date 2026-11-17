@@ -5,9 +5,14 @@ assert.match(html, /id="imports-dashboard-summary"/);
 assert.match(html, /function updateImportStatus\(/);
 assert.match(html, /statusHistory: \[\{ status:/);
 assert.match(html, /function renderImportsModule\(/);
+assert.match(html, /function receiveImportShipment\(/);
+assert.match(html, /postedToWh: false/);
+assert.match(html, /nextStatus === 'received'\) receiveImportShipment\(shipment\)/);
+assert.match(html, /warehouse_receipt/);
+
 assert.match(html, /تأخیر در ETA/);
 assert.match(html, /id="imp-eta"/);
 assert.match(html, /id="imp-bl"/);
 assert.match(html, /id="imp-port"/);
 assert.match(html, /Object\.values\(expenses\)\.some\(v => !Number\.isFinite\(v\) \|\| v < 0\)/);
-console.log('PASS: 9 import dashboard and shipment tracking checks');
+console.log('PASS: 13 import dashboard and shipment tracking checks');
