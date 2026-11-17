@@ -3080,25 +3080,22 @@
       state.imports.unshift({
         id: impId, date: `${state.fiscalYear}/08/27`, supplier, origin: document.getElementById('imp-origin').value,
         containerNo: document.getElementById('imp-container').value, productId: prodId, weightKg, cartons,
-        currency, fxTotal, fxRate, fxPaid: 0, expenses, landedCostPerKg, totalLandedRial, postedToWh: true,
+        currency, fxTotal, fxRate, fxPaid: 0, expenses, landedCostPerKg, totalLandedRial, postedToWh: false,
+        lot: document.getElementById('imp-lot').value.trim() || impId,
+        productionDate: document.getElementById('imp-production-date').value.trim(),
+        expiryDate: document.getElementById('imp-expiry-date').value.trim(),
         status: document.getElementById('imp-status').value, eta: document.getElementById('imp-eta').value.trim(),
         billOfLading: document.getElementById('imp-bl').value.trim(), destinationPort: document.getElementById('imp-port').value.trim(),
         statusUpdatedAt: new Date().toISOString(), statusHistory: [{ status: document.getElementById('imp-status').value, at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }]
       });
 
-      const p = state.products.find(x => x.id === prodId);
-      if (p) {
-        if (state.costingMethod === 'AVG') p.buyPrice = Math.round(((p.stock * p.buyPrice) + totalLandedRial) / (p.stock + weightKg));
-        addStockBatch(p, { lot: document.getElementById('imp-lot').value.trim() || impId, productionDate: document.getElementById('imp-production-date').value.trim(), expiryDate: document.getElementById('imp-expiry-date').value.trim(), quantity: weightKg, unitCost: landedCostPerKg, receivedDate: `${state.fiscalYear}/08/27`, sourceType: 'import', sourceRef: impId, supplierId: null, warehouseId: p.warehouseId });
-        p.stock += weightKg; p.lastMoveDays = 0;
-        p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `ترخیص محموله ${impId}`, inQty: weightKg, outQty: 0, bal: p.stock, price: landedCostPerKg, batchRef: impId });
-      }
-
+      const shipment = state.imports[0];
       postVoucher(`ثبت محموله وارداتی ${impId} - ${supplier}`, [
         { code: '1105', partyId: null, desc: `بهای تمام‌شده محموله ${impId}`, debit: totalLandedRial, credit: 0 },
         { code: '2105', partyId: null, desc: `تعهد ارزی (${faNum(fxTotal)} ${currency})`, debit: 0, credit: purchaseRial },
         { code: '1102', partyId: null, desc: `هزینه‌های گمرک، حمل و ترخیص ${impId}`, debit: 0, credit: sumExpRial }
-      ]);
+      ], getTodayJalaliDate(), { type: 'import', id: impId, event: 'registration' });
+      if (shipment.status === 'received') receiveImportShipment(shipment);
 
       saveState(); closeModal('modal-new-import'); renderAll();
       showToast(`محموله وارداتی ثبت شد! بهای تمام‌شده هر کیلوگرم: ${money(landedCostPerKg)} 🚢`);
@@ -3109,18 +3106,58 @@
       arrived: 'رسیده به بندر', customs: 'در گمرک', cleared: 'ترخیص‌شده',
       received: 'تحویل انبار', cancelled: 'لغوشده'
     };
+    function receiveImportShipment(shipment) {
+      if (!shipment || shipment.postedToWh) return false;
+      const product = state.products.find(p => p.id === shipment.productId);
+      if (!product) throw new Error('کالای محموله برای تحویل به انبار پیدا نشد.');
+      const previous = { stock: Number(product.stock || 0), buyPrice: Number(product.buyPrice || 0), lastMoveDays: product.lastMoveDays, kardexLength: (product.kardex || []).length };
+      const receivedDate = getTodayJalaliDate();
+      addStockBatch(product, { lot: shipment.lot || shipment.id, productionDate: shipment.productionDate, expiryDate: shipment.expiryDate, quantity: shipment.weightKg, unitCost: shipment.landedCostPerKg, receivedDate, sourceType: 'import', sourceRef: shipment.id, supplierId: null, warehouseId: product.warehouseId });
+      if (state.costingMethod === 'AVG') product.buyPrice = Math.round(((previous.stock * previous.buyPrice) + shipment.totalLandedRial) / (previous.stock + shipment.weightKg));
+      product.stock = previous.stock + Number(shipment.weightKg);
+      product.lastMoveDays = 0;
+      product.kardex = product.kardex || [];
+      product.kardex.push({ date: receivedDate, doc: `تحویل محموله ${shipment.id} به انبار`, inQty: shipment.weightKg, outQty: 0, bal: product.stock, price: shipment.landedCostPerKg, batchRef: shipment.id });
+      shipment.postedToWh = true;
+      shipment.receivedAt = receivedDate;
+      try {
+        postVoucher(`تحویل محموله وارداتی ${shipment.id} به انبار`, [
+          { code: '1103', partyId: null, desc: `موجودی انبار از محموله ${shipment.id}`, debit: shipment.totalLandedRial, credit: 0 },
+          { code: '1105', partyId: null, desc: `خروج از موجودی در راه محموله ${shipment.id}`, debit: 0, credit: shipment.totalLandedRial }
+        ], receivedDate, { type: 'import', id: shipment.id, event: 'warehouse_receipt' });
+      } catch (error) {
+        product.stock = previous.stock;
+        product.buyPrice = previous.buyPrice;
+        product.lastMoveDays = previous.lastMoveDays;
+        product.kardex.length = previous.kardexLength;
+        product.batches = (product.batches || []).filter(batch => batch.sourceRef !== shipment.id);
+        shipment.postedToWh = false;
+        shipment.receivedAt = null;
+        throw error;
+      }
+      addAudit(`تحویل محموله ${shipment.id} به انبار و ثبت بچ موجودی`, { mode: 'automatic', operationDate: receivedDate, sourceType: 'import' });
+      return true;
+    }
+
     function updateImportStatus(importId, nextStatus) {
       const shipment = state.imports.find(x => x.id === importId);
       if (!shipment || !Object.prototype.hasOwnProperty.call(IMPORT_STATUS_LABELS, nextStatus)) return;
       if (shipment.status === 'received' || shipment.status === 'cancelled') {
         showToast('وضعیت نهایی محموله قابل تغییر نیست.', 'error'); renderImportsModule(); return;
       }
+      const previousStatus = shipment.status;
       shipment.status = nextStatus;
       shipment.statusUpdatedAt = new Date().toISOString();
+      try {
+        if (nextStatus === 'received') receiveImportShipment(shipment);
+      } catch (error) {
+        shipment.status = previousStatus;
+        showToast(error.message || 'ثبت تحویل انبار ناموفق بود.', 'error'); renderImportsModule(); return;
+      }
       shipment.statusHistory = [...(shipment.statusHistory || []), { status: nextStatus, at: shipment.statusUpdatedAt, actor: state.activeRole, deviceId: DEVICE_ID }];
-      addAudit(`تغییر وضعیت محموله ${importId} به ${IMPORT_STATUS_LABELS[nextStatus]}`);
+      addAudit(`تغییر وضعیت محموله ${importId} به ${IMPORT_STATUS_LABELS[nextStatus]}`, { mode: 'manual', sourceType: 'import' });
       saveState(); renderImportsModule();
-      showToast('مرحله محموله وارداتی به‌روزرسانی شد.');
+      showToast(nextStatus === 'received' ? 'محموله تحویل انبار شد و موجودی ثبت شد.' : 'مرحله محموله وارداتی به‌روزرسانی شد.');
     }
 
     function renderImportsModule() {
@@ -3150,6 +3187,7 @@
               <div><span class="block text-[10px] text-slate-500">وضعیت عملیات</span><strong>${IMPORT_STATUS_LABELS[m.status || 'registered'] || 'ثبت اولیه'}</strong></div>
               <div><span class="block text-[10px] text-slate-500">ETA / بندر</span><strong>${faNum(m.eta || '—')} • ${m.destinationPort || '—'}</strong></div>
               <div><span class="block text-[10px] text-slate-500">بارنامه</span><strong>${m.billOfLading || '—'}</strong></div>
+              <div><span class="block text-[10px] text-slate-500">وضعیت انبار</span><strong class="${m.postedToWh ? 'text-emerald-700' : 'text-amber-700'}">${m.postedToWh ? 'موجودی ثبت شده' : 'در انتظار تحویل انبار'}</strong></div>
               <select aria-label="تغییر مرحله محموله" onchange="updateImportStatus('${m.id}', this.value)" class="touch-btn border rounded-lg px-2 bg-slate-50">
                 ${Object.entries(IMPORT_STATUS_LABELS).map(([value,label]) => `<option value="${value}" ${(m.status || 'registered') === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
