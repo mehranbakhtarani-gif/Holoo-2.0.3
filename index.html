@@ -1991,9 +1991,10 @@
       const c = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
       if (!Array.isArray(lines) || lines.length < 2 || !Number.isFinite(d) || !Number.isFinite(c) || Math.round(d) !== Math.round(c) || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: حداقل دو ردیف و توازن کامل لازم است.');
       if (lines.some(line => !line.code || Number(line.debit || 0) < 0 || Number(line.credit || 0) < 0 || (Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0))) throw new Error('ردیف سند دارای کد حساب یا مبلغ نامعتبر است.');
-      if (source?.type && source?.id) { const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id)); if (existing) return existing.id; }
+      if (source?.type && source?.id) { const sourceEvent = source.event || 'default';
+        const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
-      state.vouchers.unshift({ id, date, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id) } : {}) });
+      state.vouchers.unshift({ id, date, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
       if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
       addAudit(`صدور سند حسابداری #${id}: ${desc}`);
@@ -2980,40 +2981,35 @@
       const amount = Number(document.getElementById('tr-amount').value || 0);
       const allocInvId = Number(document.getElementById('tr-alloc-inv').value || 0);
       const desc = document.getElementById('tr-desc').value.trim();
-      if (amount <= 0) { showToast('مبلغ معتبر وارد کنید.', 'error'); return; }
-
+      const party = state.parties.find(p => String(p.id) === String(partyId));
+      if (!party) { showToast('طرف حساب معتبر انتخاب کنید.', 'error'); return; }
+      if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ معتبر وارد کنید.', 'error'); return; }
+      let allocatedInvoice = null;
       if (allocInvId) {
-        const inv = state.invoices.find(i => i.id === allocInvId);
-        if (inv) inv.paidAmount = Math.min(inv.grandTotal, (inv.paidAmount || 0) + amount);
+        allocatedInvoice = state.invoices.find(i => Number(i.id) === allocInvId);
+        if (!allocatedInvoice || allocatedInvoice.status !== 'active' || String(allocatedInvoice.partyId) !== String(partyId)) { showToast('فاکتور انتخاب‌شده فعال نیست یا متعلق به این طرف حساب نیست.', 'error'); return; }
+        const remaining = Number(allocatedInvoice.grandTotal || 0) - Number(allocatedInvoice.paidAmount || 0);
+        if (amount > remaining) { showToast('مبلغ دریافت/پرداخت از مانده فاکتور بیشتر است.', 'error'); return; }
       }
-
+      const txId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       if (method === 'check') {
-        const sayad = document.getElementById('tr-sayad').value.trim() || '1234567890123456';
-        state.checks.unshift({
-          id: 'CHK-' + Date.now(), dir, sayad, checkNo: sayad.slice(-6),
-          issueDate: `${state.fiscalYear}/08/27`, dueDate: document.getElementById('tr-chk-due').value,
-          amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress'
-        });
-        postVoucher(`ثبت چک صیادی ${sayad}`, dir === 'receive'
-          ? [{ code: '1104', partyId, desc: `چک صیادی ${sayad}`, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }]
-          : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: `صدور چک ${sayad}`, debit: 0, credit: amount }]
-        );
+        const sayad = document.getElementById('tr-sayad').value.trim();
+        if (!sayad || state.checks.some(c => String(c.sayad) === sayad)) { showToast('شناسه صیادی الزامی است و نباید تکراری باشد.', 'error'); return; }
+        const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: `${state.fiscalYear}/08/27`, dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId });
+        const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
+        postVoucher('ثبت چک صیادی ' + sayad, lines, undefined, { type: 'check', id: checkId, event: 'issued' });
       } else {
-        const bAcc = state.bankAccounts.find(b => b.id === document.getElementById('tr-bank-acc').value) || state.bankAccounts[0];
-        bAcc.balance += dir === 'receive' ? amount : -amount;
-        postVoucher(`تراکنش خزانه (${bAcc.name})`, dir === 'receive'
-          ? [{ code: bAcc.type === 'cash' ? '1101' : '1102', partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }]
-          : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: bAcc.type === 'cash' ? '1101' : '1102', partyId: null, desc: bAcc.name, debit: 0, credit: amount }]
-        );
+        const bAcc = state.bankAccounts.find(b => b.id === document.getElementById('tr-bank-acc').value) || state.bankAccounts.find(b => b.type === 'cash') || state.bankAccounts[0];
+        if (!bAcc) { showToast('ابتدا یک حساب صندوق یا بانک تعریف کنید.', 'error'); return; }
+        const accountCode = bAcc.type === 'cash' ? '1101' : '1102';
+        const lines = dir === 'receive' ? [{ code: accountCode, partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bAcc.name, debit: 0, credit: amount }];
+        postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted' });
+        bAcc.balance = Number(bAcc.balance || 0) + (dir === 'receive' ? amount : -amount);
       }
-
-      state.treasuryTxs.unshift({
-        id: 'TR-' + Date.now().toString().slice(-4), date: `${state.fiscalYear}/08/27`, dir, partyId,
-        method: method === 'check' ? 'چک صیادی' : (method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی'),
-        amount, allocInv: allocInvId ? `#${faNum(allocInvId)}` : '—', desc: desc || 'تراکنش خزانه'
-      });
-
-      saveState(); closeModal('modal-treasury-form'); renderAll(); showToast('تراکنش خزانه ثبت و به حساب طرف حساب/فاکتور تخصیص یافت ✔');
+      if (allocatedInvoice) allocatedInvoice.paidAmount = Number(allocatedInvoice.paidAmount || 0) + amount;
+      state.treasuryTxs.unshift({ id: txId, date: `${state.fiscalYear}/08/27`, dir, partyId, method: method === 'check' ? 'چک صیادی' : (method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی'), amount, allocInv: allocInvId ? `#${faNum(allocInvId)}` : '—', allocInvId: allocInvId || null, desc: desc || 'تراکنش خزانه' });
+      saveState(); closeModal('modal-treasury-form'); renderAll(); showToast('تراکنش خزانه ثبت و ارتباط آن با فاکتور/سند ایجاد شد.');
     }
 
     function renderTreasuryModule() {
