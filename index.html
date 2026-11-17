@@ -1214,6 +1214,8 @@
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
           localStorage.setItem(LOCAL_UPDATED_KEY, stamp);
+          const supersededOperations = await listPendingOperations(100000);
+          await acknowledgeOperations(supersededOperations.map(op => op.operationId), stamp);
           localStorage.removeItem(CLOUD_OUTBOX_KEY);
           await writeLocalMirror(state);
           await clearCloudConflict();
