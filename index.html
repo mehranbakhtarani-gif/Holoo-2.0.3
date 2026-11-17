@@ -3228,7 +3228,7 @@
               <div>نرخ ثبت اولیه: <strong>${money(m.fxRate, false)}</strong></div>
               <div>سود/زیان تسعیر تحقق‌نیافته: <strong class="${unrealizedDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(unrealizedDiff))} (${unrealizedDiff >= 0 ? 'سود' : 'زیان'})</strong></div>
             </div>
-            ${remFx > 0 ? `<button onclick="payFxStage('${m.id}')" class="touch-btn bg-indigo-700 text-white px-4 rounded-xl font-bold">💸 ثبت پرداخت مرحله‌ای ارزی (۵,۰۰۰ ${m.currency} با نرخ روز)</button>` : '<span class="text-emerald-700 font-bold">تسویه کامل ارزی ✔</span>'}
+            ${remFx > 0 ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-2"><input type="number" id="fx-import-pay-${m.id}" min="0.01" max="${remFx}" step="any" value="${Math.min(5000, remFx)}" class="touch-btn border rounded-lg px-2 tabular-nums" aria-label="مبلغ پرداخت ارزی محموله" /><select id="fx-import-bank-${m.id}" class="touch-btn border rounded-lg px-2"><option value="">بدون تخصیص بانک</option>${(state.bankAccounts || []).map(b => `<option value="${b.id}">${b.name}</option>`).join('')}</select><button onclick="payFxStage('${m.id}')" class="touch-btn bg-indigo-700 text-white px-4 rounded-xl font-bold">💸 ثبت پرداخت مرحله‌ای</button></div>` : '<span class="text-emerald-700 font-bold">تسویه کامل ارزی ✔</span>'}
           </div>
         `;
       }).join('') + (state.fxCommitments || []).map(c => {
@@ -3330,26 +3330,44 @@
     }
 
     function payFxStage(impId) {
-      const m = state.imports.find(x => x.id === impId);
-      if (!m) return;
-      const rem = m.fxTotal - m.fxPaid;
-      const payFx = Math.min(5000, rem);
-      if (payFx <= 0) return;
-      const curRate = state.fxRates[m.currency] || m.fxRate;
-      const bookRial = payFx * m.fxRate;
-      const paidRial = payFx * curRate;
+      const shipment = state.imports.find(x => x.id === impId);
+      if (!shipment) return;
+      const remaining = Math.max(0, Number(shipment.fxTotal || 0) - Number(shipment.fxPaid || 0));
+      const payFx = Number(document.getElementById(`fx-import-pay-${shipment.id}`)?.value || 0);
+      if (!Number.isFinite(payFx) || payFx <= 0 || payFx > remaining + 0.000001) {
+        showToast('مبلغ پرداخت باید مثبت و حداکثر برابر مانده ارزی محموله باشد.', 'error'); return;
+      }
+      const curRate = Number(state.fxRates[shipment.currency] || shipment.fxRate || 0);
+      if (!Number.isFinite(curRate) || curRate <= 0) { showToast('نرخ روز ارز معتبر نیست.', 'error'); return; }
+      const bankId = document.getElementById(`fx-import-bank-${shipment.id}`)?.value || '';
+      const bank = (state.bankAccounts || []).find(x => x.id === bankId);
+      const bookRial = Math.round(payFx * Number(shipment.fxRate));
+      const paidRial = Math.round(payFx * curRate);
       const diff = bookRial - paidRial;
-      m.fxPaid += payFx;
-      state.bankAccounts[1].balance -= paidRial;
-
+      const paymentId = createStableId('impfxpay');
       const lines = [
-        { code: '2105', partyId: null, desc: `تسویه مرحله‌ای ${faNum(payFx)} ${m.currency} محموله ${m.id}`, debit: bookRial, credit: 0 },
-        { code: '1102', partyId: null, desc: `حواله ارزی از بانک`, debit: 0, credit: paidRial }
+        { code: '2105', partyId: null, desc: `تسویه مرحله‌ای ${faNum(payFx)} ${shipment.currency} محموله ${shipment.id}`, debit: bookRial, credit: 0 },
+        { code: '1102', partyId: null, desc: 'حواله ارزی از بانک', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
       else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
-      postVoucher(`پرداخت مرحله‌ای تعهد ارزی ${m.id}`, lines);
-      saveState(); renderAll(); showToast(`پرداخت مرحله‌ای ${faNum(payFx)} ${m.currency} و سند تسعیر ارز ثبت شد ✔`);
+      const previousPaid = Number(shipment.fxPaid || 0);
+      const previousPayments = [...(shipment.fxPayments || [])];
+      const previousBankBalance = bank ? Number(bank.balance || 0) : null;
+      shipment.fxPaid = previousPaid + payFx;
+      shipment.fxPayments = [...previousPayments, { id: paymentId, amount: payFx, currency: shipment.currency, rate: curRate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
+      if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
+      try {
+        postVoucher(`پرداخت مرحله‌ای تعهد ارزی ${shipment.id}`, lines, getTodayJalaliDate(), { type: 'import', id: shipment.id, event: paymentId });
+      } catch (error) {
+        shipment.fxPaid = previousPaid;
+        shipment.fxPayments = previousPayments;
+        if (bank) bank.balance = previousBankBalance;
+        showToast('ثبت سند پرداخت ارزی ناموفق بود؛ اطلاعات محموله تغییر نکرد.', 'error'); return;
+      }
+      addAudit(`پرداخت ${payFx} ${shipment.currency} از تعهد محموله ${shipment.id}`, { mode: 'automatic', sourceType: 'import' });
+      saveState(); renderAll();
+      showToast(`پرداخت مرحله‌ای ${faNum(payFx)} ${shipment.currency} و سند تسعیر ارز ثبت شد ✔`);
     }
 
     function jalaliDateOrdinal(value) {
