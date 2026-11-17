@@ -7,6 +7,7 @@ on:
       - 'index.html'
       - 'tests/accounting-smoke.test.js'
       - 'tests/extended-workflow.test.js'
+      - 'tests/advanced-accounting-lifecycle.test.js'
       - '.github/workflows/accounting-smoke-tests.yml'
   workflow_dispatch:
 
@@ -27,3 +28,4 @@ jobs:
         run: |
           node tests/accounting-smoke.test.js
           node tests/extended-workflow.test.js
+          node tests/advanced-accounting-lifecycle.test.js
