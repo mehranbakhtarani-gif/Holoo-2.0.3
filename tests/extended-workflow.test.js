@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].map(m => m[1]).filter(s => s.trim());
+const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
 for (const [i, source] of scripts.entries()) new vm.Script(source, { filename: `index.html:inline-script-${i}` });
 
 function extractFunction(name, endMarker) {
@@ -35,7 +35,7 @@ test('new customer receives a stable subledger identity and customer control acc
   const state = { parties: [] };
   let saves = 0;
   const values = { 'np-name': 'مشتری آزمایشی ۱', 'np-phone': '09120000001', 'np-role': 'مشتری', 'np-eco': '', 'np-credit': '1000000', 'np-terms': 'نقدی' };
-  const save = load(extractFunction('saveParty', '// =========================================================================\\n    // 9.'), 'saveParty', {
+  const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
     state, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
@@ -50,7 +50,7 @@ test('duplicate party name or phone is rejected without a second record', () => 
   const state = { parties: [{ id: 'P1', name: 'آزمایشگاه الف', phone: '09121111111' }] };
   let saves = 0;
   const values = { 'np-name': 'آزمایشگاه الف', 'np-phone': '09122222222', 'np-role': 'مشتری', 'np-eco': '', 'np-credit': '', 'np-terms': '' };
-  const save = load(extractFunction('saveParty', '// =========================================================================\\n    // 9.'), 'saveParty', {
+  const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
     state, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
