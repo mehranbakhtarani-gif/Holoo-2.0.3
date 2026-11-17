@@ -416,6 +416,9 @@
                 <input type="number" id="inv-line-qty" value="100" min="0.1" step="any" oninput="onInvUnitModeChange()" placeholder="مقدار" class="touch-btn border rounded-xl px-2 bg-white tabular-nums font-bold" />
                 <input type="number" id="inv-line-price" placeholder="فی هر کیلوگرم" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
                 <input type="number" id="inv-line-disc" value="0" placeholder="تخفیف ردیف" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
+                <input type="text" id="inv-line-lot" placeholder="شماره بچ / LOT (خرید)" class="touch-btn border rounded-xl px-2 bg-white" />
+                <input type="text" id="inv-line-prod-date" placeholder="تاریخ تولید (اختیاری)" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
+                <input type="text" id="inv-line-expiry" placeholder="تاریخ انقضا (اختیاری)" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
               </div>
               <div id="unit-conversion-preview" class="hidden p-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 font-bold flex items-center justify-between flex-wrap gap-2">
                 <span id="unit-conversion-text"></span>
@@ -885,6 +888,11 @@
         <div class="sm:col-span-2"><label class="block text-[10px] font-bold">کالای وارداتی:</label><select id="imp-prod" class="touch-btn w-full border rounded-xl px-2 font-bold"></select></div>
         <div><label class="block text-[10px] font-bold">وزن خالص محموله (KG):</label><input type="number" id="imp-weight" value="22000" class="touch-btn w-full border rounded-xl px-2 tabular-nums font-bold" /></div>
         <div><label class="block text-[10px] font-bold">تعداد کارتن:</label><input type="number" id="imp-cartons" value="880" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div><label class="block text-[10px] font-bold">شماره بچ / LOT:</label><input type="text" id="imp-lot" placeholder="شماره بچ تولیدکننده" class="touch-btn w-full border rounded-xl px-2" /></div>
+        <div><label class="block text-[10px] font-bold">تاریخ تولید:</label><input type="text" id="imp-production-date" placeholder="مثلاً 1405/01/01" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+        <div><label class="block text-[10px] font-bold">تاریخ انقضا:</label><input type="text" id="imp-expiry-date" placeholder="مثلاً 1406/01/01" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
       </div>
       <div class="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
         <div><label class="block text-[10px] font-bold">ارز خرید:</label><select id="imp-curr" onchange="onImportCurrChange()" class="touch-btn w-full border rounded-xl px-2 bg-white font-bold"><option value="USD">دلار آمریکا (USD)</option><option value="CNY">یوان چین (CNY)</option><option value="EUR">یورو (EUR)</option></select></div>
@@ -2448,7 +2456,13 @@
       const p = state.products.find(x => x.id === id);
       if (!p) return;
       document.getElementById('kardex-modal-title').textContent = `کاردکس گردش: ${p.name}`;
-      document.getElementById('kardex-modal-list').innerHTML = p.kardex.map(k => `
+      const batchRows = ensureProductBatches(p).map(b => `
+        <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap justify-between gap-2">
+          <div><strong>بچ ${b.lot}</strong><span class="block text-[10px] text-slate-500">ورود: ${faNum(b.receivedDate)} | تولید: ${faNum(b.productionDate || '—')} | انقضا: ${faNum(b.expiryDate || '—')}</span></div>
+          <div class="text-left tabular-nums font-bold"><span>${faNum(b.remainingQty)} KG باقی‌مانده</span><span class="block text-[10px] text-slate-500">فی: ${money(b.unitCost)}</span></div>
+        </div>
+      `).join('');
+      document.getElementById('kardex-modal-list').innerHTML = batchRows + p.kardex.map(k => `
         <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
           <div><strong>${k.doc}</strong><span class="block text-[10px] text-slate-400 tabular-nums">${faNum(k.date)}</span></div>
           <div class="tabular-nums font-bold">${k.inQty ? `<span class="text-emerald-700">+${faNum(k.inQty)}</span>` : `<span class="text-rose-700">-${faNum(k.outQty)}</span>`} | مانده: ${faNum(k.bal)} KG</div>
@@ -2647,7 +2661,10 @@
 
       invDraft.lines.push({
         productId: p.id, name: isGift ? `${p.name} (🎁 اشانتیون / نمونه)` : p.name,
-        cartons, kg, price, disc, isGift, total: Math.max(0, (kg * price) - disc), returnedKg: 0
+        cartons, kg, price, disc, isGift, total: Math.max(0, (kg * price) - disc), returnedKg: 0,
+        lot: document.getElementById('inv-line-lot')?.value.trim() || '',
+        productionDate: document.getElementById('inv-line-prod-date')?.value.trim() || '',
+        expiryDate: document.getElementById('inv-line-expiry')?.value.trim() || ''
       });
       renderInvDraftLines();
     }
@@ -2736,7 +2753,7 @@
           if (p) {
             const receivedUnitCost = l.kg > 0 ? Math.max(0, Number(l.total || 0) / l.kg) : Number(l.price || 0);
             if (state.costingMethod === 'AVG') p.buyPrice = Math.round(((p.stock * p.buyPrice) + l.total) / (p.stock + l.kg));
-            addStockBatch(p, { lot: p.lot || ('PUR-' + id + '-' + l.productId), quantity: l.kg, unitCost: receivedUnitCost, receivedDate: date, sourceType: 'purchase', sourceRef: String(id), supplierId: partyId, warehouseId });
+            addStockBatch(p, { lot: l.lot || ('PUR-' + id + '-' + l.productId), productionDate: l.productionDate, expiryDate: l.expiryDate, quantity: l.kg, unitCost: receivedUnitCost, receivedDate: date, sourceType: 'purchase', sourceRef: String(id), supplierId: partyId, warehouseId });
             p.stock += l.kg; p.lastMoveDays = 0;
             p.kardex.push({ date, doc: `فاکتور خرید #${id}`, inQty: l.kg, outQty: 0, bal: p.stock, price: receivedUnitCost, batchRef: 'PUR-' + id });
           }
@@ -2968,7 +2985,7 @@
       const p = state.products.find(x => x.id === prodId);
       if (p) {
         if (state.costingMethod === 'AVG') p.buyPrice = Math.round(((p.stock * p.buyPrice) + totalLandedRial) / (p.stock + weightKg));
-        addStockBatch(p, { lot: impId, quantity: weightKg, unitCost: landedCostPerKg, receivedDate: `${state.fiscalYear}/08/27`, sourceType: 'import', sourceRef: impId, supplierId: null, warehouseId: p.warehouseId });
+        addStockBatch(p, { lot: document.getElementById('imp-lot').value.trim() || impId, productionDate: document.getElementById('imp-production-date').value.trim(), expiryDate: document.getElementById('imp-expiry-date').value.trim(), quantity: weightKg, unitCost: landedCostPerKg, receivedDate: `${state.fiscalYear}/08/27`, sourceType: 'import', sourceRef: impId, supplierId: null, warehouseId: p.warehouseId });
         p.stock += weightKg; p.lastMoveDays = 0;
         p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `ترخیص محموله ${impId}`, inQty: weightKg, outQty: 0, bal: p.stock, price: landedCostPerKg, batchRef: impId });
       }
