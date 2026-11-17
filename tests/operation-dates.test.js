@@ -28,6 +28,7 @@ assert.equal(state.auditLogs[0].deviceId, 'DEVICE-TEST');
 assert.ok(state.auditLogs[0].createdAt);
 
 assert.match(html, /id="mv-date"/);
+assert.match(html, /jalaliDateOrdinal\(operationDate\) === null/);
 assert.match(html, /mode: 'manual'/);
 assert.ok(html.includes('function postVoucher(desc, lines, date = (typeof getTodayJalaliDate'));
 console.log('PASS: 8 manual/automatic operation date and audit tests');
