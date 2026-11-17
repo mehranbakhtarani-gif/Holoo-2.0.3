@@ -8,7 +8,7 @@ const end = html.indexOf('    // ===============================================
 assert.notEqual(start, -1, 'batch helpers must exist');
 assert.notEqual(end, -1, 'batch helper section must have an end');
 const source = html.slice(start, end);
-const sandbox = { createStableId: (() => { let n = 0; return prefix => prefix + '-' + (++n); })() };
+const sandbox = { createStableId: (() => { let n = 0; return prefix => prefix + '-' + (++n); })(), currentJalaliOrdinal: () => 100, jalaliDateOrdinal: value => value === 'EXPIRED' ? 90 : 110 };
 vm.createContext(sandbox);
 vm.runInContext(source + '; this.api = { ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations };', sandbox);
 const { ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations } = sandbox.api;
@@ -42,6 +42,18 @@ test('FIFO consumes oldest available batches first and calculates exact cost', (
   assert.deepEqual(Array.from(result.allocations, x => x.lot), ['L1', 'L2']);
   assert.equal(p.batches[0].remainingQty, 0);
   assert.equal(p.batches[1].remainingQty, 4);
+});
+
+test('FIFO skips expired lots and uses only non-expired stock', () => {
+  const p = { id: 'P-EXP', stock: 10, batches: [
+    { id: 'B-OLD', lot: 'OLD', receivedDate: '1405/01/01', expiryDate: 'EXPIRED', remainingQty: 4, quantity: 4, unitCost: 100 },
+    { id: 'B-NEW', lot: 'NEW', receivedDate: '1405/02/01', expiryDate: 'VALID', remainingQty: 6, quantity: 6, unitCost: 150 }
+  ] };
+  const result = consumeFifoStock(p, 6);
+  assert.equal(result.totalCost, 900);
+  assert.equal(p.batches[0].remainingQty, 4);
+  assert.equal(p.batches[1].remainingQty, 0);
+  assert.throws(() => consumeFifoStock(p, 1), /غیرمنقضی/);
 });
 
 test('insufficient batch balance is rejected without partial consumption', () => {
@@ -91,4 +103,4 @@ test('FIFO sales costing is wired to invoice lines and cost-of-goods-sold vouche
   assert.match(html, /cogs \+= lineCost/);
 });
 
-console.log('PASS: 8 FIFO batch tests');
+console.log('PASS: 9 FIFO batch tests');
