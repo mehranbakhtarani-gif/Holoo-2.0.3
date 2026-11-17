@@ -88,10 +88,8 @@
         </div>
 
         <select id="role-select" onchange="changeUserRole(this.value)" class="bg-holoo-950 text-amber-300 text-[11px] font-extrabold px-2 py-1.5 rounded-xl border border-amber-400/30 outline-none">
-          <option value="ceo">👑 مدیر عامل</option>
-          <option value="accountant">📊 حسابدار ارشد</option>
-          <option value="importer">🚢 بازرگان واردات</option>
-          <option value="warehouse">📦 انباردار نساجی</option>
+          <option value="mehran">👤 مهران</option>
+          <option value="ehsan">👤 احسان</option>
         </select>
 
         <select id="fiscal-year-select" onchange="changeFiscalYear(this.value)" class="bg-holoo-950/90 border border-teal-300/30 text-white text-[11px] font-bold px-2 py-1.5 rounded-xl outline-none">
@@ -1427,7 +1425,7 @@
       return {
         fiscalYear: '1405',
         currency: 'IRR',
-        activeRole: 'ceo',
+        activeRole: 'mehran',
         costingMethod: 'AVG',
         settings: {
           companyName: 'نام شرکت شما',
@@ -1540,6 +1538,13 @@
       } catch (e) { return defaultState(); }
     })();
 
+    // سازگاری با نقش‌های نسخه‌های قبلی؛ مدیرعامل به مهران و سایر نقش‌ها به احسان منتقل می‌شوند.
+    const LEGACY_ROLE_MAP = { ceo: 'mehran', accountant: 'ehsan', importer: 'ehsan', warehouse: 'ehsan' };
+    const VALID_USER_ROLES = ['mehran', 'ehsan'];
+    if (!VALID_USER_ROLES.includes(state.activeRole)) {
+      state.activeRole = LEGACY_ROLE_MAP[state.activeRole] || 'mehran';
+    }
+
     function saveState() {
       try {
         localStorage.setItem(STORE_KEY, JSON.stringify(state));
@@ -1582,9 +1587,19 @@
       showToast(`واحد نمایش مبالغ به «${state.currency === 'IRR' ? 'ریال' : 'تومان'}» تغییر کرد.`);
     }
     function changeFiscalYear(yr) { state.fiscalYear = yr; addAudit(`تغییر سال مالی به ${yr}`); saveState(); }
-    function changeUserRole(r) { state.activeRole = r; addAudit(`تغییر کاربر فعال به ${r}`); saveState(); }
+    function changeUserRole(r) {
+      if (!VALID_USER_ROLES.includes(r)) {
+        document.getElementById('role-select').value = state.activeRole;
+        showToast('کاربر انتخاب‌شده معتبر نیست.', 'error');
+        return;
+      }
+      state.activeRole = r;
+      addAudit(`تغییر کاربر فعال به ${USER_ROLE_LABELS[r]}`);
+      saveState();
+    }
+    const USER_ROLE_LABELS = { mehran: 'مهران', ehsan: 'احسان' };
     function addAudit(action) {
-      const roles = { ceo: 'مدیر عامل', accountant: 'حسابدار ارشد', importer: 'بازرگان واردات', warehouse: 'انباردار نساجی' };
+      const roles = USER_ROLE_LABELS;
       const now = new Date();
       const t = `${state.fiscalYear}/08/27 - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       state.auditLogs.unshift({ time: t, user: roles[state.activeRole] || 'کاربر', action });
