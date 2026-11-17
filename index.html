@@ -1664,6 +1664,8 @@
           localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
           localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart) {
         localStorage.removeItem(CLOUD_OUTBOX_KEY);
+      } else if (remaining.length) {
+        scheduleCloudSync();
       }
       await renderCloudSyncStatus();
       return { supported: true, applied };
@@ -3213,7 +3215,7 @@
       `).join('');
 
       document.getElementById('audit-logs-list').innerHTML = state.auditLogs.map(l => `
-        <div class="p-2 rounded-xl bg-slate-50 border flex justify-between"><span><strong>${l.user}:</strong> ${l.action}</span><span class="text-slate-400 tabular-nums">${faNum(l.time)}</span></div>
+        <div class="p-2 rounded-xl bg-slate-50 border flex justify-between gap-2"><span><strong>${l.user}:</strong> ${l.action}<small class="block text-[9px] text-slate-400">${l.actor || '—'} · دستگاه ${l.deviceId ? l.deviceId.slice(-8) : 'قدیمی'}</small></span><span class="text-slate-400 tabular-nums shrink-0">${faNum(l.time)}</span></div>
       `).join('');
     }
     function saveApprovalReq() {
@@ -3417,6 +3419,8 @@
 
     window.addEventListener('DOMContentLoaded', async () => {
       await prepareLocalStorageMirror();
+      const roleSelect = document.getElementById('role-select');
+      if (roleSelect) roleSelect.value = state.activeRole;
       await renderCloudSyncStatus();
       if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
       setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
