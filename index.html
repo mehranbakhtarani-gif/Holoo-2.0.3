@@ -2439,9 +2439,16 @@
       const qty = Number(quantity || 0);
       if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار خروج موجودی معتبر نیست.');
       const batches = ensureProductBatches(product);
-      const available = batches.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
-      if (available + 0.000001 < qty) throw new Error('موجودی بچ‌ها برای خروج FIFO کافی نیست.');
-      const ordered = batches.filter(b => Number(b.remainingQty || 0) > 0).sort((a, b) => {
+      const todayOrdinal = typeof currentJalaliOrdinal === 'function' ? currentJalaliOrdinal() : null;
+      const eligible = batches.filter(batch => {
+        if (Number(batch.remainingQty || 0) <= 0) return false;
+        if (!batch.expiryDate || todayOrdinal === null || typeof jalaliDateOrdinal !== 'function') return true;
+        const expiryOrdinal = jalaliDateOrdinal(batch.expiryDate);
+        return expiryOrdinal === null || expiryOrdinal >= todayOrdinal;
+      });
+      const available = eligible.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
+      if (available + 0.000001 < qty) throw new Error('موجودی بچ‌های غیرمنقضی برای خروج FIFO کافی نیست.');
+      const ordered = eligible.sort((a, b) => {
         const ad = String(a.receivedDate || '9999/99/99');
         const bd = String(b.receivedDate || '9999/99/99');
         return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id));
@@ -2506,13 +2513,16 @@
       }).join('');
 
       document.getElementById('inventory-table-body').innerHTML = state.products.map(p => {
-        ensureProductBatches(p);
+        const activeBatches = ensureProductBatches(p).filter(batch => Number(batch.remainingQty || 0) > 0);
+        const todayOrdinal = currentJalaliOrdinal();
+        const expiredCount = activeBatches.filter(batch => batch.expiryDate && jalaliDateOrdinal(batch.expiryDate) !== null && jalaliDateOrdinal(batch.expiryDate) < todayOrdinal).length;
+        const expiringSoonCount = activeBatches.filter(batch => { const expiry = batch.expiryDate ? jalaliDateOrdinal(batch.expiryDate) : null; return expiry !== null && expiry >= todayOrdinal && expiry - todayOrdinal <= 30; }).length;
         const isStagnant = p.lastMoveDays >= 60;
         return `
           <tr class="hover:bg-slate-50">
             <td class="p-2.5 font-bold">${p.name} <span class="block text-[10px] text-slate-400">${p.id}</span></td>
             <td class="p-2.5">${getWhName(p.warehouseId)}</td>
-            <td class="p-2.5 font-mono text-[11px]">${(p.batches || []).filter(b => Number(b.remainingQty || 0) > 0).map(b => b.lot).slice(0, 3).join('، ') || p.lot || '—'}<span class="block text-[9px] text-slate-400">${(p.batches || []).filter(b => Number(b.remainingQty || 0) > 0).length} بچ فعال</span></td>
+            <td class="p-2.5 font-mono text-[11px]">${activeBatches.map(b => b.lot).slice(0, 3).join('، ') || p.lot || '—'}<span class="block text-[9px] text-slate-400">${activeBatches.length} بچ فعال</span>${expiredCount ? `<span class="block text-[9px] text-rose-700 font-bold">${faNum(expiredCount)} بچ منقضی</span>` : ''}${expiringSoonCount ? `<span class="block text-[9px] text-amber-700 font-bold">${faNum(expiringSoonCount)} بچ با انقضای نزدیک</span>` : ''}</td>
             <td class="p-2.5 font-black tabular-nums">${faNum(p.stock)} KG</td>
             <td class="p-2.5 tabular-nums">${faNum(Math.round(p.stock / p.cartonKg))} کارتن</td>
             <td class="p-2.5 tabular-nums">${money(p.buyPrice, false)}</td>
