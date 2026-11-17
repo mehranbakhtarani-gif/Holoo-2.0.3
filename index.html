@@ -220,6 +220,7 @@
               <button onclick="navigateTo('planner')" class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 font-bold text-indigo-950 hover:bg-indigo-100">🧮 برنامه‌ریزی سرمایه</button>
               <button onclick="navigateTo('fx')" class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950 hover:bg-amber-100">💱 تعهدات ارزی</button>
               <button onclick="navigateTo('cashflow')" class="p-2.5 rounded-xl bg-purple-50 border border-purple-200 font-bold text-purple-950 hover:bg-purple-100">📈 نقدینگی ۳۰/۶۰/۹۰</button>
+              <button onclick="navigateTo('aging')" class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950 hover:bg-amber-100">📅 سنی مطالبات و بدهی‌ها</button>
               <button onclick="navigateTo('orders')" class="p-2.5 rounded-xl bg-slate-100 border border-slate-300 font-bold text-slate-900 hover:bg-slate-200">📋 پیش‌فاکتور و سفارش</button>
               <button onclick="navigateTo('treasury')" class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 font-bold text-rose-950 hover:bg-rose-100">💳 خزانه و چک صیادی</button>
               <button onclick="navigateTo('reconcile')" class="p-2.5 rounded-xl bg-cyan-50 border border-cyan-200 font-bold text-cyan-950 hover:bg-cyan-100">⚖️ مغایرت‌گیری بانکی</button>
@@ -560,6 +561,30 @@
             </div>
             <div id="cashflow-horizons-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
             <div class="h-60 w-full pt-2"><canvas id="cashflowChart"></canvas></div>
+          </div>
+        </section>
+
+        <!-- ==================== MODULE 14: RECEIVABLES / PAYABLES AGING ==================== -->
+        <section id="mod-aging" class="mod-section hidden space-y-4">
+          <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+              <div>
+                <h2 class="text-base font-black text-slate-900">📅 گزارش سنی مطالبات و بدهی‌ها</h2>
+                <p class="text-xs text-slate-500">مانده فاکتورهای باز بر اساس تاریخ سررسید و روزهای گذشته از سررسید؛ محاسبه بر پایه تقویم شمسی دستگاه</p>
+              </div>
+              <button onclick="renderAgingModule()" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">↻ به‌روزرسانی گزارش</button>
+            </div>
+            <div id="aging-summary" class="grid grid-cols-2 md:grid-cols-5 gap-2"></div>
+          </div>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2">
+              <h3 class="font-black text-sm text-emerald-900">مطالبات از مشتریان</h3>
+              <div id="aging-receivables" class="overflow-x-auto"></div>
+            </div>
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2">
+              <h3 class="font-black text-sm text-rose-900">بدهی به تأمین‌کنندگان</h3>
+              <div id="aging-payables" class="overflow-x-auto"></div>
+            </div>
           </div>
         </section>
 
@@ -3109,6 +3134,60 @@
       saveState(); renderAll(); showToast(`پرداخت مرحله‌ای ${faNum(payFx)} ${m.currency} و سند تسعیر ارز ثبت شد ✔`);
     }
 
+    function jalaliDateOrdinal(value) {
+      const match = String(value || '').match(/^(\\d{3,4})[\\/-](\\d{1,2})[\\/-](\\d{1,2})$/);
+      if (!match) return null;
+      const jy = Number(match[1]) - 979;
+      const jm = Number(match[2]);
+      const jd = Number(match[3]);
+      if (jm < 1 || jm > 12 || jd < 1 || jd > (jm <= 6 ? 31 : 30)) return null;
+      return 365 * jy + Math.floor(jy / 33) * 8 + Math.floor(((jy % 33) + 3) / 4) + 78 + jd + (jm < 7 ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+    }
+
+    function currentJalaliOrdinal() {
+      const parts = new Intl.DateTimeFormat('en-u-ca-persian', { year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
+      const get = type => Number(parts.find(p => p.type === type)?.value || 0);
+      return jalaliDateOrdinal(`${get('year')}/${get('month')}/${get('day')}`);
+    }
+
+    function agingBucket(daysPastDue) {
+      if (daysPastDue <= 0) return 'سررسید نشده';
+      if (daysPastDue <= 30) return '۱ تا ۳۰ روز';
+      if (daysPastDue <= 60) return '۳۱ تا ۶۰ روز';
+      if (daysPastDue <= 90) return '۶۱ تا ۹۰ روز';
+      return 'بیش از ۹۰ روز';
+    }
+
+    function buildAgingRows(type) {
+      const today = currentJalaliOrdinal();
+      return (state.invoices || []).filter(inv => inv.type === type && inv.status !== 'cancelled').map(inv => {
+        const due = jalaliDateOrdinal(inv.dueDate);
+        const outstanding = Math.max(0, Number(inv.grandTotal || 0) - Number(inv.paidAmount || 0));
+        if (!outstanding) return null;
+        const daysPastDue = due === null || today === null ? null : today - due;
+        return { invoiceId: inv.id, partyId: inv.partyId, party: getPartyName(inv.partyId), dueDate: inv.dueDate || '—', outstanding, daysPastDue, bucket: daysPastDue === null ? 'تاریخ نامعتبر' : agingBucket(daysPastDue) };
+      }).filter(Boolean);
+    }
+
+    function renderAgingTable(rows) {
+      if (!rows.length) return '<div class="p-3 rounded-xl bg-slate-50 text-slate-500 text-xs">فاکتور باز برای نمایش وجود ندارد.</div>';
+      const sorted = [...rows].sort((a, b) => (b.daysPastDue ?? -99999) - (a.daysPastDue ?? -99999));
+      return `<table class="w-full text-right border-collapse text-[11px]"><thead><tr class="bg-slate-100"><th class="p-2">فاکتور</th><th class="p-2">طرف حساب</th><th class="p-2">سررسید</th><th class="p-2">سن</th><th class="p-2">مانده</th></tr></thead><tbody>${sorted.map(r => `<tr class="border-t"><td class="p-2">#${faNum(r.invoiceId)}</td><td class="p-2">${r.party}</td><td class="p-2 tabular-nums">${faNum(r.dueDate)}</td><td class="p-2">${r.daysPastDue === null ? 'نامشخص' : (r.daysPastDue <= 0 ? 'سررسید نشده' : faNum(r.daysPastDue) + ' روز')}</td><td class="p-2 font-bold tabular-nums">${money(r.outstanding)}</td></tr>`).join('')}</tbody></table>`;
+    }
+
+    function renderAgingModule() {
+      const receivables = buildAgingRows('sale');
+      const payables = buildAgingRows('purchase');
+      const buckets = ['سررسید نشده', '۱ تا ۳۰ روز', '۳۱ تا ۶۰ روز', '۶۱ تا ۹۰ روز', 'بیش از ۹۰ روز'];
+      const all = [...receivables, ...payables];
+      document.getElementById('aging-summary').innerHTML = buckets.map(bucket => {
+        const amount = all.filter(r => r.bucket === bucket).reduce((sum, r) => sum + r.outstanding, 0);
+        return `<div class="p-2.5 rounded-xl bg-slate-50 border"><span class="block text-[10px] text-slate-500">${bucket}</span><strong class="text-xs tabular-nums">${money(amount)}</strong></div>`;
+      }).join('');
+      document.getElementById('aging-receivables').innerHTML = renderAgingTable(receivables);
+      document.getElementById('aging-payables').innerHTML = renderAgingTable(payables);
+    }
+
     function renderCapitalPlanner() {
       const fob = Number(document.getElementById('plan-fob')?.value || 42000);
       const fx = Number(document.getElementById('plan-fx')?.value || 685000);
@@ -3718,6 +3797,7 @@
       renderReconcileModule();
       renderFxModule();
       renderCashflowModule();
+      renderAgingModule();
       renderCapitalPlanner();
       renderAccountingModule();
       renderHrModule();
