@@ -150,7 +150,7 @@ assert.equal(state.vouchers.filter(v=>v.sourceId===check.id && v.sourceEvent==='
 assert.equal(state.bankAccounts[0].balance,1000000,'bank balance after cheque clearance');
 assert.equal(state.treasuryTxs.length,2,'cash receipt and payment recorded');
 assert.equal(state.products[0].stock,40,'synthetic closing inventory quantity');
-assert.equal(state.vouchers.every(v=>Math.round(v.lines.reduce((x,l)=>x+Number(l.debit||0),0))===Math.round(v.lines.reduce((x,l)=>x+Number(l.credit||0),0))),'every voucher is balanced');
+assert.equal(state.vouchers.every(v=>Math.round(v.lines.reduce((x,l)=>x+Number(l.debit||0),0))===Math.round(v.lines.reduce((x,l)=>x+Number(l.credit||0),0))),true,'every voucher is balanced');
 
 console.log('PASS: full synthetic fiscal-period integration');
 console.log('Company: شرکت آزمایشی نساجی');
