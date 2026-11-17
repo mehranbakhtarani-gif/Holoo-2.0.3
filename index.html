@@ -3027,6 +3027,9 @@
         warehouse: Number(document.getElementById('imp-c-wh').value || 0),
         bankFee: Number(document.getElementById('imp-c-bank').value || 0)
       };
+      if (!supplier || !state.products.some(p => p.id === prodId) || !Number.isFinite(weightKg) || weightKg <= 0 || !Number.isFinite(cartons) || cartons <= 0 || !Number.isFinite(fxTotal) || fxTotal <= 0 || !Number.isFinite(fxRate) || fxRate <= 0 || Object.values(expenses).some(v => !Number.isFinite(v) || v < 0)) {
+        showToast('اطلاعات محموله، وزن، مبلغ ارزی، نرخ یا هزینه‌ها نامعتبر است.', 'error'); return;
+      }
       const sumExpRial = Object.values(expenses).reduce((s, v) => s + v, 0);
       const purchaseRial = fxTotal * fxRate;
       const totalLandedRial = purchaseRial + sumExpRial;
