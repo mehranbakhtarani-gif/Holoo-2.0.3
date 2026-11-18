@@ -15,7 +15,7 @@ assert.match(html, /function requestPersistentStorage\(/);
 assert.match(html, /beforeinstallprompt/);
 assert.match(html, /controllerchange/);
 assert.match(html, /viewport-fit=cover/);
-assert.match(sw, /holoo-pwa-shell-v9/);
+assert.match(sw, /holoo-pwa-shell-v10/);
 assert.match(sw, /import-domain\.js/);
 assert.match(sw, /icon-192\.svg/);
 assert.match(sw, /icon-512\.svg/);
