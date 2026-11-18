@@ -100,6 +100,7 @@
         purchaseRial,
         allocatedExpenseRial,
         landedCostRial,
+        unitCost: landedCostRial / item.quantityKg,
         landedCostPerKg: Math.round(landedCostRial / item.quantityKg)
       };
     });
@@ -130,7 +131,11 @@
       if (invoice.type !== 'sale' || invoice.status === 'cancelled') continue;
       for (const line of invoice.items || []) {
         const allocations = Array.isArray(line.fifoAllocations) ? line.fifoAllocations : [];
-        if (!allocations.length || !(Number(line.kg) > 0)) continue;
+        if (!(Number(line.kg) > 0)) continue;
+        if (!allocations.length) {
+          if (items.some(item => String(item.productId) === String(line.productId))) untraceableSales += Math.max(0, Number(line.kg) - Number(line.returnedKg || 0));
+          continue;
+        }
         const netQty = Math.max(0, Number(line.kg) - Number(line.returnedKg || 0));
         if (netQty <= 0) continue;
         const returnedByBatch = new Map();
