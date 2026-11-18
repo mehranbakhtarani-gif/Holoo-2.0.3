@@ -11,6 +11,7 @@
     if (!shipment || typeof shipment !== 'object') return [];
     if (Array.isArray(shipment.items) && shipment.items.length) {
       return shipment.items.map((item, index) => ({
+        ...item,
         id: String(item.id || (shipment.id + '-ITEM-' + (index + 1))),
         productId: item.productId,
         quantityKg: number(item.quantityKg ?? item.weightKg ?? item.kg, 'وزن قلم'),
