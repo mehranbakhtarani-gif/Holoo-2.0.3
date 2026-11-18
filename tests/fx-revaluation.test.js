@@ -131,6 +131,7 @@ const save = load(saveSource, 'saveFxCommitment', {
     'fxc-purpose': 'خرید مواد اولیه', 'fxc-notes': 'تست افتتاحیه'
   }),
   getPartyName: () => 'تأمین‌کننده آزمایشی',
+  getTodayJalaliDate: () => '1405/09/02',
   createStableId: () => 'FXC-NEW',
   postVoucher(...args) { openingVouchers.push(args); },
   addAudit() {}, saveState() {}, closeModal() {}, renderFxModule() {}, showToast() {}
