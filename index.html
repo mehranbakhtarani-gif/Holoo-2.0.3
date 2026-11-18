@@ -3402,9 +3402,16 @@
           const product = state.products.find(x => String(x.id) === String(item.productId));
           return (product ? product.name : item.productId) + ': ' + faNum(item.quantityKg) + ' KG';
         }).join(' • ');
+        const costRows = shipmentItems.map(item => {
+          const product = state.products.find(x => String(x.id) === String(item.productId));
+          const itemCost = Number(item.landedCostRial ?? (Number(item.quantityKg || 0) * Number(item.landedCostPerKg ?? m.landedCostPerKg ?? 0)));
+          const expenseNames = { freight: 'حمل', insurance: 'بیمه', customs: 'گمرک', port: 'بندر', clearance: 'ترخیص', inland: 'حمل داخلی', warehouse: 'انبارداری', bankFee: 'کارمزد' };
+          const allocations = Object.entries(item.allocatedExpenses || {}).filter(entry => Number(entry[1]) > 0).map(entry => expenseNames[entry[0]] + ': ' + money(entry[1])).join(' • ');
+          return '<div class="border-b last:border-0 py-1"><div class="flex flex-wrap justify-between gap-1"><strong>' + (product ? product.name : item.productId) + '</strong><span>بهای تمام‌شده: ' + money(itemCost) + ' • هر KG: ' + money(item.landedCostPerKg ?? m.landedCostPerKg ?? 0) + '</span></div><div class="text-[10px] text-slate-500">' + (allocations || 'هزینه تخصیص‌یافته‌ای ثبت نشده') + '</div></div>';
+        }).join('');
         const profitRows = shipmentProfit.items.map(item => {
           const product = state.products.find(x => String(x.id) === String(item.productId));
-          return '<div class="grid grid-cols-2 md:grid-cols-5 gap-1 border-b last:border-0 py-1"><strong>' + (product ? product.name : item.productId) + '</strong><span>فروش: ' + faNum(item.soldKg) + ' KG</span><span>درآمد: ' + money(item.revenue) + '</span><span>بهای فروش: ' + money(item.cogs) + '</span><strong>سود: ' + money(item.grossProfit) + '</strong></div>';
+          return '<div class="grid grid-cols-2 md:grid-cols-6 gap-1 border-b last:border-0 py-1"><strong>' + (product ? product.name : item.productId) + '</strong><span>فروش خالص: ' + faNum(item.soldKg) + ' KG</span><span>برگشت: ' + faNum(item.returnedKg) + ' KG</span><span>درآمد: ' + money(item.revenue) + '</span><span>بهای فروش: ' + money(item.cogs) + '</span><strong>سود: ' + money(item.grossProfit) + '</strong></div>';
         }).join('');
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2.5 text-xs">
@@ -3422,6 +3429,7 @@
               </select>
             </div>
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
+            <div class="rounded-lg border px-2 py-1"><strong>بهای تمام‌شده و هزینه تخصیصی هر قلم</strong>${costRows}</div>
             <div class="text-[10px] text-slate-500">مبنای بهای فروش: ${state.costingMethod === 'FIFO' ? 'FIFO بر اساس بهای هر بچ' : 'میانگین موزون؛ تخصیص فروش به بچ‌ها بر اساس مقدار'}</div>
             <div class="rounded-lg border px-2 py-1"><strong>سود هر قلم محموله</strong>${profitRows}</div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-50 border tabular-nums">
@@ -3434,7 +3442,7 @@
               <div>فروش خالص قابل ردیابی: <strong>${money(shipmentProfit.revenue)}</strong></div>
               <div>بهای تمام‌شده فروش: <strong>${money(shipmentProfit.cogs)}</strong></div>
               <div>تسعیر تحقق‌یافته: <strong>${money(shipmentProfit.realizedFx)}</strong></div>
-              <div>تسعیر تحقق‌نیافته مانده: <strong>${money(shipmentProfit.unrealizedFx)}</strong></div>
+              <div>برآورد تسعیر تحقق‌نیافته (بدون سند پایان‌دوره): <strong>${money(shipmentProfit.unrealizedFx)}</strong></div>
             </div>
             ${shipmentProfit.untraceableSalesKg > 0 ? '<div class="text-amber-700 text-[10px]">فروش ' + faNum(shipmentProfit.untraceableSalesKg) + ' کیلو از سوابق قدیمی قابل ردیابی نیست.</div>' : ''}
           </div>
