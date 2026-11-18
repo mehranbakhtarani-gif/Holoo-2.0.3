@@ -28,7 +28,7 @@ These cannot be proven by static CI alone and must be checked on the actual Andr
 
 - Install and launch on the Mehran device and both Ehsan devices.
 - Confirm each installation shows its own stable device identifier after closing and reopening.
-- Confirm the selected operator is correct on each device. Operator/device labels are operational metadata, not authentication; with no login/password, they do not prevent impersonation.
+- On first launch after this update, confirm the one-time device assignment: مهران on the Mehran phone and احسان on each of the two Ehsan phones. The assignment is stored locally per installation and the operator selector is locked afterward. Operator/device labels remain operational metadata, not authentication; with no login/password, they do not prevent impersonation.
 - While online, receive cloud data and confirm the app displays the expected latest state.
 - Make a controlled test change only in a non-production/test dataset, send it, and confirm the other devices receive it without duplicate posting or lost updates.
 - Disable connectivity, close/reopen the app, and confirm the shell opens. Do not treat an offline shell test as proof that cloud sync works offline.
