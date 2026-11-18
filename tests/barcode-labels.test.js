@@ -93,6 +93,6 @@ assert.deepEqual(JSON.parse(JSON.stringify(calendarContext.jalaliCalendarParts('
 assert.equal(calendarContext.jalaliCalendarParts('32/01/1405'), null);
 console.log('PASS: Jalali calendar month lengths, leap Esfand, and date parsing');
 
-assert.match(html, /#jalali-calendar-overlay\\.hidden\\s*\\{\\s*display:\\s*none\\s*!important;/, 'closing the calendar must override the overlay display rule');
-assert.match(html, /function closeJalaliCalendar\\(\\)[\\s\\S]*?classList\\.add\\('hidden'\\)/, 'calendar close action must hide the overlay');
+assert.ok(html.includes('#jalali-calendar-overlay.hidden { display:none !important;'), 'closing the calendar must override the overlay display rule');
+assert.ok(html.includes("function closeJalaliCalendar() {") && html.includes("overlay.classList.add('hidden')"), 'calendar close action must hide the overlay');
 console.log('PASS: Jalali calendar overlay is truly hidden after close');
