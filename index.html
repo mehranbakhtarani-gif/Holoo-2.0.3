@@ -2932,8 +2932,7 @@
           (rows || '<p class="text-center text-slate-400 p-4">برای این طرف حساب در بازه انتخابی گردش ثبت نشده است.</p>') + '</div>';
         return;
       }
-    function renderPartiesModule() {
-      document.getElementById('parties-grid').innerHTML = state.parties.map(p => {
+      grid.innerHTML = state.parties.map(p => {
         const bal = getPartyNetBalance(p.id);
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
@@ -2949,7 +2948,7 @@
               <strong class="${bal >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(bal))} (${bal >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
             </div>
             <div class="text-[10px] text-slate-500 tabular-nums">سقف اعتبار مصوب: ${money(p.creditLimit)}</div>
-            <button onclick="openPartyLedger('${'${escapeLedgerText(p.id)}'}')" class="touch-btn w-full mt-1 bg-holoo-700 text-white rounded-lg px-3 py-2 font-bold">مشاهده گردش حساب و ریز اسناد</button>
+            <button onclick="openPartyLedger('${escapeLedgerText(p.id)}')" class="touch-btn w-full mt-1 bg-holoo-700 text-white rounded-lg px-3 py-2 font-bold">مشاهده گردش حساب و ریز اسناد</button>
           </div>
         `;
       }).join('');
