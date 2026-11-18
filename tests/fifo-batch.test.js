@@ -10,8 +10,8 @@ assert.notEqual(end, -1, 'batch helper section must have an end');
 const source = html.slice(start, end);
 const sandbox = { createStableId: (() => { let n = 0; return prefix => prefix + '-' + (++n); })(), getTodayJalaliDate: () => '1405/09/02', currentJalaliOrdinal: () => 100, jalaliDateOrdinal: value => value === 'EXPIRED' ? 90 : 110 };
 vm.createContext(sandbox);
-vm.runInContext(source + '; this.api = { inspectProductBatchReconciliation, ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations };', sandbox);
-const { inspectProductBatchReconciliation, ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations } = sandbox.api;
+vm.runInContext(source + '; this.api = { inspectProductBatchReconciliation, inspectInventoryReconciliation, ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations };', sandbox);
+const { inspectProductBatchReconciliation, inspectInventoryReconciliation, ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations } = sandbox.api;
 
 function test(name, fn) { fn(); console.log('PASS: ' + name); }
 
@@ -134,4 +134,45 @@ test('FIFO sales costing is wired to invoice lines and cost-of-goods-sold vouche
   assert.match(html, /cogs \+= lineCost/);
 });
 
-console.log('PASS: 9 FIFO batch tests');
+
+test('inventory reconciliation reports stock-to-batch mismatch without mutating source data', () => {
+  const products = [{ id: 'R1', name: 'کالای آزمایشی', stock: 8, batches: [
+    { id: 'B-1', remainingQty: 5, unitCost: 20 }
+  ], kardex: [{ bal: 8, inQty: 8, outQty: 0, doc: 'رسید افتتاحیه' }] }];
+  const before = JSON.stringify(products);
+  const report = inspectInventoryReconciliation(products);
+  assert.equal(report.issueCount, 1);
+  assert.match(report.issues[0].message, /مغایرت/);
+  assert.equal(JSON.stringify(products), before);
+});
+
+test('inventory reconciliation detects missing and duplicate batch identifiers', () => {
+  const report = inspectInventoryReconciliation([{ id: 'R2', name: 'کالا', stock: 3, batches: [
+    { id: 'DUP', remainingQty: 1, unitCost: 1 },
+    { id: 'DUP', remainingQty: 1, unitCost: 1 },
+    { remainingQty: 1, unitCost: 1 }
+  ], kardex: [] }]);
+  assert.equal(report.issues.filter(x => x.type === 'batch-id').length, 2);
+});
+
+test('inventory reconciliation detects kardex balance mismatch', () => {
+  const report = inspectInventoryReconciliation([{ id: 'R3', name: 'کالا', stock: 7, batches: [], kardex: [
+    { bal: 5, inQty: 5, outQty: 0, doc: 'رسید' }
+  ] }]);
+  assert.ok(report.issues.some(x => x.type === 'kardex-balance'));
+});
+
+test('inventory reconciliation validates paired warehouse transfer references and quantities', () => {
+  const products = [
+    { id: 'SRC', name: 'مبدأ', stock: 4, batches: [], kardex: [{ bal: 4, outQty: 3, inQty: 0, doc: 'حواله خروج انتقال TR-123-abcd به مقصد' }] },
+    { id: 'DST', name: 'مقصد', stock: 3, batches: [], kardex: [{ bal: 3, inQty: 3, outQty: 0, doc: 'حواله ورود انتقال TR-123-abcd از مبدأ' }] }
+  ];
+  const report = inspectInventoryReconciliation(products);
+  assert.equal(report.checkedTransfers, 1);
+  assert.equal(report.issues.filter(x => x.type === 'transfer').length, 0);
+  products[1].kardex[0].inQty = 2;
+  const mismatch = inspectInventoryReconciliation(products);
+  assert.ok(mismatch.issues.some(x => x.type === 'transfer'));
+});
+
+console.log('PASS: 13 FIFO and inventory reconciliation tests');
