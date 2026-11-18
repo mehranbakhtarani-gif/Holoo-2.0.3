@@ -138,34 +138,31 @@
         });
         const remainingAllocations = allocations.map(allocation => ({
           ...allocation,
+          returnedQuantity: Math.min(Number(allocation.quantity || 0), returnedByBatch.get(String(allocation.batchId)) || 0),
           quantity: Math.max(0, Number(allocation.quantity || 0) - (returnedByBatch.get(String(allocation.batchId)) || 0))
-        })).filter(allocation => allocation.quantity > 0);
+        })).filter(allocation => allocation.quantity > 0 || allocation.returnedQuantity > 0);
         const remainingTotal = remainingAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
         if (remainingTotal <= 0) continue;
         const revenue = Number(line.total ?? (Number(line.kg) * Number(line.price || 0))) * (netQty / Number(line.kg));
         const cogs = Number(line.costOfGoodsSold || 0) * (netQty / Number(line.kg));
         for (const allocation of remainingAllocations) {
           const batchInfo = productByBatch.get(String(allocation.batchId));
-          if (!batchInfo || String(batchInfo.batch.sourceRef) !== String(shipment.id)) continue;
+          if (!batchInfo) { untraceableSales += allocation.quantity; continue; }
+          if (String(batchInfo.batch.sourceRef) !== String(shipment.id)) continue;
           const sourceItemId = batchInfo.batch.sourceItemId ? String(batchInfo.batch.sourceItemId) : null;
           let target = sourceItemId ? itemTotals.get(sourceItemId) : null;
           if (!target) target = [...itemTotals.values()].find(item => String(item.productId) === String(batchInfo.product.id));
           if (!target) continue;
           const share = allocation.quantity / remainingTotal;
           target.soldKg += allocation.quantity;
+          target.returnedKg += allocation.returnedQuantity;
           target.revenue += revenue * share;
           target.cogs += cogs * share;
         }
-        const tracedQty = remainingAllocations.reduce((sum, allocation) => {
-          const info = productByBatch.get(String(allocation.batchId));
-          return sum + (info && String(info.batch.sourceRef) === String(shipment.id) ? allocation.quantity : 0);
-        }, 0);
-        untraceableSales += Math.max(0, netQty - tracedQty);
       }
     }
     const rows = [...itemTotals.values()].map(item => ({
       ...item,
-      grossProfit: item.revenue - item.cogs,
       revenue: Math.round(item.revenue),
       cogs: Math.round(item.cogs),
       grossProfit: Math.round(item.revenue - item.cogs)
