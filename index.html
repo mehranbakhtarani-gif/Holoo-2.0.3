@@ -75,6 +75,8 @@
     #jalali-calendar-overlay.hidden { display:none !important; }
     .jalali-calendar-trigger { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:38px; height:38px; margin-inline-start:5px; border:1px solid #99f6e4; border-radius:12px; color:#0f766e; background:#f0fdfa; font-size:18px; cursor:pointer; vertical-align:middle; }
     .jalali-calendar-trigger:hover { background:#ccfbf1; }
+    /* Numeric Jalali dates must read left-to-right even inside the RTL Persian interface. */
+    input[data-jalali-calendar-ready="1"] { direction:ltr !important; unicode-bidi:isolate; text-align:center; }
     @media(max-width:480px) { #jalali-calendar-panel { padding:14px; } #jalali-calendar-panel .jc-day { min-height:38px; } }
 </style>
 </head>
