@@ -3522,8 +3522,8 @@
           if (line.partyId === undefined || line.partyId === null || String(line.partyId) === '') { unassignedLines++; return; }
           const party = partyById.get(String(line.partyId));
           if (!party) { unassignedLines++; return; }
-          const partyCode = String(party.ledgerAccountCode || (String(party.role || '').includes('تأمین') ? '2101' : '1103'));
-          if (partyCode !== code) { mappingMismatchLines++; return; }
+          // Keep the reconciliation basis identical to buildPartyLedger:
+          // party subledgers include 1103, 2101 and supplier advances (1107).
           item['sub' + bucket] += net;
         });
       });
