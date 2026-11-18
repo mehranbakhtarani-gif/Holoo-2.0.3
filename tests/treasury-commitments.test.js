@@ -1,5 +1,6 @@
 const fs = require('fs');
 const assert = require('assert');
+const vm = require('vm');
 const html = fs.readFileSync('index.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/202611180003_guarantees_payable_commitments.sql', 'utf8');
 for (const token of ['guarantees: []','payableCommitments: []',"'guarantees', 'payableCommitments'",'function saveGuaranteeRecord()','function changeGuaranteeStatus(','function savePayableCommitment()','function changePayableCommitmentStatus(','renderGuaranteesAndCommitments()','ضمانت‌نامه‌ها و وثایق','تعهدات پرداختنی']) {
