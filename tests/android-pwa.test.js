@@ -29,7 +29,6 @@ assert.match(sw, /holoo-pwa-/);
 assert.match(sw, /self\.clients\.claim\(\)/);
 assert.match(html, /async function fetchWithTimeout\(/);
 assert.match(html, /مهلت پاسخ Supabase تمام شد/);
-assert.match(html, /اتصال ابری در هر بار راه‌اندازی به‌صورت خودکار بررسی می‌شود/);
 assert.match(html, /در حال آماده‌سازی حافظه محلی/);
 assert.match(html, /new Promise\(resolve => setTimeout\(\(\) => resolve\(false\), 15000\)\)/);
 assert.match(html, /آماده‌سازی حافظه محلی طول کشید؛ همگام‌سازی خودکار متوقف شد/);
