@@ -4961,18 +4961,43 @@
       renderReconcileModule();
       showToast(`پیشنهادها آماده شد: ${faNum(unique)} مورد دارای یک سند دقیق، ${faNum(ambiguous)} مورد چندگزینه‌ای و ${faNum(missing)} مورد بدون تطبیق. هیچ موردی خودکار تأیید نشد.`);
     }
+    function parseBankCSVRecords(input) {
+      const rows = [];
+      let row = [], field = '', quoted = false;
+      for (let i = 0; i < input.length; i++) {
+        const ch = input[i];
+        if (quoted) {
+          if (ch === '"' && input[i + 1] === '"') { field += '"'; i++; }
+          else if (ch === '"') quoted = false;
+          else field += ch;
+          continue;
+        }
+        if (ch === '"' && field.length === 0) quoted = true;
+        else if (ch === ',') { row.push(field); field = ''; }
+        else if (ch === '\\n' || ch === '\\r') {
+          if (ch === '\\r' && input[i + 1] === '\\n') i++;
+          row.push(field); rows.push(row); row = []; field = '';
+        } else field += ch;
+      }
+      if (quoted) throw new Error('ساختار نقل‌قول در فایل CSV کامل نیست.');
+      if (field.length || row.length) { row.push(field); rows.push(row); }
+      return rows;
+    }
+
     function parseBankCSV() {
-      const input = document.getElementById('bank-csv-text').value.trim();
+      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\\uFEFF/, '').trim();
       if (!input) { showToast('محتوای صورتحساب خالی است.', 'error'); return; }
+      let rows;
+      try { rows = parseBankCSVRecords(input); }
+      catch (error) { showToast(error.message || 'ساختار فایل CSV معتبر نیست.', 'error'); return; }
       let added = 0, dup = 0, invalid = 0;
       const seenRefs = new Set((state.bankReconcileItems || []).map(x => String(x.ref || '').trim()).filter(Boolean));
-      input.split(/\r?\n/).forEach((line, index) => {
-        if (!line.trim()) return;
-        const parts = line.split(',');
+      rows.forEach(parts => {
+        if (!parts.some(value => String(value).trim())) return;
         if (parts.length < 4) { invalid++; return; }
         const [dateRaw, descRaw, amountRaw, ...refParts] = parts;
-        const date = dateRaw.trim(), desc = descRaw.trim(), ref = refParts.join(',').trim();
-        const amount = Number(String(amountRaw).trim().replace(/,/g, ''));
+        const date = String(dateRaw || '').trim(), desc = String(descRaw || '').trim(), ref = refParts.join(',').trim();
+        const amount = Number(String(amountRaw || '').trim().replace(/,/g, ''));
         if (!bankTxDateKey(date) || !desc || !ref || !Number.isFinite(amount) || amount === 0) { invalid++; return; }
         if (seenRefs.has(ref)) { dup++; return; }
         seenRefs.add(ref);
