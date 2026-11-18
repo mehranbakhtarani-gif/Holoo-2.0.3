@@ -92,7 +92,7 @@
         </div>
 
         <span id="device-identity-status" title="شناسه پایدار این نصب" class="text-[9px] text-teal-100 bg-black/20 px-2 py-1 rounded-lg">دستگاه: در حال شناسایی</span>
-        <select id="role-select" onchange="changeUserRole(this.value)" class="bg-holoo-950 text-amber-300 text-[11px] font-extrabold px-2 py-1.5 rounded-xl border border-amber-400/30 outline-none">
+        <select id="role-select" onchange="changeUserRole(this.value)" title="کاربر این دستگاه؛ پس از تثبیت انتساب قفل می‌شود" class="bg-holoo-950 text-amber-300 text-[11px] font-extrabold px-2 py-1.5 rounded-xl border border-amber-400/30 outline-none">
           <option value="mehran">👤 مهران</option>
           <option value="ehsan">👤 احسان</option>
         </select>
@@ -1184,6 +1184,20 @@
     </div>
   </div>
 
+  <div id="modal-device-actor-setup" class="hidden fixed inset-0 z-[100] bg-slate-950/85 flex items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl space-y-4 text-right">
+      <h2 class="text-base font-black text-slate-900">تعیین کاربر ثابت این دستگاه</h2>
+      <p class="text-xs leading-6 text-slate-600">این انتخاب فقط برای همین نصب ذخیره می‌شود. پس از ثبت، کاربر این دستگاه از منوی بالای برنامه قابل تغییر نخواهد بود. برای سه دستگاه شرکت، هر دستگاه باید جداگانه به مهران یا احسان تخصیص داده شود.</p>
+      <label for="device-actor-setup-select" class="block text-xs font-bold text-slate-700">کاربر این دستگاه</label>
+      <select id="device-actor-setup-select" class="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm font-bold">
+        <option value="mehran">مهران</option>
+        <option value="ehsan">احسان</option>
+      </select>
+      <button type="button" onclick="confirmDeviceActorAssignment()" class="w-full rounded-xl bg-holoo-700 p-3 text-sm font-extrabold text-white">ثبت و تثبیت کاربر این دستگاه</button>
+      <p class="text-[10px] leading-5 text-amber-700">توجه: این قفل، مانع تغییر تصادفی در رابط برنامه است و جایگزین ورود امن یا کنترل دسترسی سرور نیست.</p>
+    </div>
+  </div>
+
   <script src="./import-domain.js"></script>
   <script>
     // Shared HTML escaping helper used by HR, assets, approvals and bank reconciliation.
@@ -1229,6 +1243,8 @@
     const CLOUD_CONFLICT_DB_KEY = STORE_KEY + '_cloud_conflict_v1';
     const DEVICE_ID_KEY = STORE_KEY + '_device_id_v1';
     const DEVICE_ACTOR_KEY = STORE_KEY + '_device_actor_v1';
+    // One-time, device-local operator assignment. This is a workflow guard, not authentication.
+    const DEVICE_ACTOR_LOCK_KEY = STORE_KEY + '_device_actor_lock_v1';
     const OPERATION_SEQUENCE_KEY = STORE_KEY + '_operation_sequence_v1';
     const OPERATION_DB_STORE = 'operations';
     const OPERATION_SCHEMA_VERSION = 1;
@@ -1273,13 +1289,18 @@
       el.textContent = text;
     }
 
+    function isDeviceActorLocked() {
+      const actor = localStorage.getItem(DEVICE_ACTOR_KEY);
+      return !!actor && localStorage.getItem(DEVICE_ACTOR_LOCK_KEY) === actor;
+    }
+
     async function renderDeviceIdentityStatus() {
       const el = document.getElementById('device-identity-status');
       if (el) {
         const actor = localStorage.getItem(DEVICE_ACTOR_KEY) || state.activeRole || 'mehran';
         const actorLabel = actor === 'ehsan' ? 'احسان' : 'مهران';
-        el.textContent = actorLabel + ' · ' + DEVICE_ID.slice(-8);
-        el.title = 'شناسه دستگاه: ' + DEVICE_ID + ' | شناسه اپراتور: ' + actor;
+        el.textContent = actorLabel + ' · ' + DEVICE_ID.slice(-8) + (isDeviceActorLocked() ? ' · ثابت' : ' · انتخاب نشده');
+        el.title = 'شناسه دستگاه: ' + DEVICE_ID + ' | اپراتور محلی: ' + actor + (isDeviceActorLocked() ? ' | انتساب این نصب تثبیت شده است' : ' | انتساب هنوز تثبیت نشده است');
       }
       try {
         const db = await openLocalDatabase();
@@ -2186,16 +2207,38 @@
     }
     function changeFiscalYear(yr) { state.fiscalYear = yr; addAudit(`تغییر سال مالی به ${yr}`); saveState(); }
     function changeUserRole(r) {
+      const assignedActor = localStorage.getItem(DEVICE_ACTOR_LOCK_KEY);
+      if (isDeviceActorLocked()) {
+        state.activeRole = assignedActor;
+        const selector = document.getElementById('role-select');
+        if (selector) selector.value = assignedActor;
+        showToast('کاربر این دستگاه قبلاً تثبیت شده و قابل تغییر نیست.', 'error');
+        return;
+      }
       if (!VALID_USER_ROLES.includes(r)) {
         document.getElementById('role-select').value = state.activeRole;
         showToast('کاربر انتخاب‌شده معتبر نیست.', 'error');
         return;
       }
       state.activeRole = r;
-      localStorage.setItem(DEVICE_ACTOR_KEY, r);
-      addAudit(`تغییر کاربر فعال به ${USER_ROLE_LABELS[r]}`);
-      saveState();
       renderDeviceIdentityStatus();
+    }
+
+    function confirmDeviceActorAssignment() {
+      const selector = document.getElementById('device-actor-setup-select');
+      const actor = selector?.value;
+      if (!VALID_USER_ROLES.includes(actor)) {
+        showToast('کاربر انتخاب‌شده معتبر نیست.', 'error');
+        return;
+      }
+      try {
+        localStorage.setItem(DEVICE_ACTOR_KEY, actor);
+        localStorage.setItem(DEVICE_ACTOR_LOCK_KEY, actor);
+      } catch (error) {
+        showToast('ثبت هویت این دستگاه در حافظه محلی ناموفق بود.', 'error');
+        return;
+      }
+      window.location.reload();
     }
     const USER_ROLE_LABELS = { mehran: 'مهران', ehsan: 'احسان' };
     function getTodayJalaliDate(date = new Date()) {
@@ -6504,7 +6547,10 @@
       state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
       ensureAuditLogIds(state);
       const roleSelect = document.getElementById('role-select');
-      if (roleSelect) roleSelect.value = state.activeRole;
+      if (roleSelect) {
+        roleSelect.value = state.activeRole;
+        roleSelect.disabled = isDeviceActorLocked();
+      }
 
       // ابتدا محیط حسابداری را نمایش بده؛ بررسی صف و وضعیت ابر فقط پس‌زمینه است.
       if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
@@ -6520,6 +6566,15 @@
         try { navigateTo('dashboard'); } catch (fallbackError) {
           console.error('Holoo dashboard fallback failed:', fallbackError);
         }
+      }
+
+      if (!isDeviceActorLocked()) {
+        const setup = document.getElementById('modal-device-actor-setup');
+        const setupSelect = document.getElementById('device-actor-setup-select');
+        if (setupSelect) setupSelect.value = state.activeRole;
+        if (setup) setup.classList.remove('hidden');
+        setCloudBadge('🔒 ابتدا کاربر ثابت این دستگاه را تعیین کنید', 'text-amber-300');
+        return;
       }
 
       if (!localReady) {
