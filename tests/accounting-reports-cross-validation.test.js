@@ -197,6 +197,6 @@ assert.equal(api.buildAccountLedger('1102','1405/01/01','1405/01/30').closingNet
 
 console.log('PASS: seven-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
 console.log('PASS: invalid voucher is excluded consistently from ledger, trial balance, P&L, balance sheet and cash flow');
-console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow
-PASS: unbalanced and one-sided postings remain visible and expose the same difference in every report');
+console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow');
+console.log('PASS: unbalanced and one-sided postings remain visible and expose the same difference in every report');
 console.log('PASS: bank transaction matching is exact and one voucher cannot be matched twice');
