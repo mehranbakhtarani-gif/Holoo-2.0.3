@@ -27,7 +27,7 @@ function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyVa
   const selectedOptions = selectedIds.map(value => ({ value: String(value) }));
   const document = {
     getElementById(id) {
-      if (id === 'tr-alloc-inv') return { value: legacyValue, selectedOptions };
+      if (id === 'tr-alloc-inv') return legacyValue ? { value: legacyValue } : { value: '', selectedOptions };
       return { value: values[id] ?? '', classList: { add() {}, remove() {}, toggle() {} } };
     }
   };
