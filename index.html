@@ -1429,6 +1429,10 @@
     }
 
     async function pushToSupabase(notify = false) {
+      if (!isDeviceActorLocked()) {
+        setCloudBadge('🔒 ابتدا کاربر ثابت این دستگاه را تعیین کنید', 'text-amber-300');
+        return false;
+      }
       if (!cloudConfig.url || !cloudConfig.key) {
         setCloudBadge('⚠️ تنظیمات ابر ناقص است', 'text-amber-300');
         return false;
@@ -1600,6 +1604,10 @@
     }
 
     async function pullFromSupabase(notify = false) {
+      if (!isDeviceActorLocked()) {
+        setCloudBadge('🔒 ابتدا کاربر ثابت این دستگاه را تعیین کنید', 'text-amber-300');
+        return false;
+      }
       if (!cloudConfig.url || !cloudConfig.key) {
         setCloudBadge('⚠️ تنظیمات ابر ناقص است', 'text-amber-300');
         return false;
