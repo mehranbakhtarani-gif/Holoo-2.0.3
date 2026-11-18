@@ -79,14 +79,14 @@ test('opening stock creates kardex entry and accounting voucher', () => {
 });
 
 // Invoice lifecycle with isolated in-memory state. No live database or user data is touched.
-function runInvoice(type, payMethod = 'credit', bankAccounts = []) {
+function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAccountId = null) {
   const product = { id: 'TX-101', name: 'کالای آزمایشی', stock: 100, buyPrice: 10, kardex: [] };
   const state = {
     fiscalYear: '1405', invoices: [], products: [product],
     bankAccounts,
     costingMethod: 'AVG'
   };
-  const values = { 'inv-party': 'P-TEST', 'inv-warehouse': 'WH1', 'inv-pay-method': payMethod, 'inv-vat-rate': '0', 'inv-commission-rate': '0', 'inv-due-date': '1405/09/01', 'inv-salesperson': 'آزمایشی' };
+  const values = { 'inv-party': 'P-TEST', 'inv-warehouse': 'WH1', 'inv-pay-method': payMethod, 'inv-settlement-account': settlementAccountId || bankAccounts[0]?.id || '', 'inv-vat-rate': '0', 'inv-commission-rate': '0', 'inv-due-date': '1405/09/01', 'inv-salesperson': 'آزمایشی' };
   const draft = { type, lines: [{ productId: 'TX-101', kg: 5, price: 20, total: 100, disc: 0 }] };
   const posted = [];
   let saves = 0;
@@ -156,6 +156,36 @@ test('bank purchase credits bank and decreases the selected bank balance', () =>
   assert.equal(lines.find(line => line.code === '1102').credit, 100);
   assert.equal(lines.some(line => line.code === '2101'), false);
   assert.equal(bank.balance, 400);
+});
+
+test('purchase invoice uses the explicitly selected second cash account', () => {
+  const first = { id: 'CASH-1', type: 'cash', name: 'صندوق اول', balance: 500 };
+  const second = { id: 'CASH-2', type: 'cash', name: 'صندوق دوم', balance: 900 };
+  const r = runInvoice('purchase', 'cash', [first, second], 'CASH-2');
+  assert.equal(r.state.invoices[0].bankAccountId, 'CASH-2');
+  assert.equal(first.balance, 500);
+  assert.equal(second.balance, 800);
+  assert.equal(r.posted[0][1].find(line => line.code === '1101').credit, 100);
+});
+
+test('sales invoice uses the explicitly selected second bank account', () => {
+  const first = { id: 'BANK-1', type: 'bank', name: 'بانک اول', balance: 500 };
+  const second = { id: 'BANK-2', type: 'bank', name: 'بانک دوم', balance: 900 };
+  const r = runInvoice('sale', 'bank', [first, second], 'BANK-2');
+  assert.equal(r.state.invoices[0].bankAccountId, 'BANK-2');
+  assert.equal(first.balance, 500);
+  assert.equal(second.balance, 1000);
+  assert.equal(r.posted[0][1].find(line => line.code === '1102').debit, 100);
+});
+
+test('paid invoice rejects a missing or mismatched settlement account before mutation', () => {
+  const first = { id: 'BANK-1', type: 'bank', name: 'بانک اول', balance: 500 };
+  const r = runInvoice('purchase', 'bank', [first], 'CASH-NOT-FOUND');
+  assert.equal(r.state.invoices.length, 0);
+  assert.equal(r.product.stock, 100);
+  assert.equal(first.balance, 500);
+  assert.equal(r.posted.length, 0);
+  assert.equal(r.saves, 0);
 });
 
 test('credit purchase remains payable to supplier without changing cash or bank', () => {
