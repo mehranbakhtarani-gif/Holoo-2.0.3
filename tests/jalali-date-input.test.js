@@ -6,7 +6,7 @@ const html = fs.readFileSync('index.html', 'utf8');
 function extractFunction(name) {
   const start = html.indexOf('function ' + name + '(');
   assert.notEqual(start, -1, name + ' must exist');
-  const end = html.indexOf('\\n    }', start);
+  const end = html.indexOf('\n    }', start);
   assert.notEqual(end, -1, name + ' must close');
   return html.slice(start, end + 6);
 }
@@ -15,9 +15,9 @@ const source = [
   extractFunction('normalizeJalaliDateInputValue'),
   extractFunction('jalaliDateOrdinal'),
   extractFunction('normalizeLedgerDate')
-].join('\\n');
+].join('\n');
 const context = {};
-vm.runInNewContext(source + '\\nthis.normalizeJalaliDateInputValue = normalizeJalaliDateInputValue; this.jalaliDateOrdinal = jalaliDateOrdinal; this.normalizeLedgerDate = normalizeLedgerDate;', context);
+vm.runInNewContext(source + '\nthis.normalizeJalaliDateInputValue = normalizeJalaliDateInputValue; this.jalaliDateOrdinal = jalaliDateOrdinal; this.normalizeLedgerDate = normalizeLedgerDate;', context);
 
 assert.equal(context.normalizeJalaliDateInputValue('14050102'), '1405/01/02');
 assert.equal(context.normalizeJalaliDateInputValue('۱۴۰۵۰۱۰۲'), '1405/01/02');
