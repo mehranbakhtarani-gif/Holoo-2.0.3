@@ -61,7 +61,7 @@ const sandbox = {
   },
   document: {
     getElementById: id => ({ value: id === 'trial-from' ? '1405/01/02' : '1405/01/31' }),
-    createElement: () => ({ click() { exportCapture.clicked = true; }, remove() {} }),
+    createElement: () => ({ set download(value) { exportCapture.download = value; }, click() { exportCapture.clicked = true; }, remove() {} }),
     body: { appendChild() {} }
   },
   setTimeout: callback => callback(),
