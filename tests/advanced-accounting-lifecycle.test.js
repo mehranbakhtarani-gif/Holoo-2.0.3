@@ -36,6 +36,7 @@ test('treasury rejects an invoice belonging to a different party without side ef
   const posted = []; let saves = 0;
   const save = load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
     state, document: doc({ 'tr-dir':'receive','tr-party':'P1','tr-method':'cash','tr-amount':'100','tr-alloc-inv':'2001','tr-bank-acc':'B1','tr-desc':'test' }),
+    getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); },
     postVoucher(...a) { posted.push(a); }, saveState() { saves++; }, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
   });
   save();
