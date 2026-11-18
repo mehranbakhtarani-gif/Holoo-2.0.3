@@ -3120,79 +3120,146 @@
       const settlementAccountCode = payMethod === 'bank' ? '1102' : (payMethod === 'cash' ? '1101' : null);
       const vatRate = Number(document.getElementById('inv-vat-rate').value || 0);
       const commRate = Number(document.getElementById('inv-commission-rate').value || 0);
-      const sub = invDraft.lines.reduce((s, l) => s + l.total, 0); // مبلغ خالص پس از تخفیف؛ مبنای ثبت حسابداری
-      const disc = invDraft.lines.reduce((s, l) => s + l.disc, 0);
-      const grossSub = invDraft.lines.reduce((s, l) => s + (l.kg * l.price), 0);
+      if (!Number.isFinite(vatRate) || vatRate < 0 || !Number.isFinite(commRate) || commRate < 0) {
+        showToast('نرخ مالیات یا پورسانت معتبر نیست.', 'error'); return;
+      }
+      const invoiceLines = invDraft.lines.map(line => ({ ...line }));
+      if (invoiceLines.some(line => !Number.isFinite(Number(line.kg)) || Number(line.kg) <= 0 ||
+          !Number.isFinite(Number(line.price)) || Number(line.price) < 0 ||
+          !Number.isFinite(Number(line.total)) || Number(line.total) < 0)) {
+        showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست.', 'error'); return;
+      }
+      const sub = invoiceLines.reduce((sum, line) => sum + Number(line.total || 0), 0);
+      const disc = invoiceLines.reduce((sum, line) => sum + Number(line.disc || 0), 0);
+      const grossSub = invoiceLines.reduce((sum, line) => sum + (Number(line.kg) * Number(line.price)), 0);
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
       const grandTotal = sub + vatAmount;
       const id = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
       const date = getTodayJalaliDate();
-
-      state.invoices.unshift({
+      const invoice = {
         id, type, date, dueDate: document.getElementById('inv-due-date').value, partyId, warehouseId,
         payMethod, ...(settlementAccount ? { bankAccountId: settlementAccount.id } : {}),
         salesperson: document.getElementById('inv-salesperson').value, commRate, commAmount,
-        subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal, paidAmount: payMethod === 'credit' ? 0 : grandTotal,
-        status: 'active', items: [...invDraft.lines]
-      });
+        subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
+        paidAmount: payMethod === 'credit' ? 0 : grandTotal,
+        status: 'active', items: invoiceLines
+      };
 
-      if (type === 'sale') {
-        let cogs = 0;
-        invDraft.lines.forEach(l => {
-          const p = state.products.find(x => x.id === l.productId);
-          if (p) {
-            const fifo = consumeFifoStock(p, l.kg);
-            let lineCost = l.kg * p.buyPrice;
-            l.fifoAllocations = fifo.allocations;
-            l.costingMethod = state.costingMethod;
+      // Prepare all stock/batch changes on clones first. A failed preflight leaves live state untouched.
+      const productPlans = [];
+      const simulatedProducts = new Map();
+      let cogs = 0;
+      try {
+        for (const line of invoiceLines) {
+          const product = state.products.find(entry => String(entry.id) === String(line.productId));
+          if (!product) throw new Error('کالای یکی از ردیف‌های فاکتور پیدا نشد.');
+          if (!simulatedProducts.has(product)) simulatedProducts.set(product, JSON.parse(JSON.stringify(product)));
+          const simulated = simulatedProducts.get(product);
+          if (type === 'sale') {
+            const fifo = consumeFifoStock(simulated, line.kg);
+            let lineCost = Number(line.kg) * Number(product.buyPrice || 0);
+            line.fifoAllocations = fifo.allocations;
+            line.costingMethod = state.costingMethod;
             if (state.costingMethod === 'FIFO') lineCost = fifo.totalCost;
-            l.costOfGoodsSold = lineCost;
-            p.stock -= l.kg; p.lastMoveDays = 0; cogs += lineCost;
-            p.kardex.push({ date, doc: `فاکتور فروش #${id}`, inQty: 0, outQty: l.kg, bal: p.stock, price: state.costingMethod === 'FIFO' ? (lineCost / l.kg) : p.buyPrice, costingMethod: state.costingMethod, fifoAllocations: l.fifoAllocations || [] });
+            if (!Number.isFinite(lineCost) || lineCost < 0) throw new Error('بهای تمام‌شده یکی از اقلام معتبر نیست.');
+            line.costOfGoodsSold = lineCost;
+            cogs += lineCost;
+            productPlans.push({ product, simulated, line, quantity: Number(line.kg), type: 'sale' });
+          } else {
+            const receivedUnitCost = Number(line.kg) > 0
+              ? Math.max(0, Number(line.total || 0) / Number(line.kg))
+              : Number(line.price || 0);
+            if (state.costingMethod === 'AVG') {
+              const nextStock = Number(simulated.stock || 0) + Number(line.kg);
+              if (!Number.isFinite(nextStock) || nextStock <= 0) throw new Error('موجودی برای محاسبه میانگین معتبر نیست.');
+              simulated.buyPrice = Math.round(((Number(simulated.stock || 0) * Number(simulated.buyPrice || 0)) + Number(line.total || 0)) / nextStock);
+            }
+            addStockBatch(simulated, {
+              lot: line.lot || ('PUR-' + id + '-' + line.productId),
+              productionDate: line.productionDate, expiryDate: line.expiryDate,
+              quantity: Number(line.kg), unitCost: receivedUnitCost, receivedDate: date,
+              sourceType: 'purchase', sourceRef: String(id), supplierId: partyId, warehouseId
+            });
+            productPlans.push({ product, simulated, line, quantity: Number(line.kg), type: 'purchase', receivedUnitCost });
           }
-        });
+        }
+      } catch (error) {
+        showToast('کنترل موجودی یا بچ‌های فاکتور ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
+        return;
+      }
+
+      let voucherLines;
+      if (type === 'sale') {
         const debAcc = payMethod === 'credit' ? '1103' : settlementAccountCode;
-        const lines = [
+        voucherLines = [
           { code: debAcc, partyId, desc: `فاکتور فروش #${id}`, debit: grandTotal, credit: 0 },
           { code: '4101', partyId, desc: `درآمد فروش #${id}`, debit: 0, credit: sub },
           { code: '5101', partyId: null, desc: `بهای تمام‌شده #${id}`, debit: cogs, credit: 0 },
           { code: '1105', partyId: null, desc: `خروج انبار #${id}`, debit: 0, credit: cogs }
         ];
-        if (vatAmount > 0) lines.push({ code: '2103', partyId: null, desc: `ارزش افزوده #${id}`, debit: 0, credit: vatAmount });
+        if (vatAmount > 0) voucherLines.push({ code: '2103', partyId: null, desc: `ارزش افزوده #${id}`, debit: 0, credit: vatAmount });
         if (commAmount > 0) {
-          lines.push({ code: '6101', partyId: null, desc: `پورسانت فروش #${id}`, debit: commAmount, credit: 0 });
-          lines.push({ code: '2101', partyId: null, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
+          voucherLines.push({ code: '6101', partyId: null, desc: `پورسانت فروش #${id}`, debit: commAmount, credit: 0 });
+          voucherLines.push({ code: '2101', partyId: null, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
         }
-        postVoucher(`صدور فاکتور فروش #${id}`, lines, date, { type: 'invoice', id });
-        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) + grandTotal;
       } else {
-        invDraft.lines.forEach(l => {
-          const p = state.products.find(x => x.id === l.productId);
-          if (p) {
-            const receivedUnitCost = l.kg > 0 ? Math.max(0, Number(l.total || 0) / l.kg) : Number(l.price || 0);
-            if (state.costingMethod === 'AVG') p.buyPrice = Math.round(((p.stock * p.buyPrice) + l.total) / (p.stock + l.kg));
-            addStockBatch(p, { lot: l.lot || ('PUR-' + id + '-' + l.productId), productionDate: l.productionDate, expiryDate: l.expiryDate, quantity: l.kg, unitCost: receivedUnitCost, receivedDate: date, sourceType: 'purchase', sourceRef: String(id), supplierId: partyId, warehouseId });
-            p.stock += l.kg; p.lastMoveDays = 0;
-            p.kardex.push({ date, doc: `فاکتور خرید #${id}`, inQty: l.kg, outQty: 0, bal: p.stock, price: receivedUnitCost, batchRef: 'PUR-' + id });
-          }
-        });
         const purchaseCreditCode = settlementAccountCode || '2101';
-        postVoucher(`ثبت فاکتور خرید #${id}`, [
+        voucherLines = [
           { code: '1105', partyId: null, desc: `ورود کالا #${id}`, debit: sub, credit: 0 },
           { code: '1106', partyId: null, desc: `اعتبار ارزش افزوده #${id}`, debit: vatAmount, credit: 0 },
           { code: purchaseCreditCode, partyId: payMethod === 'credit' ? partyId : null,
             desc: payMethod === 'credit' ? `بستانکار بابت خرید #${id}` : `پرداخت خرید از ${settlementAccount.name} #${id}`,
             debit: 0, credit: grandTotal }
-        ], date, { type: 'invoice', id });
-        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) - grandTotal;
+        ];
+      }
+
+      state.invoices.unshift(invoice);
+      try {
+        postVoucher(type === 'sale' ? `صدور فاکتور فروش #${id}` : `ثبت فاکتور خرید #${id}`,
+          voucherLines, date, { type: 'invoice', id, deferSave: true });
+      } catch (error) {
+        state.invoices = state.invoices.filter(entry => entry !== invoice);
+        state.vouchers = (state.vouchers || []).filter(voucher =>
+          !(voucher.sourceType === 'invoice' && String(voucher.sourceId) === String(id))
+        );
+        showToast('صدور سند فاکتور ناموفق بود؛ فاکتور، موجودی و مانده صندوق/بانک تغییر نکردند. ' + (error?.message || ''), 'error');
+        return;
+      }
+
+      // Journal posting succeeded; apply the prevalidated stock/batch plan to live products.
+      for (const plan of productPlans) {
+        const { product, simulated, line, quantity } = plan;
+        product.batches = simulated.batches || product.batches || [];
+        if (type === 'sale') {
+          product.stock = Number(product.stock || 0) - quantity;
+          product.lastMoveDays = 0;
+          product.kardex = product.kardex || [];
+          product.kardex.push({
+            date, doc: `فاکتور فروش #${id}`, inQty: 0, outQty: quantity, bal: product.stock,
+            price: state.costingMethod === 'FIFO' ? (line.costOfGoodsSold / quantity) : product.buyPrice,
+            costingMethod: state.costingMethod, fifoAllocations: line.fifoAllocations || []
+          });
+        } else {
+          if (state.costingMethod === 'AVG') product.buyPrice = simulated.buyPrice;
+          product.stock = Number(product.stock || 0) + quantity;
+          product.lastMoveDays = 0;
+          product.kardex = product.kardex || [];
+          product.kardex.push({
+            date, doc: `فاکتور خرید #${id}`, inQty: quantity, outQty: 0, bal: product.stock,
+            price: plan.receivedUnitCost, batchRef: 'PUR-' + id
+          });
+        }
+      }
+      if (settlementAccount) {
+        settlementAccount.balance = Number(settlementAccount.balance || 0) + (type === 'sale' ? grandTotal : -grandTotal);
       }
 
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
       showToast(`فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
     }
 
-    function renderInvoicesModule() {
+        function renderInvoicesModule() {
       document.getElementById('invoices-list-container').innerHTML = state.invoices.map(inv => `
         <div class="bg-white rounded-2xl p-4 border ${inv.status === 'cancelled' ? 'border-rose-300 opacity-65' : 'border-slate-200'} space-y-2 text-xs">
           <div class="flex flex-wrap justify-between items-center gap-2">
