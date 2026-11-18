@@ -557,6 +557,7 @@
               <button onclick="setAccTab('trial')" id="acc-tab-trial" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">⚖️ تراز آزمایشی</button>
               <button onclick="setAccTab('pnl')" id="acc-tab-pnl" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">📈 سود و زیان</button>
               <button onclick="setAccTab('bs')" id="acc-tab-bs" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🏛️ ترازنامه</button>
+              <button onclick="setAccTab('yearend')" id="acc-tab-yearend" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🔒 بستن سال مالی</button>
             </div>
           </div>
           <div id="accounting-panel-body" class="space-y-3 text-xs"></div>
@@ -2260,6 +2261,11 @@
     }
 
     function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
+      const postingDate = normalizeLedgerDate(date);
+      if (source?.type !== 'fiscal_year_close' && postingDate && jalaliDateOrdinal(date) !== null) {
+        const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && /^14\\d{2}$/.test(String(v.sourceId || '')) && postingDate <= normalizeLedgerDate(String(v.sourceId) + '/12/30'));
+        if (closedYear) throw new Error('سال مالی ' + closedYear.sourceId + ' بسته شده است؛ ثبت با تاریخ این سال مجاز نیست.');
+      }
       const d = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
       const c = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
       if (!Array.isArray(lines) || lines.length < 2 || !Number.isFinite(d) || !Number.isFinite(c) || Math.round(d) !== Math.round(c) || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: حداقل دو ردیف و توازن کامل لازم است.');
@@ -5791,10 +5797,103 @@
         '<p class="text-[10px] text-slate-500">گردش‌ها فقط مربوط به بازه انتخابی‌اند؛ مانده‌ها شامل تمام گردش‌های ثبت‌شده از ابتدای سوابق تا تاریخ پایان هستند. این گزارش صرفاً خواندنی است و هیچ سندی ایجاد یا اصلاح نمی‌کند.</p></div>';
     }
 
+    function getFiscalYearEndDate(year) {
+      const candidate30 = String(year) + '/12/30';
+      return jalaliDateOrdinal(candidate30) !== null ? candidate30 : String(year) + '/12/29';
+    }
+
+    function buildFiscalYearClosePreview(year) {
+      const fiscalYear = String(year || '');
+      if (!/^14\\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
+      const from = fiscalYear + '/01/01';
+      const to = getFiscalYearEndDate(fiscalYear);
+      const today = getTodayJalaliDate();
+      if (jalaliDateOrdinal(today) === null || normalizeLedgerDate(today) < normalizeLedgerDate(to)) {
+        throw new Error('بستن سال مالی فقط پس از پایان واقعی سال (' + to + ') مجاز است.');
+      }
+      const existing = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId) === fiscalYear && (v.sourceEvent || 'default') === 'closing');
+      if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.id, rows: [], profit: 0, blocked: false, warnings: [] };
+
+      const balances = new Map();
+      const warnings = [];
+      (state.vouchers || []).forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) {
+          warnings.push('سند #' + (voucher.id ?? '؟') + ' تاریخ نامعتبر دارد؛ ابتدا تاریخ آن را اصلاح کنید.');
+          return;
+        }
+        if (dateKey < normalizeLedgerDate(from) || dateKey > normalizeLedgerDate(to)) return;
+        const validation = inspectTrialBalanceVoucher(voucher);
+        if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) {
+          warnings.push('سند #' + voucher.id + ' نامعتبر، ناقص یا نامتوازن است؛ ابتدا آن را اصلاح کنید.');
+          return;
+        }
+        (voucher.lines || []).forEach(line => {
+          const code = String(line.code || '');
+          if (!/^[456]/.test(code)) return;
+          if (!balances.has(code)) balances.set(code, { code, debit: 0, credit: 0 });
+          const row = balances.get(code);
+          row.debit += Number(line.debit || 0);
+          row.credit += Number(line.credit || 0);
+        });
+      });
+      const rows = Array.from(balances.values()).map(row => ({ ...row, net: row.debit - row.credit }))
+        .filter(row => Math.abs(row.net) >= 0.5).sort((a,b) => a.code.localeCompare(b.code));
+      const profit = rows.reduce((sum, row) => sum - row.net, 0);
+      return { year: fiscalYear, from, to, alreadyClosed: false, rows, profit, blocked: warnings.length > 0 || rows.length === 0, warnings };
+    }
+
+    function closeFiscalYear() {
+      const year = String(state.fiscalYear || '');
+      let preview;
+      try { preview = buildFiscalYearClosePreview(year); }
+      catch (error) { showToast(error.message, 'error'); return; }
+      if (preview.alreadyClosed) { showToast('این سال مالی قبلاً با سند #' + preview.voucherId + ' بسته شده است.', 'error'); return; }
+      if (preview.blocked) { showToast(preview.warnings[0] || 'برای این سال گردش درآمد/هزینه‌ای جهت بستن وجود ندارد.', 'error'); return; }
+      const lines = preview.rows.map(row => ({
+        code: row.code, partyId: null, desc: 'بستن حساب سود و زیان سال ' + year,
+        debit: row.net < 0 ? Math.abs(row.net) : 0,
+        credit: row.net > 0 ? row.net : 0
+      }));
+      if (preview.profit > 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال سود خالص سال ' + year + ' به سود انباشته', debit: 0, credit: preview.profit });
+      else if (preview.profit < 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال زیان خالص سال ' + year + ' به سود انباشته', debit: Math.abs(preview.profit), credit: 0 });
+      try {
+        const voucherId = postVoucher('سند اختتامیه سود و زیان سال مالی ' + year, lines, preview.to,
+          { type: 'fiscal_year_close', id: year, event: 'closing', deferSave: true });
+        const voucher = (state.vouchers || []).find(item => String(item.id) === String(voucherId));
+        if (voucher) voucher.locked = true;
+        addAudit('بستن سال مالی ' + year + ' با سند اختتامیه #' + voucherId);
+        saveState();
+        renderAccountingModule();
+        showToast('سال مالی ' + year + ' با سند اختتامیه #' + voucherId + ' بسته شد.');
+      } catch (error) { showToast('بستن سال مالی ناموفق بود: ' + (error?.message || ''), 'error'); }
+    }
+
+    function renderFiscalYearCloseModule() {
+      const box = document.getElementById('accounting-panel-body');
+      const year = String(state.fiscalYear || '1405');
+      let preview;
+      try { preview = buildFiscalYearClosePreview(year); }
+      catch (error) {
+        box.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-2"><h3 class="font-black">بستن سال مالی ' + escapeLedgerText(faNum(year)) + '</h3><p class="text-amber-800">' + escapeLedgerText(error.message) + '</p><p class="text-xs text-slate-500">تا پایان سال، عملیات اختتامیه قابل اجرا نیست. گزارش‌ها و مانده‌ها بدون تغییر باقی می‌مانند.</p></div>';
+        return;
+      }
+      if (preview.alreadyClosed) {
+        box.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-2"><h3 class="font-black">سال مالی ' + escapeLedgerText(faNum(year)) + '</h3><p class="text-emerald-700 font-bold">این سال قبلاً بسته شده است؛ سند اختتامیه #' + faNum(preview.voucherId) + '</p><p class="text-xs text-slate-500">ثبت اسناد جدید با تاریخ این سال مسدود است. مانده‌های دارایی، بدهی و سرمایه در دفترکل تاریخی حفظ شده‌اند و سند افتتاحیه جداگانه صادر نمی‌شود تا مانده‌ها دوباره‌شماری نشوند.</p></div>';
+        return;
+      }
+      const rows = preview.rows.map(row => '<div class="flex justify-between gap-2 p-2 rounded-lg bg-slate-50 border text-xs"><span>' + escapeLedgerText(faNum(row.code)) + '</span><strong>' + money(Math.abs(row.net)) + (row.net > 0 ? ' بدهکار' : ' بستانکار') + '</strong></div>').join('');
+      const warnings = preview.warnings.map(w => '<p class="text-rose-700">' + escapeLedgerText(w) + '</p>').join('');
+      box.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3"><div class="flex flex-wrap justify-between gap-2"><strong>پیش‌نمایش اختتامیه سال مالی ' + escapeLedgerText(faNum(year)) + '</strong><span class="text-xs text-slate-500">از ' + faNum(preview.from) + ' تا ' + faNum(preview.to) + '</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2"><div class="p-3 rounded-xl bg-slate-50">سود / (زیان) خالص قابل انتقال<strong class="block">' + money(preview.profit) + '</strong></div><div class="p-3 rounded-xl bg-slate-50">حساب‌های نتیجه‌دار<strong class="block">' + faNum(preview.rows.length) + ' حساب</strong></div></div><div class="space-y-1">' + (rows || '<p class="text-slate-500">گردش نتیجه‌داری برای بستن وجود ندارد.</p>') + '</div>' + (warnings ? '<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1">' + warnings + '</div>' : '') + '<p class="text-xs text-slate-500">با ثبت اختتامیه، حساب‌های درآمد، بهای تمام‌شده و هزینه صفر می‌شوند و سود/زیان خالص به حساب ۳۱۰۲ منتقل می‌شود. اسناد و مانده‌های دارایی، بدهی و سرمایه حذف یا دوباره ثبت نمی‌شوند. سال بسته‌شده قابل ثبت مجدد نیست.</p><button onclick="closeFiscalYear()" ' + (preview.blocked ? 'disabled' : '') + ' class="touch-btn w-full rounded-xl px-4 py-3 font-black ' + (preview.blocked ? 'bg-slate-200 text-slate-500' : 'bg-rose-700 text-white') + '">ثبت سند اختتامیه و قفل سال مالی</button></div>';
+    }
+
     function renderAccountingModule() {
       const box = document.getElementById('accounting-panel-body');
       const bal = getAccountBalances();
-      if (activeAccTab === 'chart') {
+      if (activeAccTab === 'yearend') {
+        renderFiscalYearCloseModule();
+      } else if (activeAccTab === 'chart') {
         const rows = (state.accountCatalog || []).slice().sort((a, b) => a.code.localeCompare(b.code)).map(a => {
           const indent = a.level === 'group' ? '' : (a.level === 'general' ? '　　' : '　　　　');
           const levelName = a.level === 'group' ? 'گروه' : (a.level === 'general' ? 'کل' : 'معین');
