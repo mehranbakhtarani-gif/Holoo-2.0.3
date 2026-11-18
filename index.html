@@ -4635,7 +4635,21 @@
     function cancelInvoice(invId) {
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv || inv.status === 'cancelled') return;
-      if (Number(inv.paidAmount || 0) > 0) { showToast('این فاکتور دریافت/پرداخت دارد؛ ابتدا تسویه‌های مرتبط را تعیین‌تکلیف کنید.', 'error'); return; }
+      const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
+        if (tx.kind === 'party_credit') return false;
+        if ((tx.allocations || []).some(allocation =>
+          String(allocation.invoiceId) === String(invId) && Number(allocation.amount || 0) > 0)) return true;
+        return Number(tx.allocInvId) === Number(invId);
+      });
+      const hasActiveChequeAllocation = (state.checks || []).some(check => {
+        if (check.allocationsReleasedAt || ['bounced', 'voided'].includes(check.status)) return false;
+        return (check.allocations || []).some(allocation =>
+          String(allocation.invoiceId) === String(invId) && Number(allocation.amount || 0) > 0);
+      });
+      if (Number(inv.paidAmount || 0) > 0 || hasTreasuryAllocation || hasActiveChequeAllocation) {
+        showToast('این فاکتور سابقه دریافت، پرداخت یا تخصیص چک دارد؛ ابتدا تسویه مرتبط را تعیین‌تکلیف کنید.', 'error');
+        return;
+      }
 
       const getInvoiceLineNetTotal = line => {
         if (line.total !== undefined && line.total !== null) return Number(line.total);
