@@ -6384,14 +6384,24 @@
     }
 
     function runTrialBalanceReport() {
-      const from = document.getElementById('trial-from')?.value?.trim() || '';
-      const to = document.getElementById('trial-to')?.value?.trim() || '';
-      try { buildTrialBalanceReport(from, to); }
-      catch (error) { showToast(error.message, 'error'); return; }
+      const fromInput = document.getElementById('trial-from');
+      const toInput = document.getElementById('trial-to');
+      if (!fromInput || !toInput) {
+        showToast('فیلدهای تاریخ گزارش پیدا نشدند؛ دوباره وارد تب تراز آزمایشی شوید.', 'error');
+        return;
+      }
+      const from = fromInput.value.trim();
+      const to = toInput.value.trim();
+      let report;
+      try { report = buildTrialBalanceReport(from, to); }
+      catch (error) { showToast(error.message || 'محاسبه گزارش ناموفق بود.', 'error'); return; }
       trialBalanceFromDate = from;
       trialBalanceToDate = to;
       renderTrialBalanceReport();
+      showToast('گزارش تراز آزمایشی به‌روزرسانی شد؛ ' + faNum(report.rows.length) + ' حساب نمایش داده شد.', 'success');
     }
+    // Expose the inline-button handler explicitly for browsers and installed PWA mode.
+    window.runTrialBalanceReport = runTrialBalanceReport;
 
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
