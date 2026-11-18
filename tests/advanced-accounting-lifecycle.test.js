@@ -236,6 +236,42 @@ test('check issue rejects duplicate SAYAD and does not create a treasury transac
   assert.equal(saves,0);
 });
 
+test('failed cheque issue journal does not leave a check or treasury transaction behind', () => {
+  const state={fiscalYear:'1405',parties:[{id:'P1'}],invoices:[],checks:[],bankAccounts:[{id:'B1',type:'cash',name:'صندوق',balance:1000}],treasuryTxs:[]};
+  const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'500','tr-alloc-inv':'0','tr-desc':'failed check','tr-sayad':'123456789012345678901234','tr-chk-due':'1405/09/01','tr-chk-bank':'بانک تست','tr-bank-acc':'B1'};
+  let saves=0; const messages=[];
+  const save=load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
+    state, document:doc(values), getTodayJalaliDate(){return '1405/09/02';},
+    getInvoiceOutstanding(){return 0;}, postVoucher(...args){assert.equal(args[3].deferSave,true);throw new Error('simulated journal failure');},
+    saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(msg,type){messages.push({msg,type});}, faNum:String
+  });
+  save();
+  assert.equal(state.checks.length,0);
+  assert.equal(state.treasuryTxs.length,0);
+  assert.equal(state.bankAccounts[0].balance,1000);
+  assert.equal(saves,0);
+  assert.equal(messages[0].type,'error');
+});
+
+test('failed bounced-check journal leaves check status and invoice allocation unchanged', () => {
+  const state={
+    invoices:[{id:3010,type:'sale',partyId:'P1',grandTotal:1000,paidAmount:400}],
+    checks:[{id:'CHK-FAIL',sayad:'777788889999000011112222',status:'in_progress',dir:'receive',amount:400,partyId:'P1',allocations:[{invoiceId:3010,amount:400}]}],
+    bankAccounts:[{id:'B1',type:'bank',balance:900}]
+  };
+  let saves=0; const messages=[];
+  const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
+    state, postVoucher(...args){assert.equal(args[3].deferSave,true);throw new Error('simulated journal failure');},
+    showToast(msg,type){messages.push({msg,type});}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+  });
+  update('CHK-FAIL','bounced');
+  assert.equal(state.checks[0].status,'in_progress');
+  assert.equal(state.invoices[0].paidAmount,400);
+  assert.equal(state.checks[0].allocationsReleasedAt,undefined);
+  assert.equal(saves,0);
+  assert.equal(messages[0].type,'error');
+});
+
 // A bounced received check restores the customer's receivable once; duplicate transition is rejected.
 test('bounced received check posts once and repeated status change has no side effects', () => {
   const state={
@@ -251,6 +287,7 @@ test('bounced received check posts once and repeated status change has no side e
   assert.equal(state.checks[0].status,'bounced');
   assert.equal(posted.length,1);
   assert.equal(posted[0][3].event,'bounced');
+  assert.equal(posted[0][3].deferSave,true);
   assert.equal(saves,1);
 });
 
