@@ -136,7 +136,7 @@ sandbox.money = value => String(value);
 sandbox.faNum = String;
 sandbox.escapeLedgerText = value => String(value);
 sandbox.document = { getElementById() { return { set innerHTML(value) { trialBalanceHtml = value; }, get innerHTML() { return trialBalanceHtml; } }; } };
-vm.runInContext("let activeAccTab = 'trial';\\n" + sliceBetween('    function renderAccountingModule()', '    function saveManualVoucher()') +
+vm.runInContext("let activeAccTab = 'trial';" + sliceBetween('    function renderAccountingModule()', '    function saveManualVoucher()') +
   '; this.renderAccountingModule = renderAccountingModule;', sandbox);
 sandbox.renderAccountingModule();
 for (const heading of ['گردش بدهکار','گردش بستانکار','مانده بدهکار','مانده بستانکار']) {
