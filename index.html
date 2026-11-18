@@ -6401,7 +6401,7 @@
       showToast('گزارش تراز آزمایشی به‌روزرسانی شد؛ ' + faNum(report.rows.length) + ' حساب نمایش داده شد.', 'success');
     }
     // Expose the inline-button handler explicitly for browsers and installed PWA mode.
-    window.runTrialBalanceReport = runTrialBalanceReport;
+    if (typeof window !== 'undefined') window.runTrialBalanceReport = runTrialBalanceReport;
 
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
