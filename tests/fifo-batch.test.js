@@ -3,15 +3,15 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const start = html.indexOf('    function ensureProductBatches(');
+const start = html.indexOf('    function inspectProductBatchReconciliation(');
 const end = html.indexOf('    // =========================================================================\n    // 7. MODULE 3:', start);
 assert.notEqual(start, -1, 'batch helpers must exist');
 assert.notEqual(end, -1, 'batch helper section must have an end');
 const source = html.slice(start, end);
 const sandbox = { createStableId: (() => { let n = 0; return prefix => prefix + '-' + (++n); })(), getTodayJalaliDate: () => '1405/09/02', currentJalaliOrdinal: () => 100, jalaliDateOrdinal: value => value === 'EXPIRED' ? 90 : 110 };
 vm.createContext(sandbox);
-vm.runInContext(source + '; this.api = { ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations };', sandbox);
-const { ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations } = sandbox.api;
+vm.runInContext(source + '; this.api = { inspectProductBatchReconciliation, ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations };', sandbox);
+const { inspectProductBatchReconciliation, ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations } = sandbox.api;
 
 function test(name, fn) { fn(); console.log('PASS: ' + name); }
 
@@ -38,17 +38,23 @@ test('new batches default to the Jalali operation date, not the ISO/Gregorian da
   assert.equal(batch.receivedDate.split('/').length, 3);
 });
 
-test('legacy AVG stock with over-counted historical lots is reconciled without shipment attribution', () => {
+test('legacy AVG stock with over-counted historical lots is preserved and reported without mutation', () => {
   const p = { id: 'P-AVG', stock: 5, buyPrice: 120, batches: [
     { id: 'OLD-1', sourceType: 'import', sourceRef: 'IMP-OLD', remainingQty: 6, quantity: 6, unitCost: 100 },
     { id: 'OLD-2', sourceType: 'purchase', sourceRef: 'PUR-OLD', remainingQty: 4, quantity: 4, unitCost: 150 }
   ] };
+  const before = JSON.stringify(p.batches);
   const batches = ensureProductBatches(p);
-  assert.equal(batches.reduce((sum, batch) => sum + Number(batch.remainingQty || 0), 0), 5);
-  assert.equal(batches.filter(batch => batch.sourceType === 'import' && batch.sourceRef === 'IMP-OLD').reduce((sum,b)=>sum+b.remainingQty,0), 0);
-  const opening = batches.find(batch => batch.sourceType === 'legacy_balance_reconciled');
-  assert.equal(opening.remainingQty, 5);
-  assert.equal(opening.unitCost, 120);
+  assert.equal(JSON.stringify(batches), before);
+  assert.equal(batches.reduce((sum, batch) => sum + Number(batch.remainingQty || 0), 0), 10);
+  const report = inspectProductBatchReconciliation(p);
+  assert.equal(report.valid, false);
+  assert.equal(report.stock, 5);
+  assert.equal(report.tracked, 10);
+  assert.equal(report.difference, -5);
+  assert.match(report.issue, /مغایرت/);
+  assert.throws(() => consumeFifoStock(p, 1), /مغایرت‌گیری/);
+  assert.equal(JSON.stringify(p.batches), before);
 });
 
 test('FIFO consumes oldest available batches first and calculates exact cost', () => {
