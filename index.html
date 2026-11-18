@@ -331,7 +331,7 @@
             </div>
             <div class="flex gap-2">
               <button onclick="exportTableCSV('parties')" class="touch-btn bg-slate-100 border px-3 rounded-xl text-xs font-bold">📊 خروجی CSV</button>
-              <button onclick="openModal('modal-new-party')" class="touch-btn bg-holoo-700 text-white px-4 rounded-xl text-xs font-extrabold">+ طرف حساب جدید</button>
+              <button onclick="openPartyModal()" class="touch-btn bg-holoo-700 text-white px-4 rounded-xl text-xs font-extrabold">+ طرف حساب جدید</button>
             </div>
           </div>
           <div id="parties-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
@@ -1052,7 +1052,7 @@
   <!-- Quick Modals: Party, Order, FX Rates, Bank CSV, Employee, Asset, Approval, Kardex, Print, Share -->
   <div id="modal-new-party" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
-      <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">تعریف مشتری / تأمین‌کننده</h3><button onclick="closeModal('modal-new-party')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <div class="flex justify-between items-center border-b pb-2"><h3 id="np-modal-title" class="font-black text-sm">تعریف مشتری / تأمین‌کننده</h3><button onclick="closeModal('modal-new-party')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
       <input type="text" id="np-name" placeholder="نام شخص یا شرکت بافندگی *" class="touch-btn w-full border rounded-xl px-3 font-bold" />
       <div class="grid grid-cols-2 gap-2">
         <select id="np-role" class="touch-btn border rounded-xl px-2"><option value="مشتری (بافندگی)">مشتری (بافندگی)</option><option value="تأمین‌کننده">تأمین‌کننده</option></select>
@@ -1061,7 +1061,7 @@
         <input type="number" id="np-credit" value="5000000000" placeholder="سقف اعتبار (ریال)" class="touch-btn border rounded-xl px-2 tabular-nums" />
       </div>
       <input type="text" id="np-terms" value="نقدی و چک ۴۵ روزه صیادی" placeholder="شرایط پرداخت" class="touch-btn w-full border rounded-xl px-3" />
-      <button onclick="saveParty()" class="touch-btn w-full bg-holoo-700 text-white font-extrabold rounded-xl">✔ ثبت طرف حساب</button>
+      <button id="np-save-button" onclick="saveParty()" class="touch-btn w-full bg-holoo-700 text-white font-extrabold rounded-xl">✔ ثبت طرف حساب</button>
     </div>
   </div>
 
@@ -3008,6 +3008,7 @@
     // =========================================================================
     // 8. MODULE 4: CUSTOMERS & SUPPLIERS
     // =========================================================================
+    let editingPartyId = null;
     let selectedPartyLedgerId = null;
     let partyLedgerFromDate = null;
     let partyLedgerToDate = null;
@@ -3135,6 +3136,7 @@
               <strong class="${bal >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(bal))} (${bal >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
             </div>
             <div class="text-[10px] text-slate-500 tabular-nums">سقف اعتبار مصوب: ${money(p.creditLimit)}</div>
+            <button onclick="openPartyModal('${escapeLedgerText(p.id)}')" class="touch-btn w-full mt-1 bg-amber-100 text-amber-900 rounded-lg px-3 py-2 font-bold">✏️ ویرایش مشخصات</button>
             <button onclick="openPartyLedger('${escapeLedgerText(p.id)}')" class="touch-btn w-full mt-1 bg-holoo-700 text-white rounded-lg px-3 py-2 font-bold">مشاهده گردش حساب و ریز اسناد</button>
           </div>
         `;
@@ -3142,19 +3144,50 @@
     }
 
 
+    function openPartyModal(partyId = null) {
+      editingPartyId = partyId === null ? null : String(partyId);
+      const party = editingPartyId === null ? null : (state.parties || []).find(item => String(item.id) === editingPartyId);
+      if (editingPartyId !== null && !party) { showToast('طرف حساب موردنظر پیدا نشد.', 'error'); return; }
+      document.getElementById('np-name').value = party?.name || '';
+      document.getElementById('np-role').value = party?.role || 'مشتری (بافندگی)';
+      document.getElementById('np-phone').value = party?.phone || '';
+      document.getElementById('np-eco').value = party?.ecoCode || '';
+      document.getElementById('np-credit').value = party ? Number(party.creditLimit ?? 5000000000) : 5000000000;
+      document.getElementById('np-terms').value = party?.terms || 'نقدی و چک ۴۵ روزه صیادی';
+      document.getElementById('np-role').disabled = Boolean(party);
+      document.getElementById('np-modal-title').textContent = party ? 'ویرایش مشخصات طرف حساب' : 'تعریف مشتری / تأمین‌کننده';
+      document.getElementById('np-save-button').textContent = party ? '✔ ذخیره تغییرات' : '✔ ثبت طرف حساب';
+      openModal('modal-new-party');
+    }
+
     function saveParty() {
       const name = document.getElementById('np-name').value.trim();
       if (!name) { showToast('نام طرف حساب را وارد کنید.', 'error'); return; }
       const phone = document.getElementById('np-phone').value.trim();
-      if (state.parties.some(p => p.name.trim().toLowerCase() === name.toLowerCase() || (phone && p.phone && p.phone.trim() === phone))) { showToast('طرف حسابی با همین نام یا شماره تماس قبلاً ثبت شده است.', 'error'); return; }
+      const ecoCode = document.getElementById('np-eco').value.trim();
+      const creditLimit = Number(document.getElementById('np-credit').value || 0);
+      const terms = document.getElementById('np-terms').value.trim();
+      if (!Number.isFinite(creditLimit) || creditLimit < 0) { showToast('سقف اعتبار باید عددی معتبر و غیرمنفی باشد.', 'error'); return; }
+      const duplicate = state.parties.some(p => String(p.id) !== String(editingPartyId) &&
+        (p.name.trim().toLowerCase() === name.toLowerCase() || (phone && p.phone && p.phone.trim() === phone)));
+      if (duplicate) { showToast('طرف حسابی با همین نام یا شماره تماس قبلاً ثبت شده است.', 'error'); return; }
+      if (editingPartyId !== null) {
+        const party = state.parties.find(p => String(p.id) === editingPartyId);
+        if (!party) { showToast('طرف حساب برای ویرایش پیدا نشد؛ تغییری ذخیره نشد.', 'error'); return; }
+        Object.assign(party, { name, phone, ecoCode, creditLimit, terms });
+        addAudit('ویرایش مشخصات طرف حساب', { mode: 'manual', sourceType: 'party', sourceId: party.id });
+        saveState(); closeModal('modal-new-party'); renderAll(); showToast('مشخصات طرف حساب ذخیره و همگام‌سازی شد.');
+        editingPartyId = null;
+        return;
+      }
+      const partyId = 'P-' + Date.now();
       state.parties.push({
-        id: 'P-' + Date.now(), name, role: document.getElementById('np-role').value,
+        id: partyId, name, role: document.getElementById('np-role').value,
         subledgerId: 'PARTY-' + Date.now(), ledgerAccountCode: document.getElementById('np-role').value.includes('تأمین') ? '2101' : '1103', accountingStatus: 'active',
-        phone: document.getElementById('np-phone').value, ecoCode: document.getElementById('np-eco').value,
-        creditLimit: Number(document.getElementById('np-credit').value || 5000000000),
-        terms: document.getElementById('np-terms').value
+        phone, ecoCode, creditLimit: creditLimit || 5000000000, terms
       });
       saveState(); closeModal('modal-new-party'); renderAll(); showToast('طرف حساب جدید ثبت شد.');
+      editingPartyId = null;
     }
 
     // =========================================================================
