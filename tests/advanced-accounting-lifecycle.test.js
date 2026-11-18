@@ -382,5 +382,58 @@ test('credit application rejects an amount above either the credit or invoice ba
   assert.equal(saves,0);
 });
 
+
+test('customer credit refund decreases the selected bank balance and customer credit', () => {
+  const state={
+    treasuryTxs:[{id:'CREDIT-R1',kind:'party_credit',creditDirection:'sale',partyId:'P1',amount:100,remainingAmount:100}],
+    bankAccounts:[{id:'B1',type:'bank',balance:500}]
+  };
+  const posted=[]; let saves=0;
+  const refund=load(section('function submitPartyCreditRefund()', 'function applyPartyCredit(creditId)'), 'submitPartyCreditRefund', {
+    state, document:doc({'credit-refund-id':'CREDIT-R1','credit-refund-amount':'40','credit-refund-bank':'B1'}),
+    createStableId(){return 'REFUND-1';}, postVoucher(...a){posted.push(a);return 77;}, addAudit(){}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  refund();
+  assert.equal(state.bankAccounts[0].balance,460);
+  assert.equal(state.treasuryTxs[0].remainingAmount,60);
+  assert.equal(state.treasuryTxs[1].kind,'party_credit_refund');
+  assert.equal(state.treasuryTxs[1].dir,'pay');
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),40);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),40);
+  assert.equal(saves,1);
+});
+
+test('supplier credit refund records an incoming bank receipt and increases bank balance', () => {
+  const state={
+    treasuryTxs:[{id:'CREDIT-R2',kind:'party_credit',creditDirection:'purchase',partyId:'P2',amount:80,remainingAmount:80}],
+    bankAccounts:[{id:'B2',type:'cash',balance:100}]
+  };
+  const posted=[];
+  const refund=load(section('function submitPartyCreditRefund()', 'function applyPartyCredit(creditId)'), 'submitPartyCreditRefund', {
+    state, document:doc({'credit-refund-id':'CREDIT-R2','credit-refund-amount':'30','credit-refund-bank':'B2'}),
+    createStableId(){return 'REFUND-2';}, postVoucher(...a){posted.push(a);return 78;}, addAudit(){}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  refund();
+  assert.equal(state.bankAccounts[0].balance,130);
+  assert.equal(state.treasuryTxs[0].remainingAmount,50);
+  assert.equal(state.treasuryTxs[1].dir,'receive');
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),30);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),30);
+});
+
+test('party credit refund rejects an amount above the remaining credit', () => {
+  const state={treasuryTxs:[{id:'CREDIT-R3',kind:'party_credit',creditDirection:'sale',partyId:'P1',amount:100,remainingAmount:20}],bankAccounts:[{id:'B1',type:'bank',balance:500}]};
+  const posted=[]; let saves=0;
+  const refund=load(section('function submitPartyCreditRefund()', 'function applyPartyCredit(creditId)'), 'submitPartyCreditRefund', {
+    state, document:doc({'credit-refund-id':'CREDIT-R3','credit-refund-amount':'30','credit-refund-bank':'B1'}),
+    createStableId(){return 'REFUND-3';}, postVoucher(...a){posted.push(a);return 79;}, addAudit(){}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  refund();
+  assert.equal(posted.length,0);
+  assert.equal(state.bankAccounts[0].balance,500);
+  assert.equal(state.treasuryTxs[0].remainingAmount,20);
+  assert.equal(saves,0);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
