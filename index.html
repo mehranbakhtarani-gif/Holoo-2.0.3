@@ -969,7 +969,7 @@
         </select>
         <input type="number" id="tr-amount" placeholder="مبلغ (ریال) *" class="touch-btn border rounded-xl px-2.5 tabular-nums font-bold" />
       </div>
-      <div><label class="block text-[10px] font-bold mb-0.5">تخصیص به فاکتور باز (اختیاری):</label><select id="tr-alloc-inv" class="touch-btn w-full border rounded-xl px-2 bg-slate-50"></select></div>
+      <div><label class="block text-[10px] font-bold mb-0.5">تخصیص مبلغ به فاکتورهای باز (اختیاری؛ برای انتخاب چند فاکتور، چند مورد را انتخاب کنید):</label><select id="tr-alloc-inv" multiple size="4" class="w-full border rounded-xl px-2 py-1 bg-slate-50"></select><p class="text-[10px] text-slate-500 mt-1">مبلغ به‌ترتیب فاکتورهای انتخاب‌شده تخصیص می‌یابد؛ مبلغ اضافه‌تر از مجموع مانده‌ها پذیرفته نمی‌شود.</p></div>
       <div id="tr-bank-box"><select id="tr-bank-acc" class="touch-btn w-full border rounded-xl px-2.5"></select></div>
       <div id="tr-check-box" class="hidden space-y-1.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
         <input type="text" id="tr-sayad" maxlength="16" placeholder="شناسه صیادی ۱۶ رقمی *" class="touch-btn w-full border rounded-xl px-2.5 bg-white tabular-nums" />
@@ -3476,8 +3476,10 @@
     }
     function populateAllocatableInvoices() {
       const pId = document.getElementById('tr-party').value;
-      const openInvs = state.invoices.filter(i => i.partyId === pId && i.status === 'active' && (i.grandTotal - i.paidAmount) > 0);
-      document.getElementById('tr-alloc-inv').innerHTML = '<option value="">بدون تخصیص به فاکتور خاص</option>' + openInvs.map(i => `<option value="${i.id}">فاکتور #${faNum(i.id)} (مانده: ${money(i.grandTotal - i.paidAmount)})</option>`).join('');
+      const dir = document.getElementById('tr-dir')?.value || 'receive';
+      const expectedType = dir === 'receive' ? 'sale' : 'purchase';
+      const openInvs = state.invoices.filter(i => String(i.partyId) === String(pId) && i.status === 'active' && (!i.type || i.type === expectedType) && (Number(i.grandTotal || 0) - Number(i.paidAmount || 0)) > 0);
+      document.getElementById('tr-alloc-inv').innerHTML = openInvs.map(i => `<option value="${i.id}">فاکتور #${faNum(i.id)} (مانده: ${money(Number(i.grandTotal || 0) - Number(i.paidAmount || 0))})</option>`).join('');
     }
     function toggleCheckFields() {
       const isChk = document.getElementById('tr-method').value === 'check';
@@ -3489,37 +3491,78 @@
       const partyId = document.getElementById('tr-party').value;
       const method = document.getElementById('tr-method').value;
       const amount = Number(document.getElementById('tr-amount').value || 0);
-      const allocInvId = Number(document.getElementById('tr-alloc-inv').value || 0);
+      const allocationSelect = document.getElementById('tr-alloc-inv');
+      const selectedIds = allocationSelect && allocationSelect.selectedOptions
+        ? Array.from(allocationSelect.selectedOptions).map(option => Number(option.value)).filter(Number.isFinite)
+        : (Number(allocationSelect?.value || 0) ? [Number(allocationSelect.value)] : []);
       const desc = document.getElementById('tr-desc').value.trim();
       const party = state.parties.find(p => String(p.id) === String(partyId));
       if (!party) { showToast('طرف حساب معتبر انتخاب کنید.', 'error'); return; }
       if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ معتبر وارد کنید.', 'error'); return; }
-      let allocatedInvoice = null;
-      if (allocInvId) {
-        allocatedInvoice = state.invoices.find(i => Number(i.id) === allocInvId);
-        if (!allocatedInvoice || allocatedInvoice.status !== 'active' || String(allocatedInvoice.partyId) !== String(partyId)) { showToast('فاکتور انتخاب‌شده فعال نیست یا متعلق به این طرف حساب نیست.', 'error'); return; }
-        const remaining = Number(allocatedInvoice.grandTotal || 0) - Number(allocatedInvoice.paidAmount || 0);
-        if (amount > remaining) { showToast('مبلغ دریافت/پرداخت از مانده فاکتور بیشتر است.', 'error'); return; }
+
+      // Validate every selected invoice and calculate the complete allocation plan before mutating state.
+      const expectedType = dir === 'receive' ? 'sale' : 'purchase';
+      const selectedInvoices = [];
+      for (const invoiceId of [...new Set(selectedIds)]) {
+        const invoice = state.invoices.find(i => Number(i.id) === invoiceId);
+        if (!invoice || invoice.status !== 'active' || String(invoice.partyId) !== String(partyId) || (invoice.type && invoice.type !== expectedType)) {
+          showToast('یکی از فاکتورهای انتخاب‌شده فعال نیست یا با طرف حساب/نوع تراکنش سازگار نیست.', 'error'); return;
+        }
+        const remaining = Number(invoice.grandTotal || 0) - Number(invoice.paidAmount || 0);
+        if (!Number.isFinite(remaining) || remaining <= 0) { showToast('مانده یکی از فاکتورهای انتخاب‌شده معتبر نیست.', 'error'); return; }
+        selectedInvoices.push({ invoice, remaining });
       }
-      const txId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const allocatableTotal = selectedInvoices.reduce((sum, item) => sum + item.remaining, 0);
+      if (selectedInvoices.length && amount > allocatableTotal) {
+        showToast('مبلغ تراکنش از مجموع مانده فاکتورهای انتخاب‌شده بیشتر است.', 'error'); return;
+      }
+      let amountLeft = selectedInvoices.length ? amount : 0;
+      const allocations = [];
+      for (const item of selectedInvoices) {
+        if (amountLeft <= 0) break;
+        const allocated = Math.min(item.remaining, amountLeft);
+        if (allocated > 0) allocations.push({ invoiceId: item.invoice.id, amount: allocated });
+        amountLeft -= allocated;
+      }
+      if (selectedInvoices.length && amountLeft > 0.000001) { showToast('تقسیم مبلغ بین فاکتورها کامل نشد؛ تراکنش ثبت نشد.', 'error'); return; }
+
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
         if (!sayad || state.checks.some(c => String(c.sayad) === sayad)) { showToast('شناسه صیادی الزامی است و نباید تکراری باشد.', 'error'); return; }
+      } else {
+        const selectedBankId = document.getElementById('tr-bank-acc').value;
+        const bAcc = state.bankAccounts.find(b => b.id === selectedBankId) || state.bankAccounts.find(b => b.type === 'cash') || state.bankAccounts[0];
+        if (!bAcc) { showToast('ابتدا یک حساب صندوق یا بانک تعریف کنید.', 'error'); return; }
+      }
+
+      const txId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      if (method === 'check') {
+        const sayad = document.getElementById('tr-sayad').value.trim();
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: `${state.fiscalYear}/08/27`, dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId });
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
         postVoucher('ثبت چک صیادی ' + sayad, lines, undefined, { type: 'check', id: checkId, event: 'issued' });
       } else {
         const bAcc = state.bankAccounts.find(b => b.id === document.getElementById('tr-bank-acc').value) || state.bankAccounts.find(b => b.type === 'cash') || state.bankAccounts[0];
-        if (!bAcc) { showToast('ابتدا یک حساب صندوق یا بانک تعریف کنید.', 'error'); return; }
         const accountCode = bAcc.type === 'cash' ? '1101' : '1102';
         const lines = dir === 'receive' ? [{ code: accountCode, partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bAcc.name, debit: 0, credit: amount }];
         postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted' });
         bAcc.balance = Number(bAcc.balance || 0) + (dir === 'receive' ? amount : -amount);
       }
-      if (allocatedInvoice) allocatedInvoice.paidAmount = Number(allocatedInvoice.paidAmount || 0) + amount;
-      state.treasuryTxs.unshift({ id: txId, date: `${state.fiscalYear}/08/27`, dir, partyId, method: method === 'check' ? 'چک صیادی' : (method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی'), amount, allocInv: allocInvId ? `#${faNum(allocInvId)}` : '—', allocInvId: allocInvId || null, desc: desc || 'تراکنش خزانه' });
-      saveState(); closeModal('modal-treasury-form'); renderAll(); showToast('تراکنش خزانه ثبت و ارتباط آن با فاکتور/سند ایجاد شد.');
+
+      for (const allocation of allocations) {
+        const invoice = state.invoices.find(i => Number(i.id) === Number(allocation.invoiceId));
+        invoice.paidAmount = Number(invoice.paidAmount || 0) + allocation.amount;
+      }
+      const singleAllocation = allocations.length === 1 ? allocations[0] : null;
+      state.treasuryTxs.unshift({
+        id: txId, date: `${state.fiscalYear}/08/27`, dir, partyId,
+        method: method === 'check' ? 'چک صیادی' : (method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی'),
+        amount, allocInv: singleAllocation ? `#${faNum(singleAllocation.invoiceId)}` : (allocations.length ? `${faNum(allocations.length)} فاکتور` : '—'),
+        allocInvId: singleAllocation ? singleAllocation.invoiceId : null,
+        allocations, desc: desc || 'تراکنش خزانه'
+      });
+      saveState(); closeModal('modal-treasury-form'); renderAll(); showToast('تراکنش خزانه ثبت و مبلغ بین فاکتورهای انتخاب‌شده تخصیص یافت.');
     }
 
     function renderTreasuryModule() {
