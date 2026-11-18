@@ -395,9 +395,9 @@ test('customer credit refund decreases the selected bank balance and customer cr
   });
   refund();
   assert.equal(state.bankAccounts[0].balance,460);
-  assert.equal(state.treasuryTxs[0].remainingAmount,60);
-  assert.equal(state.treasuryTxs[1].kind,'party_credit_refund');
-  assert.equal(state.treasuryTxs[1].dir,'pay');
+  assert.equal(state.treasuryTxs[1].remainingAmount,60);
+  assert.equal(state.treasuryTxs[0].kind,'party_credit_refund');
+  assert.equal(state.treasuryTxs[0].dir,'pay');
   assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),40);
   assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),40);
   assert.equal(saves,1);
@@ -415,8 +415,8 @@ test('supplier credit refund records an incoming bank receipt and increases bank
   });
   refund();
   assert.equal(state.bankAccounts[0].balance,130);
-  assert.equal(state.treasuryTxs[0].remainingAmount,50);
-  assert.equal(state.treasuryTxs[1].dir,'receive');
+  assert.equal(state.treasuryTxs[1].remainingAmount,50);
+  assert.equal(state.treasuryTxs[0].dir,'receive');
   assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),30);
   assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),30);
 });
