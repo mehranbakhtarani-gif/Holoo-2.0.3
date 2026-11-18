@@ -3301,8 +3301,20 @@
           else if (seenBatchIds.has(batchId)) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه بچ تکراری است.', detail: batchId });
           else seenBatchIds.add(batchId);
         });
-        const movements = Array.isArray(product?.kardex) ? product.kardex : [];
-        checkedMovements += movements.length;
+        const rawMovements = Array.isArray(product?.kardex) ? product.kardex : [];
+        checkedMovements += rawMovements.length;
+        const orderedEntries = rawMovements.map((movement, originalIndex) => ({
+          movement,
+          originalIndex,
+          dateOrdinal: jalaliDateOrdinal(movement?.date)
+        })).sort((a, b) => {
+          if (a.dateOrdinal === null && b.dateOrdinal === null) return a.originalIndex - b.originalIndex;
+          if (a.dateOrdinal === null) return 1;
+          if (b.dateOrdinal === null) return -1;
+          return a.dateOrdinal - b.dateOrdinal || a.originalIndex - b.originalIndex;
+        });
+        const chronologyVerified = orderedEntries.every(entry => entry.dateOrdinal !== null);
+        const movements = orderedEntries.map(entry => entry.movement);
         const currentStock = Number(product?.stock);
         if (!movements.length && Number.isFinite(currentStock) && Math.abs(currentStock) > 0.000001) {
           issues.push({ type: 'kardex-missing', productId, productName, message: 'کالا موجودی دارد اما هیچ ردیف کاردکسی برای آن ثبت نشده است.', detail: `موجودی فعلی: ${product?.stock}` });
@@ -3315,8 +3327,10 @@
           const firstOutgoing = Number(first?.outQty ?? 0);
           const firstBalance = Number(first?.bal);
           const hasOpeningMarker = isOpeningKardexDocument(first?.doc);
-          if (!hasOpeningMarker) {
-            unverified.push({ type: 'kardex-baseline', productId, productName, message: 'مانده پایه کاردکس مشخص نیست؛ صحت اولین ردیف قابل تأیید نیست.', detail: `اولین سند: ${first?.doc || 'بدون شرح'} | مانده ثبت‌شده: ${first?.bal ?? '—'}` });
+          if (!chronologyVerified) {
+            unverified.push({ type: 'kardex-date-order', productId, productName, message: 'به‌دلیل تاریخ نامعتبر یا ثبت‌نشده در بعضی ردیف‌ها، ترتیب زمانی کاردکس و مانده پایه قطعی نیست.', detail: 'برای تأیید سابقه قبل از اولین گردش، تاریخ همه ردیف‌های کاردکس باید معتبر باشد.' });
+          } else if (!hasOpeningMarker) {
+            unverified.push({ type: 'kardex-baseline', productId, productName, message: 'مانده پایه کاردکس مشخص نیست؛ صحت اولین ردیف قابل تأیید نیست.', detail: `اولین سند بر اساس تاریخ: ${first?.doc || 'بدون شرح'} | تاریخ: ${first?.date || '—'} | مانده ثبت‌شده: ${first?.bal ?? '—'}` });
           } else if (Number.isFinite(firstIncoming) && Number.isFinite(firstOutgoing) && Number.isFinite(firstBalance) &&
               Math.abs((firstIncoming - firstOutgoing) - firstBalance) > 0.000001) {
             issues.push({ type: 'kardex-sequence', productId, productName, message: 'مانده ردیف افتتاحیه با ورود منهای خروج برابر نیست.', detail: `ورود: ${firstIncoming} | خروج: ${firstOutgoing} | مانده ثبت‌شده: ${firstBalance}` });
@@ -3337,18 +3351,18 @@
               return;
             }
             if (index > 0 && previousBalance === null && chainInterrupted) chainInterrupted = false;
-            if (previousBalance !== null) {
+            if (chronologyVerified && previousBalance !== null) {
               const expectedBalance = previousBalance + incoming - outgoing;
               if (Math.abs(expectedBalance - balance) > 0.000001) {
-                issues.push({ type: 'kardex-sequence', productId, productName, message: 'مانده این ردیف با مانده ردیف قبل به‌علاوه ورود و کسر خروج سازگار نیست.', detail: `ردیف: ${index + 1} | مانده مورد انتظار: ${expectedBalance} | مانده ثبت‌شده: ${balance}` });
+                issues.push({ type: 'kardex-sequence', productId, productName, message: 'مانده این ردیف با مانده ردیف قبل به‌علاوه ورود و کسر خروج سازگار نیست.', detail: `ردیف: ${index + 1} | تاریخ: ${movement?.date || '—'} | مانده مورد انتظار: ${expectedBalance} | مانده ثبت‌شده: ${balance}` });
               }
             }
             previousBalance = balance;
           });
           const last = movements[movements.length - 1];
           const lastBalance = Number(last?.bal);
-          if (!Number.isFinite(lastBalance) || !Number.isFinite(currentStock) || Math.abs(lastBalance - currentStock) > 0.000001) {
-            issues.push({ type: 'kardex-balance', productId, productName, message: 'مانده آخرین ردیف کاردکس با موجودی فعلی کالا برابر نیست.', detail: `مانده کاردکس: ${last?.bal ?? 'نامعتبر'} | موجودی فعلی: ${product?.stock ?? 'نامعتبر'}` });
+          if (chronologyVerified && (!Number.isFinite(lastBalance) || !Number.isFinite(currentStock) || Math.abs(lastBalance - currentStock) > 0.000001)) {
+            issues.push({ type: 'kardex-balance', productId, productName, message: 'مانده آخرین ردیف کاردکس با موجودی فعلی کالا برابر نیست.', detail: `آخرین سند بر اساس تاریخ: ${last?.doc || 'بدون شرح'} | تاریخ: ${last?.date || '—'} | مانده کاردکس: ${last?.bal ?? 'نامعتبر'} | موجودی فعلی: ${product?.stock ?? 'نامعتبر'}` });
           }
         }
         movements.forEach(movement => {
