@@ -306,7 +306,7 @@ test('return below the unpaid invoice balance does not create excess party credi
   submit();
   assert.equal(state.treasuryTxs.length,0);
   assert.equal(posted[0][1].find(line=>line.code==='2101').debit,20);
-  assert.equal(posted[0][1].some(line=>line.code==='1103' && line.debit>0),false);
+  assert.equal(posted[0][1].some(line=>line.code==='1107' && line.debit>0),false);
   assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),20);
   assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),20);
 });
@@ -433,6 +433,82 @@ test('party credit refund rejects an amount above the remaining credit', () => {
   assert.equal(state.bankAccounts[0].balance,500);
   assert.equal(state.treasuryTxs[0].remainingAmount,20);
   assert.equal(saves,0);
+});
+
+
+
+test('fully paid supplier purchase return books excess as supplier prepayment in 1107', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'AVG', treasuryTxs:[],
+    invoices:[{id:3401,type:'purchase',partyId:'SUP-1',grandTotal:100,paidAmount:100,items:[{productId:'Y1',kg:10,returnedKg:0,price:10}]}],
+    products:[{id:'Y1',stock:10,kardex:[]}]
+  };
+  const posted=[];
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, document:doc({'partial-ret-inv-id':'3401','pret-qty-0':'2'}),
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+  });
+  submit();
+  const lines=posted[0][1];
+  assert.equal(lines.find(line=>line.code==='1107')?.debit,20);
+  assert.equal(lines.some(line=>line.code==='1103'),false);
+  assert.equal(lines.reduce((n,line)=>n+line.debit,0),20);
+  assert.equal(lines.reduce((n,line)=>n+line.credit,0),20);
+  assert.equal(state.treasuryTxs[0].creditDirection,'purchase');
+});
+
+test('supplier credit application clears supplier payable against prepayment account 1107', () => {
+  const state={
+    treasuryTxs:[{id:'SUP-CREDIT',kind:'party_credit',creditDirection:'purchase',partyId:'SUP-1',amount:100,remainingAmount:100}],
+    invoices:[{id:3402,type:'purchase',status:'active',partyId:'SUP-1',grandTotal:500,paidAmount:0}]
+  };
+  const posted=[];
+  const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
+    state, document:doc({'credit-invoice-SUP-CREDIT':'3402','credit-amount-SUP-CREDIT':'60'}),
+    getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
+    createStableId(){return 'SUP-APPLY';}, postVoucher(...a){posted.push(a);return 45;}, addAudit(){}, saveState(){}, renderAll(){}, showToast(){}
+  });
+  apply('SUP-CREDIT');
+  assert.equal(posted[0][1].find(line=>line.code==='2101')?.debit,60);
+  assert.equal(posted[0][1].find(line=>line.code==='1107')?.credit,60);
+  assert.equal(posted[0][1].some(line=>line.code==='1103'),false);
+});
+
+test('supplier credit cash refund clears prepayment account 1107, not receivables', () => {
+  const state={
+    treasuryTxs:[{id:'SUP-REFUND',kind:'party_credit',creditDirection:'purchase',partyId:'SUP-1',amount:80,remainingAmount:80}],
+    bankAccounts:[{id:'BANK-SUP',type:'bank',balance:100}]
+  };
+  const posted=[];
+  const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
+    state, document:doc({'credit-refund-id':'SUP-REFUND','credit-refund-amount':'30','credit-refund-bank':'BANK-SUP'}),
+    createStableId(){return 'SUP-REFUND-1';}, postVoucher(...a){posted.push(a);return 46;}, addAudit(){}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  refund();
+  assert.equal(posted[0][1].find(line=>line.code==='1107')?.credit,30);
+  assert.equal(posted[0][1].some(line=>line.code==='1103'),false);
+});
+
+test('failed return journal leaves stock, invoice quantities and return history untouched', () => {
+  const state={
+    fiscalYear:'1405',costingMethod:'AVG',treasuryTxs:[],
+    invoices:[{id:3403,type:'sale',partyId:'C-1',grandTotal:100,paidAmount:0,items:[{productId:'Y2',kg:10,returnedKg:0,price:10}]}],
+    products:[{id:'Y2',stock:0,kardex:[]}]
+  };
+  let saves=0; const messages=[];
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state,document:doc({'partial-ret-inv-id':'3403','pret-qty-0':'2'}),
+    getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
+    postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;},closeModal(){},renderAll(){},showToast(msg,type){messages.push({msg,type});}
+  });
+  submit();
+  assert.equal(state.invoices[0].items[0].returnedKg,0);
+  assert.equal(state.invoices[0].returnRefs,undefined);
+  assert.equal(state.products[0].stock,0);
+  assert.equal(state.products[0].kardex.length,0);
+  assert.equal(saves,0);
+  assert.equal(messages[0].type,'error');
 });
 
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
