@@ -661,5 +661,93 @@ test('failed return journal leaves stock, invoice quantities and return history 
   assert.equal(messages[0].type,'error');
 });
 
+
+// Multiple partial sales returns must restore each original FIFO allocation only once.
+test('sequential partial FIFO sales returns restore the exact remaining original batches', () => {
+  const item = {
+    productId:'FIFO-SEQ', kg:10, returnedKg:0, price:300, costingMethod:'FIFO', costOfGoodsSold:1500,
+    fifoAllocations:[
+      {batchId:'SEQ-B1',quantity:5,unitCost:100},
+      {batchId:'SEQ-B2',quantity:5,unitCost:200}
+    ],
+    fifoReturnedAllocations:[]
+  };
+  const state = {
+    fiscalYear:'1405', costingMethod:'FIFO',
+    invoices:[{id:3501,type:'sale',partyId:'C-SEQ',grandTotal:3000,paidAmount:0,items:[item]}],
+    products:[{id:'FIFO-SEQ',stock:0,buyPrice:150,batches:[
+      {id:'SEQ-B1',quantity:5,remainingQty:0,unitCost:100},
+      {id:'SEQ-B2',quantity:5,remainingQty:0,unitCost:200}
+    ],kardex:[]}],
+    treasuryTxs:[]
+  };
+  const values={'partial-ret-inv-id':'3501','pret-qty-0':'3'};
+  const posted=[]; let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, document:{getElementById(id){return {value:values[id] ?? '',classList:{add(){},remove(){}},textContent:''};}},
+    getTodayJalaliDate(){return '1405/09/02';},
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
+    postVoucher(...args){posted.push(args);return posted.length;},
+    saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+  });
+
+  submit();
+  assert.equal(state.invoices[0].items[0].returnedKg,3);
+  assert.equal(state.products[0].batches[0].remainingQty,3);
+  assert.equal(state.products[0].batches[1].remainingQty,0);
+  assert.equal(state.invoices[0].returnRefs[0].costOfGoodsSold,300);
+  assert.equal(posted[0][1].find(line=>line.code==='1105')?.debit,300);
+
+  values['pret-qty-0']='4';
+  submit();
+  assert.equal(state.invoices[0].items[0].returnedKg,7);
+  assert.equal(state.products[0].batches[0].remainingQty,5);
+  assert.equal(state.products[0].batches[1].remainingQty,2);
+  assert.equal(state.invoices[0].returnRefs[1].costOfGoodsSold,600);
+  assert.equal(posted[1][1].find(line=>line.code==='1105')?.debit,600);
+
+  values['pret-qty-0']='3';
+  submit();
+  assert.equal(state.invoices[0].items[0].returnedKg,10);
+  assert.equal(state.products[0].stock,10);
+  assert.equal(state.products[0].batches[0].remainingQty,5);
+  assert.equal(state.products[0].batches[1].remainingQty,5);
+  assert.equal(state.invoices[0].returnRefs[2].costOfGoodsSold,600);
+  assert.equal(state.invoices[0].returnRefs.reduce((n,r)=>n+r.costOfGoodsSold,0),1500);
+  assert.equal(posted.length,3);
+  assert.equal(saves,3);
+});
+
+// FIFO purchase returns must consume the original stock batches in FIFO order.
+test('FIFO supplier purchase return consumes the original batches and posts balanced purchase reversal', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'FIFO', treasuryTxs:[],
+    invoices:[{id:3502,type:'purchase',partyId:'SUP-FIFO',grandTotal:40,paidAmount:0,items:[{productId:'FIFO-PUR',kg:4,returnedKg:0,price:10}]}],
+    products:[{id:'FIFO-PUR',stock:10,buyPrice:9,batches:[
+      {id:'PUR-B1',quantity:6,remainingQty:6,unitCost:8},
+      {id:'PUR-B2',quantity:4,remainingQty:4,unitCost:10}
+    ],kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, getTodayJalaliDate(){return '1405/09/02';},
+    document:doc({'partial-ret-inv-id':'3502','pret-qty-0':'3'}),
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-Number(inv.paidAmount||0));},
+    postVoucher(...args){posted.push(args);return 1;},
+    saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+  });
+  submit();
+  assert.equal(state.invoices[0].items[0].returnedKg,3);
+  assert.equal(state.products[0].stock,7);
+  assert.equal(state.products[0].batches[0].remainingQty,3);
+  assert.equal(state.products[0].batches[1].remainingQty,4);
+  assert.equal(state.products[0].kardex[0].outQty,3);
+  const lines=posted[0][1];
+  assert.equal(lines.find(line=>line.code==='2101')?.debit,30);
+  assert.equal(lines.find(line=>line.code==='1105')?.credit,30);
+  assert.equal(lines.reduce((n,line)=>n+line.debit,0),lines.reduce((n,line)=>n+line.credit,0));
+  assert.equal(saves,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
