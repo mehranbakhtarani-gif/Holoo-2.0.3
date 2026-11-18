@@ -3689,7 +3689,7 @@
     function normalizeLedgerDate(value) {
       const digits = String(value || '').replace(/[۰-۹٠-٩]/g, ch => '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch) >= 0 ? String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)) : String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
       const parts = digits.trim().replace(/-/g, '/').split('/');
-      if (parts.length !== 3 || parts.some(p => !/^\\d{1,4}$/.test(p))) return null;
+      if (parts.length !== 3 || parts.some(p => !/^[0-9]{1,4}$/.test(p))) return null;
       const [year, month, day] = parts.map(Number);
       if (!year || month < 1 || month > 12 || day < 1 || day > 31) return null;
       return String(year).padStart(4, '0') + String(month).padStart(2, '0') + String(day).padStart(2, '0');
