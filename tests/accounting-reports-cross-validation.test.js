@@ -161,7 +161,42 @@ assert.equal(trial.rows.find(r=>r.code==='4101').closingBalanceCredit -
 assert.equal(trial.rows.find(r=>r.code==='1101').closingBalanceDebit +
   trial.rows.find(r=>r.code==='1102').closingBalanceDebit,cf.closingCash,
   'trial balance cash and bank accounts must equal cash flow closing cash');
+
+// A posted but unbalanced voucher and a one-sided voucher must remain visible
+// in every report; the reports should expose the same 15-unit difference.
+state.vouchers.push(
+  voucher(7,'1405/01/07','سند نامتوازن اما ثبت‌شده',[
+    {code:'1101',debit:40,credit:0},{code:'4101',debit:0,credit:30}
+  ]),
+  voucher(8,'1405/01/08','سند تک‌ردیفی ثبت‌شده',[
+    {code:'1102',debit:5,credit:0}
+  ])
+);
+const imbalanceTrial = api.buildTrialBalanceReport('1405/01/01','1405/01/30');
+const imbalancePnl = api.buildProfitLossReport('1405/01/01','1405/01/30');
+const imbalanceBs = api.buildBalanceSheetReport('1405/01/30');
+const imbalanceCf = api.buildActualCashFlowReport('1405/01/01','1405/01/30');
+assert.equal(imbalanceTrial.includedVouchers,7);
+assert.equal(imbalanceTrial.unbalancedVouchers,2);
+assert.equal(imbalanceTrial.invalidStructureVouchers,1);
+assert.equal(imbalanceTrial.totals.periodDebit,1145);
+assert.equal(imbalanceTrial.totals.periodCredit,1130);
+assert.equal(imbalanceTrial.movementDifference,15);
+assert.equal(imbalanceTrial.totals.closingBalanceDebit,2345);
+assert.equal(imbalanceTrial.totals.closingBalanceCredit,2330);
+assert.equal(imbalanceTrial.closingDifference,15);
+assert.equal(imbalancePnl.netProfit,430);
+assert.equal(imbalanceBs.assets,2245);
+assert.equal(imbalanceBs.difference,15);
+assert.equal(imbalanceBs.trialBalanceDifference,15);
+assert.equal(imbalanceCf.closingCash,2045);
+assert.equal(imbalanceCf.unbalancedVoucherCount,2);
+assert.equal(imbalanceCf.voucherDebitCreditDifference,15);
+assert.equal(api.buildAccountLedger('1101','1405/01/01','1405/01/30').closingNet,1240);
+assert.equal(api.buildAccountLedger('1102','1405/01/01','1405/01/30').closingNet,805);
+
 console.log('PASS: seven-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
 console.log('PASS: invalid voucher is excluded consistently from ledger, trial balance, P&L, balance sheet and cash flow');
-console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow');
+console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow
+PASS: unbalanced and one-sided postings remain visible and expose the same difference in every report');
 console.log('PASS: bank transaction matching is exact and one voucher cannot be matched twice');
