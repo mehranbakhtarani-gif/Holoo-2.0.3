@@ -206,6 +206,71 @@ test('paid invoice is rejected before mutation when matching settlement account 
   assert.equal(r.saves, 0);
 });
 
+
+// A failed invoice journal must not persist the invoice or mutate live stock/batches.
+function runInvoiceWithJournalFailure(type) {
+  const product={id:'TX-FAIL',name:'کالای آزمایشی',stock:100,buyPrice:10,kardex:[]};
+  const state={fiscalYear:'1405',invoices:[],products:[product],bankAccounts:[],costingMethod:'AVG'};
+  const values={'inv-party':'P-FAIL','inv-warehouse':'WH1','inv-pay-method':'credit','inv-settlement-account':'',
+    'inv-vat-rate':'0','inv-commission-rate':'0','inv-due-date':'1405/09/01','inv-salesperson':'آزمایشی'};
+  const draft={type,lines:[{productId:'TX-FAIL',kg:5,price:20,total:100,disc:0}]};
+  let saves=0;const messages=[];
+  const submit=load(extractFunction('submitInvoice','function renderInvoicesModule()'),'submitInvoice',{
+    state,invDraft:draft,document:fakeDocument(values),getTodayJalaliDate(){return '1405/09/02';},
+    addStockBatch(p,details){p.batches=p.batches||[];p.batches.push({...details,id:'TEST-BATCH-'+p.batches.length,remainingQty:details.quantity});},
+    consumeFifoStock(p,quantity){
+      p.batches=p.batches||[];
+      if(!p.batches.length)p.batches.push({id:'TEST-OPENING',remainingQty:p.stock,unitCost:p.buyPrice});
+      let remaining=quantity;const allocations=[];
+      for(const batch of p.batches){const take=Math.min(remaining,Number(batch.remainingQty||0));if(take>0){batch.remainingQty-=take;allocations.push({batchId:batch.id,quantity:take,unitCost:batch.unitCost});remaining-=take;}if(remaining<=0)break;}
+      if(remaining>0)throw new Error('insufficient test batch stock');
+      return {totalCost:allocations.reduce((sum,x)=>sum+x.quantity*x.unitCost,0),allocations};
+    },
+    postVoucher(){throw new Error('simulated invoice journal failure');},
+    saveState(){saves++;},renderAll(){},showToast(msg,type){messages.push({msg,type});},faNum:String
+  });
+  submit();
+  return {state,product,saves,messages};
+}
+
+test('failed sales invoice journal leaves invoice, stock and FIFO batches unchanged',()=>{
+  const r=runInvoiceWithJournalFailure('sale');
+  assert.equal(r.state.invoices.length,0);
+  assert.equal(r.product.stock,100);
+  assert.equal(r.product.batches,undefined);
+  assert.equal(r.saves,0);
+  assert.equal(r.messages[0].type,'error');
+});
+
+test('failed purchase invoice journal leaves invoice, stock, average cost and batches unchanged',()=>{
+  const r=runInvoiceWithJournalFailure('purchase');
+  assert.equal(r.state.invoices.length,0);
+  assert.equal(r.product.stock,100);
+  assert.equal(r.product.buyPrice,10);
+  assert.equal(r.product.batches,undefined);
+  assert.equal(r.saves,0);
+  assert.equal(r.messages[0].type,'error');
+});
+
+test('sales invoice rechecks available stock before any live mutation',()=>{
+  const product={id:'TX-LOW',name:'کالای کم‌موجودی',stock:2,buyPrice:10,kardex:[]};
+  const state={fiscalYear:'1405',invoices:[],products:[product],bankAccounts:[],costingMethod:'FIFO'};
+  const values={'inv-party':'P-LOW','inv-warehouse':'WH1','inv-pay-method':'credit','inv-settlement-account':'',
+    'inv-vat-rate':'0','inv-commission-rate':'0','inv-due-date':'1405/09/01','inv-salesperson':'آزمایشی'};
+  const draft={type:'sale',lines:[{productId:'TX-LOW',kg:5,price:20,total:100,disc:0}]};
+  let posted=0,saves=0;
+  const submit=load(extractFunction('submitInvoice','function renderInvoicesModule()'),'submitInvoice',{
+    state,invDraft:draft,document:fakeDocument(values),getTodayJalaliDate(){return '1405/09/02';},
+    consumeFifoStock(p,quantity){if(quantity>p.stock)throw new Error('insufficient stock');return {totalCost:quantity*10,allocations:[]};},
+    addStockBatch(){},postVoucher(){posted++;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
+  });
+  submit();
+  assert.equal(state.invoices.length,0);
+  assert.equal(product.stock,2);
+  assert.equal(posted,0);
+  assert.equal(saves,0);
+});
+
 // Unpaid invoice cancellation must reverse stock exactly once and post a reversal.
 test('unpaid sales invoice cancellation restores stock and marks invoice cancelled', () => {
   const state = {
