@@ -2042,6 +2042,11 @@
         document.getElementById('sb-url-input').value = cloudConfig.url;
         document.getElementById('sb-key-input').value = cloudConfig.key;
       }
+      if (id === 'modal-new-fx-commitment') {
+        const select = document.getElementById('fxc-party');
+        const options = (state.parties || []).filter(p => String(p.role || '').includes('تأمین')).map(p => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+        select.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
+      }
       document.getElementById(id).classList.remove('hidden');
     }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
@@ -2443,6 +2448,7 @@
         unitCost,
         sourceType: details.sourceType || 'purchase',
         sourceRef: details.sourceRef || '',
+        sourceItemId: details.sourceItemId || null,
         supplierId: details.supplierId || null,
         warehouseId: details.warehouseId || product.warehouseId || null
       };
@@ -2829,13 +2835,11 @@
         invDraft.lines.forEach(l => {
           const p = state.products.find(x => x.id === l.productId);
           if (p) {
+            const fifo = consumeFifoStock(p, l.kg);
             let lineCost = l.kg * p.buyPrice;
-            if (state.costingMethod === 'FIFO') {
-              const fifo = consumeFifoStock(p, l.kg);
-              lineCost = fifo.totalCost;
-              l.fifoAllocations = fifo.allocations;
-              l.costOfGoodsSold = fifo.totalCost;
-            }
+            l.fifoAllocations = fifo.allocations;
+            if (state.costingMethod === 'FIFO') lineCost = fifo.totalCost;
+            l.costOfGoodsSold = lineCost;
             p.stock -= l.kg; p.lastMoveDays = 0; cogs += lineCost;
             p.kardex.push({ date, doc: `فاکتور فروش #${id}`, inQty: 0, outQty: l.kg, bal: p.stock, price: state.costingMethod === 'FIFO' ? (lineCost / l.kg) : p.buyPrice, costingMethod: state.costingMethod, fifoAllocations: l.fifoAllocations || [] });
           }
@@ -2948,7 +2952,7 @@
       if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
       const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       // Simulate FIFO changes on clones before posting anything; this catches insufficient stock or invalid batch returns.
-      if (state.costingMethod === 'FIFO') {
+      {
         const simulatedProducts = new Map();
         for (const entry of returnPlan) {
           if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
@@ -2983,11 +2987,9 @@
         it.returnedKg = Number(it.returnedKg || 0) + q;
         if (inv.type === 'sale') {
           p.stock += q;
-          if (state.costingMethod === 'FIFO') {
-            it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], q, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, returnId, it.fifoReturnedAllocations || [])];
-          }
+          it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], q, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, returnId, it.fifoReturnedAllocations || [])];
         } else {
-          if (state.costingMethod === 'FIFO') consumeFifoStock(p, q);
+          consumeFifoStock(p, q);
           p.stock -= q;
         }
         p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
@@ -3021,9 +3023,9 @@
         if (p && netKg > 0) {
           if (inv.type === 'sale') {
             p.stock += netKg;
-            if (state.costingMethod === 'FIFO') it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], netKg, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, 'CANCEL-' + invId, it.fifoReturnedAllocations || [])];
+            it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], netKg, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, 'CANCEL-' + invId, it.fifoReturnedAllocations || [])];
           } else {
-            if (state.costingMethod === 'FIFO') consumeFifoStock(p, netKg);
+            consumeFifoStock(p, netKg);
             p.stock -= netKg;
           }
         }
@@ -3273,36 +3275,62 @@
       arrived: 'رسیده به بندر', customs: 'در گمرک', cleared: 'ترخیص‌شده',
       received: 'تحویل انبار', cancelled: 'لغوشده'
     };
+
     function receiveImportShipment(shipment) {
       if (!shipment || shipment.postedToWh) return false;
-      const product = state.products.find(p => p.id === shipment.productId);
-      if (!product) throw new Error('کالای محموله برای تحویل به انبار پیدا نشد.');
-      const previous = { stock: Number(product.stock || 0), buyPrice: Number(product.buyPrice || 0), lastMoveDays: product.lastMoveDays, kardexLength: (product.kardex || []).length };
+      const items = HolooImportDomain.normalizeItems(shipment);
+      if (!items.length) throw new Error('اقلام محموله برای تحویل به انبار موجود نیست.');
+      const snapshots = new Map();
+      for (const item of items) {
+        const product = state.products.find(p => String(p.id) === String(item.productId));
+        if (!product) throw new Error('یکی از کالاهای محموله برای تحویل به انبار پیدا نشد.');
+        if (!snapshots.has(String(product.id))) snapshots.set(String(product.id), {
+          product: product, stock: Number(product.stock || 0), buyPrice: Number(product.buyPrice || 0),
+          lastMoveDays: product.lastMoveDays, kardex: [...(product.kardex || [])],
+          batches: JSON.parse(JSON.stringify(product.batches || []))
+        });
+      }
       const receivedDate = getTodayJalaliDate();
-      addStockBatch(product, { lot: shipment.lot || shipment.id, productionDate: shipment.productionDate, expiryDate: shipment.expiryDate, quantity: shipment.weightKg, unitCost: shipment.landedCostPerKg, receivedDate, sourceType: 'import', sourceRef: shipment.id, supplierId: null, warehouseId: product.warehouseId });
-      if (state.costingMethod === 'AVG') product.buyPrice = Math.round(((previous.stock * previous.buyPrice) + shipment.totalLandedRial) / (previous.stock + shipment.weightKg));
-      product.stock = previous.stock + Number(shipment.weightKg);
-      product.lastMoveDays = 0;
-      product.kardex = product.kardex || [];
-      product.kardex.push({ date: receivedDate, doc: `تحویل محموله ${shipment.id} به انبار`, inQty: shipment.weightKg, outQty: 0, bal: product.stock, price: shipment.landedCostPerKg, batchRef: shipment.id });
-      shipment.postedToWh = true;
-      shipment.receivedAt = receivedDate;
       try {
-        postVoucher(`تحویل محموله وارداتی ${shipment.id} به انبار`, [
-          { code: '1103', partyId: null, desc: `موجودی انبار از محموله ${shipment.id}`, debit: shipment.totalLandedRial, credit: 0 },
-          { code: '1105', partyId: null, desc: `خروج از موجودی در راه محموله ${shipment.id}`, debit: 0, credit: shipment.totalLandedRial }
+        for (const item of items) {
+          const product = state.products.find(p => String(p.id) === String(item.productId));
+          const qty = Number(item.quantityKg || 0);
+          const itemCost = Number(item.landedCostRial ?? (qty * Number(item.landedCostPerKg ?? shipment.landedCostPerKg ?? 0)));
+          const unitCost = Number(item.landedCostPerKg ?? (itemCost / (qty || 1)));
+          if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitCost) || unitCost < 0 || !Number.isFinite(itemCost) || itemCost < 0) throw new Error('وزن یا بهای تمام‌شده یکی از اقلام محموله معتبر نیست.');
+          const oldStock = Number(product.stock || 0);
+          const oldBuyPrice = Number(product.buyPrice || 0);
+          addStockBatch(product, {
+            lot: item.lot || shipment.id, productionDate: item.productionDate, expiryDate: item.expiryDate,
+            quantity: qty, unitCost: unitCost, receivedDate: receivedDate, sourceType: 'import',
+            sourceRef: shipment.id, sourceItemId: item.id, supplierId: shipment.supplierPartyId || null,
+            warehouseId: product.warehouseId
+          });
+          if (state.costingMethod === 'AVG') product.buyPrice = Math.round(((oldStock * oldBuyPrice) + itemCost) / (oldStock + qty));
+          product.stock = oldStock + qty;
+          product.lastMoveDays = 0;
+          product.kardex = product.kardex || [];
+          product.kardex.push({ date: receivedDate, doc: 'تحویل محموله ' + shipment.id + ' به انبار', inQty: qty, outQty: 0, bal: product.stock, price: unitCost, batchRef: shipment.id, sourceItemId: item.id });
+        }
+        postVoucher('تحویل محموله وارداتی ' + shipment.id + ' به انبار', [
+          { code: '1103', partyId: null, desc: 'موجودی انبار از محموله ' + shipment.id, debit: shipment.totalLandedRial, credit: 0 },
+          { code: '1105', partyId: null, desc: 'خروج از موجودی در راه محموله ' + shipment.id, debit: 0, credit: shipment.totalLandedRial }
         ], receivedDate, { type: 'import', id: shipment.id, event: 'warehouse_receipt' });
       } catch (error) {
-        product.stock = previous.stock;
-        product.buyPrice = previous.buyPrice;
-        product.lastMoveDays = previous.lastMoveDays;
-        product.kardex.length = previous.kardexLength;
-        product.batches = (product.batches || []).filter(batch => batch.sourceRef !== shipment.id);
+        for (const snapshot of snapshots.values()) {
+          snapshot.product.stock = snapshot.stock;
+          snapshot.product.buyPrice = snapshot.buyPrice;
+          snapshot.product.lastMoveDays = snapshot.lastMoveDays;
+          snapshot.product.kardex = snapshot.kardex;
+          snapshot.product.batches = snapshot.batches;
+        }
         shipment.postedToWh = false;
         shipment.receivedAt = null;
         throw error;
       }
-      addAudit(`تحویل محموله ${shipment.id} به انبار و ثبت بچ موجودی`, { mode: 'automatic', operationDate: receivedDate, sourceType: 'import' });
+      shipment.postedToWh = true;
+      shipment.receivedAt = receivedDate;
+      addAudit('تحویل محموله ' + shipment.id + ' با ' + items.length + ' قلم به انبار و ثبت بچ‌های موجودی', { mode: 'automatic', operationDate: receivedDate, sourceType: 'import' });
       return true;
     }
 
@@ -3341,9 +3369,12 @@
         ['مانده تعهد ارزی', money(openFx)]
       ].map(([label,value]) => `<div class="bg-white rounded-xl border p-3"><span class="block text-[10px] text-slate-500">${label}</span><strong class="text-sm tabular-nums">${value}</strong></div>`).join('');
       document.getElementById('imports-list-container').innerHTML = imports.map(m => {
-        const p = state.products.find(x => x.id === m.productId);
-        const estRev = p ? m.weightKg * (p.prices[1] || p.prices[0]) : 0;
-        const estProfit = estRev - m.totalLandedRial;
+        const shipmentProfit = HolooImportDomain.calculateShipmentProfit(m, state.products, state.invoices, state.fxRates);
+        const shipmentItems = HolooImportDomain.normalizeItems(m);
+        const itemSummary = shipmentItems.map(item => {
+          const product = state.products.find(x => String(x.id) === String(item.productId));
+          return (product ? product.name : item.productId) + ': ' + faNum(item.quantityKg) + ' KG';
+        }).join(' • ');
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2.5 text-xs">
             <div class="flex flex-wrap justify-between items-center gap-2">
@@ -3359,12 +3390,20 @@
                 ${Object.entries(IMPORT_STATUS_LABELS).map(([value,label]) => `<option value="${value}" ${(m.status || 'registered') === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
             </div>
+            <div class="text-[10px] text-slate-600">${itemSummary}</div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-50 border tabular-nums">
               <div><span class="text-slate-400 block">وزن و کارتن:</span><strong>${faNum(m.weightKg)} KG (${faNum(m.cartons)} کارتن)</strong></div>
               <div><span class="text-slate-400 block">مبلغ خرید ارزی:</span><strong>${faNum(m.fxTotal)} ${m.currency}</strong></div>
               <div><span class="text-slate-400 block">بهای تمام‌شده هر کیلوگرم:</span><strong class="text-holoo-900 font-black">${money(m.landedCostPerKg)}</strong></div>
-              <div><span class="text-slate-400 block">سود واقعی برآوردی محموله:</span><strong class="text-emerald-700 font-black">${money(estProfit)}</strong></div>
+              <div><span class="text-slate-400 block">سود ناخالص فروش تحقق‌یافته:</span><strong class="text-emerald-700 font-black">${money(shipmentProfit.grossProfit)}</strong></div>
             </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-100 tabular-nums">
+              <div>فروش خالص قابل ردیابی: <strong>${money(shipmentProfit.revenue)}</strong></div>
+              <div>بهای تمام‌شده فروش: <strong>${money(shipmentProfit.cogs)}</strong></div>
+              <div>تسعیر تحقق‌یافته: <strong>${money(shipmentProfit.realizedFx)}</strong></div>
+              <div>تسعیر تحقق‌نیافته مانده: <strong>${money(shipmentProfit.unrealizedFx)}</strong></div>
+            </div>
+            ${shipmentProfit.untraceableSalesKg > 0 ? '<div class="text-amber-700 text-[10px]">فروش ' + faNum(shipmentProfit.untraceableSalesKg) + ' کیلو از سوابق قدیمی قابل ردیابی نیست.</div>' : ''}
           </div>
         `;
       }).join('');
@@ -3408,7 +3447,7 @@
         const bankOptions = (state.bankAccounts || []).map(b => `<option value="${b.id}">${b.name}</option>`).join('');
         return `
           <div class="bg-white rounded-2xl p-4 border border-indigo-200 space-y-2 text-xs">
-            <div class="flex flex-wrap justify-between gap-2"><strong>تعهد ${c.reference || c.id} — ${c.counterparty}</strong><span class="font-black tabular-nums">${faNum(c.amount)} ${c.currency}</span></div>
+            <div class="flex flex-wrap justify-between gap-2"><strong>تعهد ${c.reference || c.id} — ${c.supplierPartyId ? getPartyName(c.supplierPartyId) : c.counterparty}</strong><span class="font-black tabular-nums">${faNum(c.amount)} ${c.currency}</span></div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-2.5 rounded-xl bg-slate-50 border tabular-nums">
               <div>پرداخت‌شده: <strong>${faNum(c.paidAmount || 0)} ${c.currency}</strong></div>
               <div>مانده: <strong class="text-rose-700">${faNum(remFx)} ${c.currency}</strong></div>
@@ -3427,7 +3466,8 @@
     }
 
     function saveFxCommitment() {
-      const counterparty = document.getElementById('fxc-counterparty').value.trim();
+      const supplierPartyId = document.getElementById('fxc-party').value || null;
+      const counterparty = document.getElementById('fxc-counterparty').value.trim() || getPartyName(supplierPartyId);
       const currency = document.getElementById('fxc-currency').value;
       const amount = Number(document.getElementById('fxc-amount').value || 0);
       const initialRate = Number(document.getElementById('fxc-rate').value || 0);
@@ -3436,7 +3476,7 @@
       }
       const id = createStableId('fxc');
       const commitment = {
-        id, counterparty, reference: document.getElementById('fxc-reference').value.trim(),
+        id, counterparty, supplierPartyId, reference: document.getElementById('fxc-reference').value.trim(),
         currency, amount, initialRate, paidAmount: 0, dueDate: document.getElementById('fxc-due-date').value.trim(),
         purpose: document.getElementById('fxc-purpose').value.trim(), notes: document.getElementById('fxc-notes').value.trim(),
         status: 'open', payments: [], createdAt: new Date().toISOString(), createdBy: state.activeRole, deviceId: DEVICE_ID
@@ -3464,7 +3504,7 @@
       const diff = bookRial - paidRial;
       const paymentId = createStableId('fxpay');
       const lines = [
-        { code: '2105', partyId: null, desc: `تسویه تعهد ارزی ${c.id} — ${amount} ${c.currency}`, debit: bookRial, credit: 0 },
+        { code: '2105', partyId: c.supplierPartyId || null, desc: `تسویه تعهد ارزی ${c.id} — ${amount} ${c.currency}`, debit: bookRial, credit: 0 },
         { code: '1102', partyId: null, desc: 'پرداخت ارزی به ذی‌نفع خارجی', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
@@ -3513,7 +3553,7 @@
       const diff = bookRial - paidRial;
       const paymentId = createStableId('impfxpay');
       const lines = [
-        { code: '2105', partyId: null, desc: `تسویه مرحله‌ای ${faNum(payFx)} ${shipment.currency} محموله ${shipment.id}`, debit: bookRial, credit: 0 },
+        { code: '2105', partyId: shipment.supplierPartyId || null, desc: `تسویه مرحله‌ای ${faNum(payFx)} ${shipment.currency} محموله ${shipment.id}`, debit: bookRial, credit: 0 },
         { code: '1102', partyId: null, desc: 'حواله ارزی از بانک', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
