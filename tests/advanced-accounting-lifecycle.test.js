@@ -109,6 +109,57 @@ test('settled invoice cancellation is blocked and leaves stock and journal uncha
   assert.equal(saves, 0);
 });
 
+// Settlement references remain protective even if the cached invoice paidAmount is stale.
+test('invoice cancellation is blocked by a linked treasury allocation when paidAmount is zero', () => {
+  const state = {
+    invoices: [{ id: 2005, type:'sale', status:'active', paidAmount:0, partyId:'P1', grandTotal:250, items:[{productId:'X1',kg:5,returnedKg:0}] }],
+    products: [{ id:'X1', stock:5 }],
+    treasuryTxs: [{ id:'TR-LINKED', allocations:[{invoiceId:2005,amount:100}] }]
+  };
+  const posted=[]; let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+  });
+  cancel(2005);
+  assert.equal(state.invoices[0].status,'active');
+  assert.equal(state.products[0].stock,5);
+  assert.equal(posted.length,0);
+  assert.equal(saves,0);
+});
+
+test('invoice cancellation is blocked by an active cheque allocation when paidAmount is zero', () => {
+  const state = {
+    invoices: [{ id: 2006, type:'sale', status:'active', paidAmount:0, partyId:'P1', grandTotal:250, items:[{productId:'X1',kg:5,returnedKg:0}] }],
+    products: [{ id:'X1', stock:5 }],
+    checks: [{ id:'CHK-LINKED', status:'in_progress', allocations:[{invoiceId:2006,amount:100}] }]
+  };
+  const posted=[]; let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+  });
+  cancel(2006);
+  assert.equal(state.invoices[0].status,'active');
+  assert.equal(state.products[0].stock,5);
+  assert.equal(posted.length,0);
+  assert.equal(saves,0);
+});
+
+test('invoice cancellation is allowed after a cheque allocation was formally released', () => {
+  const state = {
+    invoices: [{ id: 2007, type:'sale', status:'active', paidAmount:0, partyId:'P1', grandTotal:250, netSubtotal:250, vatAmount:0, items:[{productId:'X1',kg:5,returnedKg:0,price:50,total:250}] }],
+    products: [{ id:'X1', stock:0, buyPrice:10, batches:[{id:'B1',quantity:5,remainingQty:0,unitCost:10}] }],
+    checks: [{ id:'CHK-RELEASED', status:'bounced', allocationsReleasedAt:'2026-11-19T00:00:00.000Z', allocations:[{invoiceId:2007,amount:250}] }]
+  };
+  const posted=[]; let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+  });
+  cancel(2007);
+  assert.equal(state.invoices[0].status,'cancelled');
+  assert.equal(posted.length,1);
+  assert.equal(saves,1);
+});
+
 // A partial return adjusts quantity, stock, and creates a source-linked return journal.
 test('partial sales return restores only returned quantity and posts a linked journal', () => {
   const state = {
