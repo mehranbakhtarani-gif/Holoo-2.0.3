@@ -805,5 +805,87 @@ test('partial purchase return allocates discounted inventory value and input VAT
   assert.equal(saves,1);
 });
 
+
+// Invoice cancellation must reverse only the unreturned discounted base and VAT, and restore only remaining FIFO allocations.
+test('partial FIFO sales cancellation reverses remaining net sales and VAT atomically', () => {
+  const item={
+    productId:'CANCEL-SALE',kg:10,returnedKg:2,price:30,disc:50,total:250,
+    costingMethod:'FIFO',costOfGoodsSold:1000,
+    fifoAllocations:[{batchId:'CANCEL-B1',quantity:10,unitCost:100}],
+    fifoReturnedAllocations:[{batchId:'CANCEL-B1',quantity:2}]
+  };
+  const state={
+    fiscalYear:'1405',
+    invoices:[{id:3701,type:'sale',status:'active',partyId:'C-CANCEL',grandTotal:275,netSubtotal:250,vatAmount:25,paidAmount:0,items:[item],returnRefs:[{id:'RET-OLD',amount:55}]}],
+    products:[{id:'CANCEL-SALE',stock:2,buyPrice:100,batches:[{id:'CANCEL-B1',quantity:10,remainingQty:2,unitCost:100}],kardex:[]}]
+  };
+  const posted=[];let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)','function printOfficialInvoice('),'cancelInvoice',{
+    state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
+  });
+  cancel(3701);
+  const lines=posted[0][1];
+  assert.equal(state.invoices[0].status,'cancelled');
+  assert.equal(state.invoices[0].cancellationAmounts.baseAmount,200);
+  assert.equal(state.invoices[0].cancellationAmounts.vatAmount,20);
+  assert.equal(state.invoices[0].cancellationAmounts.totalAmount,220);
+  assert.equal(lines.find(line=>line.code==='4103')?.debit,200);
+  assert.equal(lines.find(line=>line.code==='2103')?.debit,20);
+  assert.equal(lines.find(line=>line.code==='1103')?.credit,220);
+  assert.equal(lines.find(line=>line.code==='1105')?.debit,800);
+  assert.equal(lines.find(line=>line.code==='5101')?.credit,800);
+  assert.equal(lines.reduce((n,line)=>n+line.debit,0),lines.reduce((n,line)=>n+line.credit,0));
+  assert.equal(state.products[0].stock,10);
+  assert.equal(state.products[0].batches[0].remainingQty,10);
+  assert.equal(state.invoices[0].items[0].fifoReturnedAllocations.reduce((n,x)=>n+x.quantity,0),10);
+  assert.equal(posted[0][3].deferSave,true);
+  assert.equal(saves,1);
+});
+
+// A failed cancellation journal must not cancel the invoice or alter inventory/batches.
+test('failed cancellation journal leaves invoice and FIFO stock unchanged', () => {
+  const state={
+    fiscalYear:'1405',
+    invoices:[{id:3702,type:'sale',status:'active',partyId:'C-FAIL',grandTotal:100,netSubtotal:100,vatAmount:0,paidAmount:0,
+      items:[{productId:'CANCEL-FAIL',kg:5,returnedKg:0,price:20,total:100,costingMethod:'FIFO',costOfGoodsSold:50,
+        fifoAllocations:[{batchId:'FAIL-B1',quantity:5,unitCost:10}],fifoReturnedAllocations:[]}]}],
+    products:[{id:'CANCEL-FAIL',stock:0,buyPrice:10,batches:[{id:'FAIL-B1',quantity:5,remainingQty:0,unitCost:10}],kardex:[]}]
+  };
+  let saves=0;const messages=[];
+  const cancel=load(section('function cancelInvoice(invId)','function printOfficialInvoice('),'cancelInvoice',{
+    state,postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;},renderAll(){},showToast(msg,type){messages.push({msg,type});},faNum:String
+  });
+  cancel(3702);
+  assert.equal(state.invoices[0].status,'active');
+  assert.equal(state.products[0].stock,0);
+  assert.equal(state.products[0].batches[0].remainingQty,0);
+  assert.equal(state.invoices[0].items[0].fifoReturnedAllocations.length,0);
+  assert.equal(saves,0);
+  assert.equal(messages[0].type,'error');
+});
+
+// Purchase cancellation must separate inventory value from recoverable input VAT.
+test('purchase cancellation reverses inventory and input VAT in separate accounts', () => {
+  const state={
+    fiscalYear:'1405',
+    invoices:[{id:3703,type:'purchase',status:'active',partyId:'SUP-CANCEL',grandTotal:110,netSubtotal:100,vatAmount:10,paidAmount:0,
+      items:[{productId:'CANCEL-PUR',kg:10,returnedKg:0,price:10,total:100}]}],
+    products:[{id:'CANCEL-PUR',stock:10,buyPrice:10,batches:[{id:'CANCEL-PUR-B1',quantity:10,remainingQty:10,unitCost:10}],kardex:[]}]
+  };
+  const posted=[];let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)','function printOfficialInvoice('),'cancelInvoice',{
+    state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
+  });
+  cancel(3703);
+  const lines=posted[0][1];
+  assert.equal(lines.find(line=>line.code==='2101')?.debit,110);
+  assert.equal(lines.find(line=>line.code==='1105')?.credit,100);
+  assert.equal(lines.find(line=>line.code==='1106')?.credit,10);
+  assert.equal(lines.reduce((n,line)=>n+line.debit,0),lines.reduce((n,line)=>n+line.credit,0));
+  assert.equal(state.products[0].stock,0);
+  assert.equal(state.invoices[0].status,'cancelled');
+  assert.equal(saves,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
