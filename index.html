@@ -3396,54 +3396,143 @@
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv || inv.status === 'cancelled') return;
       if (Number(inv.paidAmount || 0) > 0) { showToast('این فاکتور دریافت/پرداخت دارد؛ ابتدا تسویه‌های مرتبط را تعیین‌تکلیف کنید.', 'error'); return; }
-      const returnedAmount = getInvoiceReturnedAmount(inv);
-      const cancelAmount = Math.max(0, Number(inv.grandTotal || 0) - returnedAmount);
-      if (!Number.isFinite(cancelAmount)) { showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return; }
-      const cancelCogs = inv.type === 'sale' ? inv.items.reduce((sum, item) => {
-        const remainingQty = Math.max(0, Number(item.kg || 0) - Number(item.returnedKg || 0));
-        const product = state.products.find(entry => entry.id === item.productId);
-        return sum + getReturnCostOfGoods(item, remainingQty, product?.buyPrice || 0);
-      }, 0) : 0;
-      inv.status = 'cancelled';
-      inv.items.forEach(it => {
-        const netKg = Number(it.kg || 0) - Number(it.returnedKg || 0);
-        const p = state.products.find(x => x.id === it.productId);
-        if (p && netKg > 0) {
+
+      const getInvoiceLineNetTotal = line => {
+        if (line.total !== undefined && line.total !== null) return Number(line.total);
+        return Math.max(0, Number(line.kg || 0) * Number(line.price || 0) - Number(line.disc || 0));
+      };
+      const invoiceNetSubtotal = inv.netSubtotal !== undefined && inv.netSubtotal !== null
+        ? Number(inv.netSubtotal)
+        : inv.items.reduce((sum, line) => sum + getInvoiceLineNetTotal(line), 0);
+      const invoiceVatAmount = inv.vatAmount !== undefined && inv.vatAmount !== null
+        ? Number(inv.vatAmount)
+        : (inv.grandTotal !== undefined && inv.grandTotal !== null
+          ? Math.max(0, Number(inv.grandTotal) - invoiceNetSubtotal)
+          : Math.round(invoiceNetSubtotal * Number(inv.vatRate || 0) / 100));
+      if (!Number.isFinite(invoiceNetSubtotal) || invoiceNetSubtotal < 0 ||
+          !Number.isFinite(invoiceVatAmount) || invoiceVatAmount < 0) {
+        showToast('مبلغ خالص یا مالیات فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+      }
+      const invoiceVatRatio = invoiceNetSubtotal > 0 ? invoiceVatAmount / invoiceNetSubtotal : 0;
+      const cancelPlan = [];
+      let cancelBaseAmount = 0;
+      let returnedVatAmount = 0;
+      for (const item of inv.items) {
+        const lineQty = Number(item.kg || 0);
+        const returnedQty = Number(item.returnedKg || 0);
+        const lineNetTotal = getInvoiceLineNetTotal(item);
+        const remainingQty = lineQty - returnedQty;
+        if (!Number.isFinite(lineQty) || lineQty < 0 || !Number.isFinite(returnedQty) ||
+            returnedQty < 0 || returnedQty > lineQty + 0.000001 ||
+            !Number.isFinite(lineNetTotal) || lineNetTotal < 0) {
+          showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        }
+        const returnedBase = lineQty > 0 ? Math.round(lineNetTotal * returnedQty / lineQty) : 0;
+        const remainingBase = Math.max(0, lineNetTotal - returnedBase);
+        returnedVatAmount += Math.round(returnedBase * invoiceVatRatio);
+        if (remainingQty > 0) {
+          const product = state.products.find(entry => entry.id === item.productId);
+          if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return; }
+          cancelPlan.push({ item, product, quantity: remainingQty });
+        }
+        cancelBaseAmount += remainingBase;
+      }
+      const cancelVatAmount = Math.max(0, invoiceVatAmount - returnedVatAmount);
+      const cancelAmount = cancelBaseAmount + cancelVatAmount;
+      if (!Number.isFinite(cancelAmount) || !Number.isFinite(cancelBaseAmount) || !Number.isFinite(cancelVatAmount)) {
+        showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+      }
+
+      const cancelCogs = inv.type === 'sale' ? cancelPlan.reduce((sum, entry) =>
+        sum + getReturnCostOfGoods(entry.item, entry.quantity, entry.product.buyPrice || 0), 0) : 0;
+      if (!Number.isFinite(cancelCogs) || cancelCogs < 0) {
+        showToast('بهای تمام‌شده مانده فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+      }
+
+      // Validate every FIFO restoration/consumption on cloned products before posting or mutating state.
+      try {
+        const simulatedProducts = new Map();
+        for (const entry of cancelPlan) {
+          if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
+          const simulated = simulatedProducts.get(entry.product);
           if (inv.type === 'sale') {
-            p.stock += netKg;
-            it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], netKg, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, 'CANCEL-' + invId, it.fifoReturnedAllocations || [])];
+            restoreFifoAllocations(
+              simulated, entry.item.fifoAllocations || [], entry.quantity,
+              entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice,
+              'CANCEL-' + invId, entry.item.fifoReturnedAllocations || []
+            );
           } else {
-            consumeFifoStock(p, netKg);
-            p.stock -= netKg;
+            consumeFifoStock(simulated, entry.quantity);
           }
         }
-      });
-      if (cancelAmount > 0 || cancelCogs > 0) {
-        const cancellationLines = inv.type === 'sale'
-          ? [
-              ...(cancelAmount > 0 ? [
-                { code: '4103', partyId: inv.partyId, desc: `ابطال مانده فاکتور #${invId}`, debit: cancelAmount, credit: 0 },
-                { code: '1103', partyId: inv.partyId, desc: `ابطال مانده بدهی #${invId}`, debit: 0, credit: cancelAmount }
-              ] : []),
-              ...(cancelCogs > 0 ? [
-                { code: '1105', partyId: null, desc: `بازگشت موجودی بابت ابطال فروش #${invId}`, debit: cancelCogs, credit: 0 },
-                { code: '5101', partyId: null, desc: `برگشت بهای تمام‌شده فروش #${invId}`, debit: 0, credit: cancelCogs }
-              ] : [])
-            ]
-          : [
-              { code: '2101', partyId: inv.partyId, desc: `ابطال مانده خرید #${invId}`, debit: cancelAmount, credit: 0 },
-              { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار #${invId}`, debit: 0, credit: cancelAmount }
-            ];
-        if (cancellationLines.length) postVoucher(
-          `ابطال فاکتور #${invId}`, cancellationLines,
-          undefined, { type: 'invoice_cancel', id: invId, event: 'cancel' }
-        );
+      } catch (error) {
+        showToast('کنترل موجودی یا بچ‌های FIFO برای ابطال ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
+        return;
       }
-      if (cancelCogs > 0) inv.cancelledCostOfGoodsSold = cancelCogs;
+
+      const cancellationLines = inv.type === 'sale'
+        ? [
+            ...(cancelBaseAmount > 0 ? [
+              { code: '4103', partyId: inv.partyId, desc: `ابطال مانده درآمد فروش #${invId}`, debit: cancelBaseAmount, credit: 0 }
+            ] : []),
+            ...(cancelVatAmount > 0 ? [
+              { code: '2103', partyId: null, desc: `ابطال مالیات ارزش افزوده فروش #${invId}`, debit: cancelVatAmount, credit: 0 }
+            ] : []),
+            ...(cancelAmount > 0 ? [
+              { code: '1103', partyId: inv.partyId, desc: `ابطال مانده مطالبات فاکتور #${invId}`, debit: 0, credit: cancelAmount }
+            ] : []),
+            ...(cancelCogs > 0 ? [
+              { code: '1105', partyId: null, desc: `بازگشت موجودی بابت ابطال فروش #${invId}`, debit: cancelCogs, credit: 0 },
+              { code: '5101', partyId: null, desc: `برگشت بهای تمام‌شده فروش #${invId}`, debit: 0, credit: cancelCogs }
+            ] : [])
+          ]
+        : [
+            ...(cancelAmount > 0 ? [
+              { code: '2101', partyId: inv.partyId, desc: `ابطال مانده خرید #${invId}`, debit: cancelAmount, credit: 0 }
+            ] : []),
+            ...(cancelBaseAmount > 0 ? [
+              { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار #${invId}`, debit: 0, credit: cancelBaseAmount }
+            ] : []),
+            ...(cancelVatAmount > 0 ? [
+              { code: '1106', partyId: null, desc: `ابطال اعتبار مالیات خرید #${invId}`, debit: 0, credit: cancelVatAmount }
+            ] : [])
+          ];
+
+      if (cancellationLines.length) {
+        try {
+          postVoucher(`ابطال فاکتور #${invId}`, cancellationLines, undefined,
+            { type: 'invoice_cancel', id: invId, event: 'cancel', deferSave: true });
+        } catch (error) {
+          showToast('صدور سند ابطال ناموفق بود؛ فاکتور و موجودی تغییر نکردند. ' + (error?.message || ''), 'error');
+          return;
+        }
+      }
+
+      // The journal is valid; now apply the already-validated inventory changes.
+      for (const entry of cancelPlan) {
+        const { item, product, quantity } = entry;
+        if (inv.type === 'sale') {
+          product.stock += quantity;
+          item.fifoReturnedAllocations = [
+            ...(item.fifoReturnedAllocations || []),
+            ...restoreFifoAllocations(
+              product, item.fifoAllocations || [], quantity,
+              item.costOfGoodsSold ? item.costOfGoodsSold / item.kg : product.buyPrice,
+              'CANCEL-' + invId, item.fifoReturnedAllocations || []
+            )
+          ];
+        } else {
+          consumeFifoStock(product, quantity);
+          product.stock -= quantity;
+        }
+      }
+      inv.status = 'cancelled';
+      inv.cancelledCostOfGoodsSold = cancelCogs;
+      inv.cancellationAmounts = { baseAmount: cancelBaseAmount, vatAmount: cancelVatAmount, totalAmount: cancelAmount };
       saveState(); renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info');
     }
 
-    function printOfficialInvoice(invId) {
+        function printOfficialInvoice(invId) {
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv) return;
       const cfg = state.settings;
