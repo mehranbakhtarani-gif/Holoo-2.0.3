@@ -7496,7 +7496,7 @@
       if (!text || text.length < 12) return;
       if (targetId === 'accounting-panel-body' &&
           !/(تراز آزمایشی|ترازنامه|سود و زیان|گردش حساب|دفتر کل|حساب معین)/.test(text)) return;
-      if (targetId === 'parties-grid' && !text.includes('گردش تفصیلی')) return;
+      // فهرست اشخاص، گردش تفصیلی و گزارش تطبیق همگی خروجی قابل چاپ هستند.
       const wrap = document.createElement('div');
       wrap.className = 'no-print flex justify-end mb-2';
       wrap.setAttribute('data-holoo-report-print', targetId);
@@ -7512,7 +7512,17 @@
     function installUniversalReportPrinting() {
       const targets = [
         ['accounting-panel-body', 'گزارش حسابداری', ['accounting-panel-body']],
-        ['parties-grid', 'گزارش گردش حساب طرف حساب', ['parties-grid']],
+        ['parties-grid', 'گزارش اشخاص، گردش تفصیلی و تطبیق حساب‌های کنترلی', ['parties-grid']],
+        ['products-grid-container', 'گزارش فهرست کالاها و مشخصات فروش', ['products-grid-container']],
+        ['inventory-table-body', 'گزارش موجودی انبار و ارزش کالاها', ['warehouses-summary-cards', 'inventory-table-body']],
+        ['orders-list-container', 'گزارش سفارش‌ها و پیش‌فاکتورها', ['orders-list-container']],
+        ['bank-accounts-grid', 'گزارش مانده حساب‌های بانکی', ['bank-accounts-grid']],
+        ['checks-list-container', 'گزارش چک‌های دریافتی و پرداختی', ['checks-list-container']],
+        ['treasury-tx-list', 'گزارش گردش دریافت و پرداخت خزانه', ['treasury-tx-list']],
+        ['guarantees-list-container', 'گزارش ضمانت‌نامه‌ها', ['guarantees-list-container']],
+        ['payable-commitments-list', 'گزارش تعهدات پرداخت', ['payable-commitments-list']],
+        ['fx-commitments-list', 'گزارش تعهدات ارزی و مانده پرداخت', ['fx-commitments-list']],
+        ['assets-grid', 'گزارش فهرست دارایی‌های ثابت', ['assets-grid']],
         ['invoices-list-container', 'گزارش فاکتورهای خرید و فروش', ['invoices-list-container']],
         ['imports-dashboard-summary', 'خلاصه گزارش واردات', ['imports-dashboard-summary']],
         ['imports-list-container', 'گزارش محموله‌های وارداتی', ['imports-list-container']],
