@@ -142,7 +142,7 @@ test('unpaid sales invoice cancellation restores stock and marks invoice cancell
   };
   const posted = [];
   const cancel = load(extractFunction('cancelInvoice', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...args) { posted.push(args); }, saveState() {}, renderAll() {}, showToast() {}, faNum: String
+    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, restoreFifoAllocations(product, allocations, qty, fallbackCost, sourceRef) { product.batches = product.batches || []; product.batches.push({ id: 'RETURN-' + sourceRef, quantity: qty, remainingQty: qty, unitCost: fallbackCost }); return [{ batchId: 'RETURN-' + sourceRef, quantity: qty }]; }, consumeFifoStock() {}, postVoucher(...args) { posted.push(args); }, saveState() {}, renderAll() {}, showToast() {}, faNum: String
   });
   cancel(1001);
   assert.equal(state.invoices[0].status, 'cancelled');
