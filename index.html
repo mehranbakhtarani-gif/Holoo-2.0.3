@@ -6383,6 +6383,16 @@
       showToast('خروجی تراز آزمایشی دانلود شد.');
     }
 
+    function runTrialBalanceReport() {
+      const from = document.getElementById('trial-from')?.value?.trim() || '';
+      const to = document.getElementById('trial-to')?.value?.trim() || '';
+      try { buildTrialBalanceReport(from, to); }
+      catch (error) { showToast(error.message, 'error'); return; }
+      trialBalanceFromDate = from;
+      trialBalanceToDate = to;
+      renderTrialBalanceReport();
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -6415,8 +6425,9 @@
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button></div>' +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
-        '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" onchange="trialBalanceFromDate=this.value; renderTrialBalanceReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
-        '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" onchange="trialBalanceToDate=this.value; renderTrialBalanceReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
+        '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
+        '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
+        '<button type="button" onclick="runTrialBalanceReport()" class="touch-btn w-full sm:w-auto bg-holoo-700 text-white rounded-lg px-5 py-2 font-bold">نمایش گزارش</button>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">' +
         '<div class="p-2 rounded-lg bg-slate-50">تعداد اسناد منظورشده<strong class="block">' + faNum(report.includedVouchers) + '</strong></div>' +
         '<div class="p-2 rounded-lg bg-slate-50">تعداد حساب‌های دارای گردش/مانده<strong class="block">' + faNum(report.rows.length) + '</strong></div>' +
