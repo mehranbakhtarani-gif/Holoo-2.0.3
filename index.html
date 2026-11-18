@@ -4130,8 +4130,15 @@
       grid.innerHTML = state.parties.map(p => {
         const accountCodes = [...new Set([String(p.ledgerAccountCode || '1103'), '1103', '2101', '1107'])];
         const accountBalances = accountCodes
-          .map(code => ({ code, balance: getPartyAccountNetBalance(p.id, code) }))
+          .map(code => ({
+            code,
+            name: (state.accountCatalog || []).find(a => String(a.code) === code)?.name
+              || (CHART_ACCOUNTS || []).find(a => String(a.code) === code)?.name
+              || 'حساب ' + code,
+            balance: getPartyAccountNetBalance(p.id, code)
+          }))
           .filter(item => item.code === String(p.ledgerAccountCode || '1103') || Math.abs(item.balance) > 0.000001);
+        const primaryAccountName = accountBalances.find(item => item.code === String(p.ledgerAccountCode || '1103'))?.name || 'حساب اصلی';
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between items-center">
@@ -4139,12 +4146,12 @@
               <span class="text-[10px] text-slate-400 tabular-nums">${faNum(p.phone)}</span>
             </div>
             <div class="font-black text-sm text-slate-900">${p.name}</div>
-            <div class="text-[11px] text-slate-500">کد اقتصادی: ${faNum(p.ecoCode)} | تفصیلی: ${p.subledgerId || p.id} ← ${faNum(p.ledgerAccountCode || '1103')}</div>
+            <div class="text-[11px] text-slate-500">کد اقتصادی: ${faNum(p.ecoCode)} | تفصیلی: ${p.subledgerId || p.id} — ${primaryAccountName}</div>
             <div class="text-[10px] text-slate-500">شرایط: ${p.terms}</div>
             <div class="space-y-1.5">
               ${accountBalances.map(item => `
                 <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center tabular-nums">
-                  <span>مانده حساب ${faNum(item.code)}:</span>
+                  <span>مانده ${item.name}:</span>
                   <strong class="${item.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(item.balance))} (${item.balance >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
                 </div>
               `).join('')}
