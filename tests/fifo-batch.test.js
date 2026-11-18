@@ -121,8 +121,10 @@ test('purchase and import forms retain batch, production and expiry metadata', (
 });
 
 test('FIFO sales costing is wired to invoice lines and cost-of-goods-sold voucher', () => {
-  assert.match(html, /const fifo = consumeFifoStock\(p, l\.kg\)/);
-  assert.match(html, /l\.costOfGoodsSold = lineCost/);
+  assert.match(html, /const fifo = consumeFifoStock\(simulated, line\.kg\)/);
+  assert.match(html, /line\.costOfGoodsSold = lineCost/);
+  assert.match(html, /product\.batches = simulated\.batches/);
+  assert.match(html, /deferSave: true/);
   assert.match(html, /cogs \+= lineCost/);
 });
 
