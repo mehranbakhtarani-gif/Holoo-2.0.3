@@ -5285,7 +5285,7 @@
         creditTotal += credit;
       });
       const invalidStructure = lines.length < 2;
-      const unbalanced = invalidLines === 0 && !invalidStructure &&
+      const unbalanced = invalidLines === 0 &&
         (!Number.isFinite(debitTotal) || !Number.isFinite(creditTotal) ||
          debitTotal <= 0 || creditTotal <= 0 || Math.round(debitTotal) !== Math.round(creditTotal));
       return { invalidLines, invalidStructure, unbalanced };
