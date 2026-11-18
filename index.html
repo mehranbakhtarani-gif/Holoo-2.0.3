@@ -5531,12 +5531,33 @@
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
-      await prepareLocalStorageMirror();
+      // وضعیت را پیش از هر عملیات async عوض کن تا نشانگر پیش‌فرض برای همیشه باقی نماند.
+      setCloudBadge('⏳ در حال آماده‌سازی حافظه محلی...', 'text-sky-300');
+
+      // اگر IndexedDB پاسخ نداد، رابط برنامه باز می‌شود اما همگام‌سازی خودکار متوقف می‌ماند
+      // تا نسخه ابری ناخواسته روی داده محلیِ هنوز بازیابی‌نشده نوشته نشود.
+      const localReady = await Promise.race([
+        prepareLocalStorageMirror().then(() => true).catch(error => {
+          console.warn('Local startup preparation failed:', error);
+          return false;
+        }),
+        new Promise(resolve => setTimeout(() => resolve(false), 15000))
+      ]);
+
       state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
       ensureAuditLogIds(state);
       const roleSelect = document.getElementById('role-select');
       if (roleSelect) roleSelect.value = state.activeRole;
-      await renderCloudSyncStatus();
+
+      setCloudBadge('⏳ در حال بررسی حافظه و صف همگام‌سازی...', 'text-sky-300');
+      const statusReady = await Promise.race([
+        renderCloudSyncStatus().then(() => true).catch(error => {
+          console.warn('Cloud status rendering failed:', error);
+          return false;
+        }),
+        new Promise(resolve => setTimeout(() => resolve(false), 8000))
+      ]);
+
       if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
       setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
       const launchAction = new URLSearchParams(window.location.search).get('action');
@@ -5544,13 +5565,26 @@
       else if (launchAction === 'imports') navigateTo('imports');
       else if (launchAction === 'treasury') navigateTo('treasury');
       else navigateTo('dashboard');
-      // اگر صف محلی از اجرای قبلی باقی مانده، اول آن را بفرست؛ در غیر این صورت نسخه ابر را بررسی کن.
-      // اتصال ابری در هر بار راه‌اندازی به‌صورت خودکار بررسی می‌شود؛ نیازی به زدن دکمه ذخیره تنظیمات نیست.
-      setCloudBadge('🔄 در حال اتصال و بررسی Supabase...', 'text-sky-300');
-      if (localStorage.getItem(CLOUD_OUTBOX_KEY)) await pushToSupabase(false);
-      else await pullFromSupabase(false);
-    });
 
+      if (!localReady) {
+        setCloudBadge('⚠️ آماده‌سازی حافظه محلی طول کشید؛ همگام‌سازی خودکار متوقف شد', 'text-amber-300');
+        return;
+      }
+      if (!statusReady) {
+        setCloudBadge('⚠️ بررسی وضعیت محلی کامل نشد؛ همگام‌سازی خودکار متوقف شد', 'text-amber-300');
+        return;
+      }
+
+      setCloudBadge('🔄 در حال اتصال و بررسی Supabase...', 'text-sky-300');
+      try {
+        if (localStorage.getItem(CLOUD_OUTBOX_KEY)) await pushToSupabase(false);
+        else await pullFromSupabase(false);
+      } catch (error) {
+        console.warn('Automatic Supabase startup sync failed:', error);
+        setCloudBadge('⚠️ اتصال خودکار ناموفق؛ نسخه محلی حفظ شد', 'text-amber-300');
+      }
+    });
+    
     // با برگشت اینترنت، صف محلی دوباره ارسال می‌شود؛ شکست ارسال، نشانگر صف را پاک نمی‌کند.
     window.addEventListener('online', () => {
       if (localStorage.getItem(CLOUD_OUTBOX_KEY)) {
