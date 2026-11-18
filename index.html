@@ -878,7 +878,7 @@
   <div id="modal-product" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-2xl max-h-[90dvh] overflow-y-auto p-5 shadow-2xl space-y-3 text-xs">
       <div class="flex justify-between items-center border-b pb-2">
-        <h3 class="font-black text-sm text-slate-900">🧵 تعریف کالا و مشخصات فنی نساجی (۱۰ سطح قیمت)</h3>
+        <h3 id="product-modal-title" class="font-black text-sm text-slate-900">🧵 تعریف کالا و مشخصات فنی نساجی (۱۰ سطح قیمت)</h3>
         <button onclick="closeModal('modal-product')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -931,7 +931,8 @@
         <div id="p-ten-prices-grid" class="grid grid-cols-2 sm:grid-cols-5 gap-1.5"></div>
       </div>
 
-      <button onclick="saveProduct()" class="touch-btn w-full bg-holoo-700 text-white font-black rounded-xl text-sm">✔ ثبت کالا و همگام‌سازی ابری</button>
+      <p id="product-edit-preserve-note" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-2 text-[10px] leading-5 text-amber-900">در حالت ویرایش، شناسه کالا، موجودی، انبار، سری ساخت، بهای خرید، بچ‌ها و کاردکس حفظ می‌شوند. هیچ سند مالی یا گردش موجودی جدیدی ثبت نمی‌شود.</p>
+      <button id="product-save-button" onclick="saveProduct()" class="touch-btn w-full bg-holoo-700 text-white font-black rounded-xl text-sm">✔ ثبت کالا و همگام‌سازی ابری</button>
     </div>
   </div>
 
@@ -2588,39 +2589,106 @@
           <div class="text-[10px] text-slate-500">مشخصات فنی: ${p.customSpec || '—'}</div>
           <div class="flex justify-between items-center pt-2 border-t">
             <div><span class="text-[10px] text-slate-400 block">قیمت سطح ${faNum(lvl + 1)} (هر کیلو):</span><strong class="text-holoo-900 font-black tabular-nums">${money(p.prices[lvl] || p.prices[0])}</strong></div>
-            <button onclick="printBarcodeLabel('${p.id}')" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">🏷️ چاپ لیبل بارکد</button>
+            <div class="flex gap-1.5">
+              <button onclick="openProductModal(this.dataset.productId)" data-product-id="${String(p.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" class="bg-amber-100 text-amber-900 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">✏️ ویرایش</button>
+              <button onclick="printBarcodeLabel('${p.id}')" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">🏷️ چاپ لیبل بارکد</button>
+            </div>
           </div>
         </div>
       `).join('');
     }
 
-    function openProductModal() {
+    let editingProductId = null;
+
+    function openProductModal(productId = null) {
+      editingProductId = productId;
+      const product = productId ? state.products.find(item => item.id === productId) : null;
+      if (productId && !product) {
+        showToast('کالای موردنظر پیدا نشد؛ فهرست را تازه‌سازی کنید.', 'error');
+        return;
+      }
       document.getElementById('p-wh').innerHTML = state.warehouses.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
       const baseSell = 1680000;
       document.getElementById('p-ten-prices-grid').innerHTML = Array.from({ length: 10 }, (_, i) => `
         <div>
           <label class="block text-[9px] font-bold text-slate-600">سطح ${faNum(i + 1)}:</label>
-          <input type="number" id="p-lvl-${i}" value="${baseSell - (i * 20000)}" class="touch-btn w-full border rounded-lg px-1.5 bg-white tabular-nums text-[11px]" />
+          <input type="number" id="p-lvl-${i}" value="${product ? Number(product.prices?.[i] || 0) : baseSell - (i * 20000)}" class="touch-btn w-full border rounded-lg px-1.5 bg-white tabular-nums text-[11px]" />
         </div>
       `).join('');
+
+      const fields = {
+        'p-name': product?.name ?? '',
+        'p-barcode': product?.barcode ?? '',
+        'p-yarn-type': product?.yarnType ?? 'FDY',
+        'p-denier': product?.denier ?? '150D/48F',
+        'p-color': product?.color ?? 'سفید خام (Raw White)',
+        'p-twist': product?.twist ?? 'بدون تاب (Non-Twisted)',
+        'p-custom-spec': product?.customSpec ?? 'درجه یک AA - نیمه مات',
+        'p-wh': product?.warehouseId ?? state.warehouses[0]?.id ?? '',
+        'p-carton-kg': product?.cartonKg ?? 25,
+        'p-stock': product?.stock ?? 2500,
+        'p-lot': product?.lot ?? 'LOT-1405-A1',
+        'p-buy-price': product?.buyPrice ?? 1450000
+      };
+      Object.entries(fields).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+      });
+
+      const preserveIds = ['p-wh', 'p-carton-kg', 'p-stock', 'p-lot', 'p-buy-price'];
+      preserveIds.forEach(id => { document.getElementById(id).disabled = !!product; });
+      document.getElementById('product-modal-title').textContent = product ? '✏️ ویرایش مشخصات کالا' : '🧵 تعریف کالا و مشخصات فنی نساجی (۱۰ سطح قیمت)';
+      document.getElementById('product-save-button').textContent = product ? '✔ ذخیره تغییرات و همگام‌سازی ابری' : '✔ ثبت کالا و همگام‌سازی ابری';
+      document.getElementById('product-edit-preserve-note').classList.toggle('hidden', !product);
       openModal('modal-product');
     }
 
     function saveProduct() {
       const name = document.getElementById('p-name').value.trim();
       if (!name) { showToast('نام کالا یا نخ را وارد کنید.', 'error'); return; }
+      const barcode = document.getElementById('p-barcode').value.trim();
       const prices = Array.from({ length: 10 }, (_, i) => Number(document.getElementById(`p-lvl-${i}`).value || 0));
-      const stock = Number(document.getElementById('p-stock').value || 0);
-      const buyPrice = Number(document.getElementById('p-buy-price').value || 0);
-      const newProd = {
-        id: 'TX-' + (101 + state.products.length),
-        barcode: document.getElementById('p-barcode').value.trim() || String(626100100 + state.products.length + 1),
+      const fields = {
         name,
+        barcode,
         yarnType: document.getElementById('p-yarn-type').value,
         denier: document.getElementById('p-denier').value.trim(),
         color: document.getElementById('p-color').value.trim(),
         twist: document.getElementById('p-twist').value,
         customSpec: document.getElementById('p-custom-spec').value.trim(),
+        prices
+      };
+
+      if (editingProductId) {
+        const product = state.products.find(item => item.id === editingProductId);
+        if (!product) {
+          showToast('کالای موردنظر دیگر در فهرست وجود ندارد؛ تغییرات ذخیره نشد.', 'error');
+          return;
+        }
+        if (barcode && state.products.some(item => item.id !== editingProductId && item.barcode === barcode)) {
+          showToast('این بارکد قبلاً برای کالای دیگری ثبت شده است.', 'error');
+          return;
+        }
+        Object.assign(product, fields);
+        addAudit(`ویرایش مشخصات کالا: ${product.name} (${product.id})`);
+        saveState();
+        editingProductId = null;
+        closeModal('modal-product');
+        renderAll();
+        showToast('مشخصات کالا و ۱۰ سطح قیمت ذخیره و همگام‌سازی شد؛ موجودی و سوابق حفظ شدند ✔');
+        return;
+      }
+
+      if (barcode && state.products.some(item => item.barcode === barcode)) {
+        showToast('این بارکد قبلاً برای کالای دیگری ثبت شده است.', 'error');
+        return;
+      }
+      const stock = Number(document.getElementById('p-stock').value || 0);
+      const buyPrice = Number(document.getElementById('p-buy-price').value || 0);
+      const newProd = {
+        id: 'TX-' + (101 + state.products.length),
+        ...fields,
+        barcode: barcode || String(626100100 + state.products.length + 1),
         warehouseId: document.getElementById('p-wh').value,
         cartonKg: Number(document.getElementById('p-carton-kg').value || 25),
         stock,
@@ -2628,7 +2696,6 @@
         batches: [],
         lastMoveDays: 0,
         buyPrice,
-        prices,
         kardex: stock > 0 ? [{ date: getTodayJalaliDate(), doc: 'موجودی اولیه', inQty: stock, outQty: 0, bal: stock, price: buyPrice }] : []
       };
       state.products.unshift(newProd);
@@ -2643,6 +2710,7 @@
       } else {
         saveState();
       }
+      editingProductId = null;
       closeModal('modal-product'); renderAll();
       showToast('کالای نساجی و ۱۰ سطح قیمت ثبت و به Supabase ارسال شد ✔');
     }
