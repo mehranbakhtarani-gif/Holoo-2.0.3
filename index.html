@@ -472,7 +472,7 @@
               <h2 class="text-base font-black text-amber-300">🚢 مدیریت واردات، کانتینر و محاسبه بهای تمام‌شده ترخیص</h2>
               <p class="text-xs text-sky-200">تخصیص خودکار ۸ هزینه وارداتی (حمل، بیمه، گمرک، بندری، ترخیص، حمل داخلی، انبارداری، کارمزد بانکی)</p>
             </div>
-            <button onclick="openModal('modal-new-import')" class="touch-btn bg-amber-400 text-slate-950 px-4 rounded-xl text-xs font-black">+ ثبت محموله وارداتی جدید</button>
+            <button onclick="openImportModal()" class="touch-btn bg-amber-400 text-slate-950 px-4 rounded-xl text-xs font-black">+ ثبت محموله وارداتی جدید</button>
           </div>
           <div id="imports-dashboard-summary" class="grid grid-cols-2 md:grid-cols-5 gap-2"></div>
           <div id="imports-list-container" class="space-y-3"></div>
@@ -914,15 +914,16 @@
   <div id="modal-new-import" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-2xl max-h-[90dvh] overflow-y-auto p-5 space-y-3 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm text-sky-950">🚢 ثبت محموله وارداتی، کانتینر و تسهیم هزینه‌های ترخیص</h3><button onclick="closeModal('modal-new-import')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <input type="text" id="imp-supplier" value="Zhejiang Hengyi Petrochemical Co." placeholder="فروشنده خارجی *" class="touch-btn border rounded-xl px-2.5 font-bold" />
+        <select id="imp-supplier-party" class="touch-btn border rounded-xl px-2.5"><option value="">اتصال به دفتر اشخاص (اختیاری)</option></select>
         <input type="text" id="imp-origin" value="چین (بندر نینگبو)" placeholder="کشور مبدأ" class="touch-btn border rounded-xl px-2.5" />
         <input type="text" id="imp-container" value="MSKU-9482710 (40HQ)" placeholder="شماره کانتینر" class="touch-btn border rounded-xl px-2.5 tabular-nums" />
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
-        <div class="sm:col-span-2"><label class="block text-[10px] font-bold">کالای وارداتی:</label><select id="imp-prod" class="touch-btn w-full border rounded-xl px-2 font-bold"></select></div>
-        <div><label class="block text-[10px] font-bold">وزن خالص محموله (KG):</label><input type="number" id="imp-weight" value="22000" class="touch-btn w-full border rounded-xl px-2 tabular-nums font-bold" /></div>
-        <div><label class="block text-[10px] font-bold">تعداد کارتن:</label><input type="number" id="imp-cartons" value="880" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+      <div class="rounded-xl border p-3 space-y-2">
+        <div class="flex items-center justify-between gap-2"><strong>اقلام محموله (تک‌کالایی یا چندکالایی)</strong><button type="button" onclick="addImportItemRow()" class="touch-btn rounded-lg bg-sky-100 text-sky-900 px-3 py-1 font-bold">+ افزودن کالا</button></div>
+        <div id="imp-items-container" class="space-y-2"></div>
+        <div class="text-[10px] text-slate-500">وزن، تعداد کارتن، مبلغ ارزی و مشخصات بچ برای هر قلم جداگانه ثبت می‌شود.</div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div><label class="block text-[10px] font-bold">مرحله محموله:</label><select id="imp-status" class="touch-btn w-full border rounded-xl px-2"><option value="registered">ثبت اولیه</option><option value="ordered">سفارش تأییدشده</option><option value="in_transit">در حمل</option><option value="arrived">رسیده به بندر</option><option value="customs">در گمرک</option><option value="cleared">ترخیص‌شده</option><option value="received">تحویل انبار</option></select></div>
@@ -930,28 +931,23 @@
         <div><label class="block text-[10px] font-bold">شماره بارنامه (B/L):</label><input type="text" id="imp-bl" placeholder="شماره بارنامه" class="touch-btn w-full border rounded-xl px-2" /></div>
         <div><label class="block text-[10px] font-bold">بندر مقصد:</label><input type="text" id="imp-port" placeholder="بندرعباس" class="touch-btn w-full border rounded-xl px-2" /></div>
       </div>
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        <div><label class="block text-[10px] font-bold">شماره بچ / LOT:</label><input type="text" id="imp-lot" placeholder="شماره بچ تولیدکننده" class="touch-btn w-full border rounded-xl px-2" /></div>
-        <div><label class="block text-[10px] font-bold">تاریخ تولید:</label><input type="text" id="imp-production-date" placeholder="مثلاً 1405/01/01" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px] font-bold">تاریخ انقضا:</label><input type="text" id="imp-expiry-date" placeholder="مثلاً 1406/01/01" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-      </div>
       <div class="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
         <div><label class="block text-[10px] font-bold">ارز خرید:</label><select id="imp-curr" onchange="onImportCurrChange()" class="touch-btn w-full border rounded-xl px-2 bg-white font-bold"><option value="USD">دلار آمریکا (USD)</option><option value="CNY">یوان چین (CNY)</option><option value="EUR">یورو (EUR)</option></select></div>
-        <div><label class="block text-[10px] font-bold">مبلغ خرید خارجی:</label><input type="number" id="imp-fx-amount" value="38500" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
+        <div><label class="block text-[10px] font-bold">مبلغ خرید خارجی:</label><input type="number" id="imp-fx-amount" value="0" readonly class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
         <div><label class="block text-[10px] font-bold">نرخ ارز (ریال):</label><input type="number" id="imp-fx-rate" value="685000" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
       </div>
       <div class="font-extrabold text-slate-800">ریز ۸ هزینه وارداتی و ترخیص (ریال):</div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div><label class="block text-[10px]">۱. حمل دریایی:</label><input type="number" id="imp-c-freight" value="1400000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۲. بیمه باربری:</label><input type="number" id="imp-c-ins" value="180000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۳. حقوق گمرکی:</label><input type="number" id="imp-c-customs" value="2100000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۴. هزینه بندری:</label><input type="number" id="imp-c-port" value="320000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۵. حق‌العمل ترخیص:</label><input type="number" id="imp-c-clear" value="250000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۶. حمل داخلی به انبار:</label><input type="number" id="imp-c-inland" value="190000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۷. انبارداری گمرک:</label><input type="number" id="imp-c-wh" value="110000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px]">۸. کارمزد بانکی/صرافی:</label><input type="number" id="imp-c-bank" value="240000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+        <div class="space-y-1"><label class="block text-[10px]">۱. حمل دریایی:</label><input type="number" id="imp-c-freight" value="1400000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-freight" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۲. بیمه باربری:</label><input type="number" id="imp-c-ins" value="180000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-ins" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۳. حقوق گمرکی:</label><input type="number" id="imp-c-customs" value="2100000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-customs" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۴. هزینه بندری:</label><input type="number" id="imp-c-port" value="320000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-port" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۵. حق‌العمل ترخیص:</label><input type="number" id="imp-c-clear" value="250000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-clear" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۶. حمل داخلی به انبار:</label><input type="number" id="imp-c-inland" value="190000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-inland" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۷. انبارداری گمرک:</label><input type="number" id="imp-c-wh" value="110000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-wh" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" selected>بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۸. کارمزد بانکی/صرافی:</label><input type="number" id="imp-c-bank" value="240000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-bank" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
       </div>
-      <button onclick="saveImportShipment()" class="touch-btn w-full bg-sky-700 text-white font-black rounded-xl text-sm">✔ ثبت محموله، محاسبه بهای تمام‌شده هر کیلوگرم و ورود به انبار</button>
+      <button onclick="saveImportShipment()" class="touch-btn w-full bg-sky-700 text-white font-black rounded-xl text-sm">✔ ثبت محموله و محاسبه بهای تمام‌شده اقلام</button>
     </div>
   </div>
 
@@ -1130,6 +1126,7 @@
     </div>
   </div>
 
+  <script src="./import-domain.js"></script>
   <script>
     // =========================================================================
     // 1. SUPABASE CLOUD SYNC ENGINE (DIRECT REST API TO YOUR SUPABASE PROJECT)
@@ -3132,14 +3129,71 @@
       const c = document.getElementById('imp-curr').value;
       document.getElementById('imp-fx-rate').value = state.fxRates[c] || 685000;
     }
+
+    let importItemRowCounter = 0;
+    function importProductOptions(selectedId) {
+      return state.products.map(p => '<option value="' + p.id + '"' + (String(p.id) === String(selectedId || '') ? ' selected' : '') + '>' + p.name + '</option>').join('');
+    }
+    function addImportItemRow(item) {
+      item = item || {};
+      const host = document.getElementById('imp-items-container');
+      if (!host) return;
+      const rowId = 'imp-item-row-' + (++importItemRowCounter);
+      const div = document.createElement('div');
+      div.id = rowId;
+      div.className = 'imp-item-row rounded-lg border bg-slate-50 p-2 space-y-2';
+      div.dataset.itemId = item.id || createStableId('impitem');
+      div.innerHTML =
+        '<div class="flex items-center justify-between"><strong>قلم ' + importItemRowCounter + '</strong><button type="button" onclick="removeImportItemRow(\'' + rowId + '\')" class="text-rose-700 font-bold px-2">حذف قلم</button></div>' +
+        '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">' +
+        '<select class="imp-item-product touch-btn border rounded-lg px-2 bg-white">' + importProductOptions(item.productId || (state.products[0] && state.products[0].id)) + '</select>' +
+        '<input type="number" min="0.001" step="any" class="imp-item-weight touch-btn border rounded-lg px-2" placeholder="وزن خالص KG" value="' + (item.quantityKg || item.weightKg || '') + '" />' +
+        '<input type="number" min="0" step="any" class="imp-item-cartons touch-btn border rounded-lg px-2" placeholder="تعداد کارتن" value="' + (item.cartons || '') + '" />' +
+        '<input type="number" min="0.01" step="any" class="imp-item-fx touch-btn border rounded-lg px-2" placeholder="مبلغ ارزی این قلم" value="' + (item.fxAmount || '') + '" />' +
+        '<input type="text" class="imp-item-lot touch-btn border rounded-lg px-2" placeholder="شماره بچ / LOT" value="' + (item.lot || '') + '" />' +
+        '<input type="text" class="imp-item-production touch-btn border rounded-lg px-2" placeholder="تاریخ تولید شمسی" value="' + (item.productionDate || '') + '" />' +
+        '<input type="text" class="imp-item-expiry touch-btn border rounded-lg px-2" placeholder="تاریخ انقضا شمسی" value="' + (item.expiryDate || '') + '" /></div>';
+      host.appendChild(div);
+      div.querySelectorAll('input').forEach(input => input.addEventListener('input', updateImportTotals));
+      updateImportTotals();
+    }
+    function removeImportItemRow(rowId) {
+      document.getElementById(rowId)?.remove();
+      updateImportTotals();
+    }
+    function updateImportTotals() {
+      const total = Array.from(document.querySelectorAll('#imp-items-container .imp-item-fx')).reduce((sum, input) => sum + Math.max(0, Number(input.value || 0)), 0);
+      const totalInput = document.getElementById('imp-fx-amount');
+      if (totalInput) totalInput.value = String(total);
+    }
+    function openImportModal() {
+      const options = (state.parties || []).filter(p => String(p.role || '').includes('تأمین')).map(p => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+      document.getElementById('imp-supplier-party').innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
+      const fxParty = document.getElementById('fxc-party');
+      if (fxParty) fxParty.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
+      document.getElementById('imp-items-container').innerHTML = '';
+      importItemRowCounter = 0;
+      addImportItemRow({ productId: state.products[0] && state.products[0].id, quantityKg: 22000, cartons: 880, fxAmount: 38500 });
+      document.getElementById('imp-fx-rate').value = state.fxRates[document.getElementById('imp-curr').value] || 685000;
+      openModal('modal-new-import');
+    }
+
     function saveImportShipment() {
-      const supplier = document.getElementById('imp-supplier').value.trim();
-      const prodId = document.getElementById('imp-prod').value;
-      const weightKg = Number(document.getElementById('imp-weight').value || 22000);
-      const cartons = Number(document.getElementById('imp-cartons').value || 880);
+      const supplierPartyId = document.getElementById('imp-supplier-party').value || null;
+      const supplier = document.getElementById('imp-supplier').value.trim() || getPartyName(supplierPartyId);
       const currency = document.getElementById('imp-curr').value;
-      const fxTotal = Number(document.getElementById('imp-fx-amount').value || 0);
       const fxRate = Number(document.getElementById('imp-fx-rate').value || 0);
+      const rows = Array.from(document.querySelectorAll('#imp-items-container .imp-item-row'));
+      const items = rows.map(row => ({
+        id: row.dataset.itemId,
+        productId: row.querySelector('.imp-item-product').value,
+        quantityKg: Number(row.querySelector('.imp-item-weight').value || 0),
+        cartons: Number(row.querySelector('.imp-item-cartons').value || 0),
+        fxAmount: Number(row.querySelector('.imp-item-fx').value || 0),
+        lot: row.querySelector('.imp-item-lot').value.trim(),
+        productionDate: row.querySelector('.imp-item-production').value.trim(),
+        expiryDate: row.querySelector('.imp-item-expiry').value.trim()
+      }));
       const expenses = {
         freight: Number(document.getElementById('imp-c-freight').value || 0),
         insurance: Number(document.getElementById('imp-c-ins').value || 0),
@@ -3150,37 +3204,68 @@
         warehouse: Number(document.getElementById('imp-c-wh').value || 0),
         bankFee: Number(document.getElementById('imp-c-bank').value || 0)
       };
-      if (!supplier || !state.products.some(p => p.id === prodId) || !Number.isFinite(weightKg) || weightKg <= 0 || !Number.isFinite(cartons) || cartons <= 0 || !Number.isFinite(fxTotal) || fxTotal <= 0 || !Number.isFinite(fxRate) || fxRate <= 0 || Object.values(expenses).some(v => !Number.isFinite(v) || v < 0)) {
-        showToast('اطلاعات محموله، وزن، مبلغ ارزی، نرخ یا هزینه‌ها نامعتبر است.', 'error'); return;
+      const expenseAllocationBasis = {
+        freight: document.getElementById('imp-basis-freight').value,
+        insurance: document.getElementById('imp-basis-ins').value,
+        customs: document.getElementById('imp-basis-customs').value,
+        port: document.getElementById('imp-basis-port').value,
+        clearance: document.getElementById('imp-basis-clear').value,
+        inland: document.getElementById('imp-basis-inland').value,
+        warehouse: document.getElementById('imp-basis-wh').value,
+        bankFee: document.getElementById('imp-basis-bank').value
+      };
+      if (!supplier || !items.length || items.some(item => !state.products.some(p => String(p.id) === String(item.productId)))) {
+        showToast('فروشنده و حداقل یک قلم کالای معتبر لازم است.', 'error'); return;
       }
-      const sumExpRial = Object.values(expenses).reduce((s, v) => s + v, 0);
-      const purchaseRial = fxTotal * fxRate;
-      const totalLandedRial = purchaseRial + sumExpRial;
-      const landedCostPerKg = Math.round(totalLandedRial / (weightKg || 1));
-
+      let costing;
+      try {
+        costing = HolooImportDomain.calculateLandedCost(items, fxRate, expenses, expenseAllocationBasis);
+      } catch (error) {
+        showToast(error.message || 'محاسبه بهای تمام‌شده محموله ناموفق بود.', 'error'); return;
+      }
       const impId = 'IMP-' + (901 + state.imports.length);
-      state.imports.unshift({
-        id: impId, date: `${state.fiscalYear}/08/27`, supplier, origin: document.getElementById('imp-origin').value,
-        containerNo: document.getElementById('imp-container').value, productId: prodId, weightKg, cartons,
-        currency, fxTotal, fxRate, fxPaid: 0, expenses, landedCostPerKg, totalLandedRial, postedToWh: false,
-        lot: document.getElementById('imp-lot').value.trim() || impId,
-        productionDate: document.getElementById('imp-production-date').value.trim(),
-        expiryDate: document.getElementById('imp-expiry-date').value.trim(),
-        status: document.getElementById('imp-status').value, eta: document.getElementById('imp-eta').value.trim(),
-        billOfLading: document.getElementById('imp-bl').value.trim(), destinationPort: document.getElementById('imp-port').value.trim(),
-        statusUpdatedAt: new Date().toISOString(), statusHistory: [{ status: document.getElementById('imp-status').value, at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }]
-      });
-
-      const shipment = state.imports[0];
-      postVoucher(`ثبت محموله وارداتی ${impId} - ${supplier}`, [
-        { code: '1105', partyId: null, desc: `بهای تمام‌شده محموله ${impId}`, debit: totalLandedRial, credit: 0 },
-        { code: '2105', partyId: null, desc: `تعهد ارزی (${faNum(fxTotal)} ${currency})`, debit: 0, credit: purchaseRial },
-        { code: '1102', partyId: null, desc: `هزینه‌های گمرک، حمل و ترخیص ${impId}`, debit: 0, credit: sumExpRial }
-      ], getTodayJalaliDate(), { type: 'import', id: impId, event: 'registration' });
-      if (shipment.status === 'received') receiveImportShipment(shipment);
-
+      const shipment = {
+        id: impId, date: getTodayJalaliDate(), supplier: supplier, supplierPartyId: supplierPartyId,
+        origin: document.getElementById('imp-origin').value,
+        containerNo: document.getElementById('imp-container').value,
+        productId: costing.items[0].productId,
+        weightKg: costing.totalWeightKg, cartons: costing.totalCartons,
+        currency: currency, fxTotal: costing.fxTotal, fxRate: fxRate, fxPaid: 0,
+        expenses: expenses, expenseAllocationBasis: expenseAllocationBasis, items: costing.items,
+        landedCostPerKg: Math.round(costing.totalLandedRial / costing.totalWeightKg),
+        totalLandedRial: costing.totalLandedRial, postedToWh: false,
+        lot: costing.items[0].lot || impId,
+        productionDate: costing.items[0].productionDate || '',
+        expiryDate: costing.items[0].expiryDate || '',
+        status: document.getElementById('imp-status').value,
+        eta: document.getElementById('imp-eta').value.trim(),
+        billOfLading: document.getElementById('imp-bl').value.trim(),
+        destinationPort: document.getElementById('imp-port').value.trim(),
+        statusUpdatedAt: new Date().toISOString(),
+        statusHistory: [{ status: document.getElementById('imp-status').value, at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }]
+      };
+      state.imports.unshift(shipment);
+      try {
+        postVoucher('ثبت محموله وارداتی ' + impId + ' - ' + supplier, [
+          { code: '1105', partyId: null, desc: 'بهای تمام‌شده محموله ' + impId, debit: costing.totalLandedRial, credit: 0 },
+          { code: '2105', partyId: supplierPartyId, desc: 'تعهد ارزی (' + faNum(costing.fxTotal) + ' ' + currency + ')', debit: 0, credit: costing.totalPurchaseRial },
+          { code: '1102', partyId: null, desc: 'هزینه‌های گمرک، حمل و ترخیص ' + impId, debit: 0, credit: costing.totalExpenseRial }
+        ], getTodayJalaliDate(), { type: 'import', id: impId, event: 'registration' });
+      } catch (error) {
+        state.imports = state.imports.filter(entry => entry.id !== impId);
+        showToast('صدور سند اولیه محموله ناموفق بود؛ محموله ذخیره نشد. ' + (error?.message || ''), 'error'); return;
+      }
+      if (shipment.status === 'received') {
+        try { receiveImportShipment(shipment); }
+        catch (error) {
+          shipment.status = 'cleared';
+          shipment.statusHistory.push({ status: 'cleared', at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID });
+          showToast('محموله ثبت شد اما تحویل انبار انجام نشد: ' + (error?.message || ''), 'error');
+        }
+      }
+      addAudit('ثبت محموله ' + impId + ' با ' + costing.items.length + ' قلم کالا', { mode: 'manual', sourceType: 'import' });
       saveState(); closeModal('modal-new-import'); renderAll();
-      showToast(`محموله وارداتی ثبت شد! بهای تمام‌شده هر کیلوگرم: ${money(landedCostPerKg)} 🚢`);
+      showToast('محموله ' + impId + ' با ' + costing.items.length + ' قلم ثبت شد؛ بهای تمام‌شده کل: ' + money(costing.totalLandedRial));
     }
 
     const IMPORT_STATUS_LABELS = {
