@@ -36,6 +36,7 @@ jobs:
           node tests/android-pwa.test.js
           node tests/device-actor-assignment.test.js
           node tests/product-editing.test.js
+          node tests/party-editing.test.js
           node tests/accounting-smoke.test.js
           node tests/treasury-allocation.test.js
           node tests/account-ledger.test.js
