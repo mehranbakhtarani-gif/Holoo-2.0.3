@@ -114,7 +114,7 @@ test('partial sales return restores only returned quantity and posts a linked jo
   };
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'2003','pret-qty-0':'3'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2003','pret-qty-0':'3'}),
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
