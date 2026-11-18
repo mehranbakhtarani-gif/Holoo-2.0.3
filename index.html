@@ -2781,10 +2781,17 @@
         const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId || '') === postingYear);
         if (closedYear) throw new Error('سال مالی ' + closedYear.sourceId + ' بسته شده است؛ ثبت با تاریخ این سال مجاز نیست.');
       }
+      if (!Array.isArray(lines) || lines.length < 2) throw new Error('سند نامعتبر است: حداقل دو ردیف لازم است.');
+      const invalidLine = lines.some(line => {
+        if (!line || !String(line.code || '').trim()) return true;
+        const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+        return !Number.isFinite(debit) || !Number.isFinite(credit) ||
+          debit < 0 || credit < 0 || (debit > 0 && credit > 0);
+      });
+      if (invalidLine) throw new Error('ردیف سند دارای کد حساب یا مبلغ نامعتبر است.');
       const d = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
       const c = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
-      if (!Array.isArray(lines) || lines.length < 2 || !Number.isFinite(d) || !Number.isFinite(c) || Math.round(d) !== Math.round(c) || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: حداقل دو ردیف و توازن کامل لازم است.');
-      if (lines.some(line => !line.code || Number(line.debit || 0) < 0 || Number(line.credit || 0) < 0 || (Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0))) throw new Error('ردیف سند دارای کد حساب یا مبلغ نامعتبر است.');
+      if (!Number.isFinite(d) || !Number.isFinite(c) || Math.abs(d - c) > 0.000001 || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: جمع بدهکار و بستانکار باید دقیقاً برابر و بیشتر از صفر باشد.');
       if (source?.type && source?.id) { const sourceEvent = source.event || 'default';
         const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
