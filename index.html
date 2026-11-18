@@ -4496,15 +4496,25 @@
       return String(year).padStart(4, '0') + String(month).padStart(2, '0') + String(day).padStart(2, '0');
     }
 
+    function countInvalidReportVoucherLines(voucher) {
+      return (voucher.lines || []).filter(line => {
+        const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+        return !Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0);
+      }).length;
+    }
+
     function buildAccountLedger(accountCode, fromDate, toDate) {
       const from = normalizeLedgerDate(fromDate);
       const to = normalizeLedgerDate(toDate);
       if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) throw new Error('بازه تاریخ دفتر حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       const entries = [];
       let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
+      let invalidDateVouchers = 0, invalidAmountLines = 0;
       (state.vouchers || []).forEach(v => {
         const dateKey = normalizeLedgerDate(v.date || v.operationDate);
-        if (!dateKey) return;
+        if (!dateKey || jalaliDateOrdinal(v.date || v.operationDate) === null) { invalidDateVouchers++; return; }
+        const invalidLines = countInvalidReportVoucherLines(v);
+        if (invalidLines) { invalidAmountLines += invalidLines; return; }
         (v.lines || []).forEach(line => {
           if (String(line.code) !== String(accountCode)) return;
           const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
@@ -4522,7 +4532,8 @@
       return {
         rows: entries,
         openingDebit, openingCredit, openingNet: openingDebit - openingCredit,
-        periodDebit, periodCredit, closingNet: openingDebit - openingCredit + periodDebit - periodCredit
+        periodDebit, periodCredit, closingNet: openingDebit - openingCredit + periodDebit - periodCredit,
+        invalidDateVouchers, invalidAmountLines
       };
     }
 
@@ -4574,12 +4585,10 @@
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
         if (dateKey > asOf) return;
+        const invalidLines = countInvalidReportVoucherLines(voucher);
+        if (invalidLines) { invalidAmountLines += invalidLines; return; }
         (voucher.lines || []).forEach(line => {
           const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
-          if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
-            invalidAmountLines++;
-            return;
-          }
           totalDebit += debit;
           totalCredit += credit;
           const code = String(line.code || '');
@@ -4700,15 +4709,13 @@
           return;
         }
         if (dateKey < from || dateKey > to) return;
+        const invalidLines = countInvalidReportVoucherLines(voucher);
+        if (invalidLines) { invalidAmountLines += invalidLines; return; }
 
         let voucherDebit = 0, voucherCredit = 0;
         (voucher.lines || []).forEach(line => {
           const debit = Number(line.debit || 0);
           const credit = Number(line.credit || 0);
-          if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
-            invalidAmountLines++;
-            return;
-          }
           voucherDebit += debit;
           voucherCredit += credit;
           const code = String(line.code || '');
