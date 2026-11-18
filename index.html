@@ -1561,6 +1561,7 @@
       { code: '2103', name: 'مالیات ارزش افزوده فروش' },
       { code: '2104', name: 'حقوق و دستمزد پرداختنی' },
       { code: '2105', name: 'تعهدات ارزی تأمین‌کنندگان خارجی' },
+      { code: '2106', name: 'بستانکاران هزینه‌های واردات' },
       { code: '3101', name: 'سرمایه ثبت‌شده شرکت' },
       { code: '3102', name: 'سود (زیان) انباشته' },
       { code: '4101', name: 'فروش کالا و نخ' },
@@ -1833,6 +1834,7 @@
     state.accountCatalog.filter(a => a.level === 'subsidiary').forEach(a => { if (!CHART_ACCOUNTS.some(existing => existing.code === a.code)) CHART_ACCOUNTS.push({ code: a.code, name: a.name }); });
     // Add the supplier-advance account to existing installations without replacing their custom chart.
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '1107')) state.accountCatalog.push({ id: 'SUB-1107', code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان', level: 'subsidiary', parentId: 'GL-11', system: true, active: true });
+    if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '2106')) state.accountCatalog.push({ id: 'SUB-2106', code: '2106', name: 'بستانکاران هزینه‌های واردات', level: 'subsidiary', parentId: 'GL-21', system: true, active: true });
     if (!Array.isArray(state.fxCommitments)) state.fxCommitments = [];
     if (!state.fxRates || typeof state.fxRates !== 'object') state.fxRates = { USD: 0, CNY: 0, EUR: 0 };
     if (!Array.isArray(state.parties)) state.parties = [];
@@ -3275,7 +3277,7 @@
         postVoucher('ثبت محموله وارداتی ' + impId + ' - ' + supplier, [
           { code: '1105', partyId: null, desc: 'بهای تمام‌شده محموله ' + impId, debit: costing.totalLandedRial, credit: 0 },
           { code: '2105', partyId: supplierPartyId, desc: 'تعهد ارزی (' + faNum(costing.fxTotal) + ' ' + currency + ')', debit: 0, credit: costing.totalPurchaseRial },
-          { code: '1102', partyId: null, desc: 'هزینه‌های گمرک، حمل و ترخیص ' + impId, debit: 0, credit: costing.totalExpenseRial }
+          { code: '2106', partyId: null, desc: 'بستانکار هزینه‌های گمرک، حمل و ترخیص ' + impId, debit: 0, credit: costing.totalExpenseRial }
         ], getTodayJalaliDate(), { type: 'import', id: impId, event: 'registration' });
       } catch (error) {
         state.imports = state.imports.filter(entry => entry.id !== impId);
