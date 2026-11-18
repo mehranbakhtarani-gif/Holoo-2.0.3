@@ -15,6 +15,7 @@ const state = {
   fiscalYear:'1405',
   parties:[{id:'C1',name:'مشتری آزمایشی'},{id:'S1',name:'تأمین‌کننده آزمایشی'}],
   accountCatalog:[{code:'1201',name:'دارایی ثابت'}],
+  bankAccounts:[{id:'LEGACY-BANK',type:'bank',name:'بانک قدیمی'}],
   invoices:[
     {id:1,type:'sale',status:'active',partyId:'C1',grandTotal:500,paidAmount:200,dueDate:'1405/01/10',returnRefs:[{amount:50}]},
     {id:2,type:'purchase',status:'active',partyId:'S1',grandTotal:300,paidAmount:100}
