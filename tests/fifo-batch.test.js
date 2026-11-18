@@ -174,7 +174,7 @@ test('inventory reconciliation detects an incorrect intermediate kardex balance 
 });
 
 test('inventory reconciliation marks a kardex without an opening baseline as unverified', () => {
-  const report = inspectInventoryReconciliation([{ id: 'R-BASE', name: 'بدون مانده پایه', stock: 7, batches: [], kardex: [
+  const report = inspectInventoryReconciliation([{ id: 'R-BASE', name: 'بدون مانده پایه', stock: 7, batches: [{ id: 'B-BASE', remainingQty: 7, unitCost: 1 }], kardex: [
     { bal: 7, inQty: 2, outQty: 0, doc: 'رسید خرید' }
   ] }]);
   assert.ok(report.unverified.some(x => x.type === 'kardex-baseline'));
