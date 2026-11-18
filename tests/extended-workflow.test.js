@@ -16,6 +16,9 @@ function extractFunction(name, endMarker) {
 function load(source, name, context) {
   const sandbox = { ...context };
   vm.createContext(sandbox);
+  const helperStart = html.indexOf('function getReturnCostOfGoods(');
+  const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
+  if (helperStart >= 0 && helperEnd > helperStart) vm.runInContext(html.slice(helperStart, helperEnd), sandbox);
   vm.runInContext(source + `; this.__testFn = ${name};`, sandbox);
   return sandbox.__testFn;
 }
