@@ -939,16 +939,17 @@
       </div>
       <div class="font-extrabold text-slate-800">ریز ۸ هزینه وارداتی و ترخیص (ریال):</div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div class="space-y-1"><label class="block text-[10px]">۱. حمل دریایی:</label><input type="number" id="imp-c-freight" value="1400000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-freight" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۲. بیمه باربری:</label><input type="number" id="imp-c-ins" value="180000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-ins" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۳. حقوق گمرکی:</label><input type="number" id="imp-c-customs" value="2100000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-customs" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۴. هزینه بندری:</label><input type="number" id="imp-c-port" value="320000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-port" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۵. حق‌العمل ترخیص:</label><input type="number" id="imp-c-clear" value="250000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-clear" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۶. حمل داخلی به انبار:</label><input type="number" id="imp-c-inland" value="190000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-inland" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۷. انبارداری گمرک:</label><input type="number" id="imp-c-wh" value="110000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-wh" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" selected>بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
-        <div class="space-y-1"><label class="block text-[10px]">۸. کارمزد بانکی/صرافی:</label><input type="number" id="imp-c-bank" value="240000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-bank" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۱. حمل دریایی:</label><input type="number" id="imp-c-freight" value="1400000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-freight" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۲. بیمه باربری:</label><input type="number" id="imp-c-ins" value="180000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-ins" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۳. حقوق گمرکی:</label><input type="number" id="imp-c-customs" value="2100000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-customs" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۴. هزینه بندری:</label><input type="number" id="imp-c-port" value="320000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-port" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۵. حق‌العمل ترخیص:</label><input type="number" id="imp-c-clear" value="250000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-clear" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۶. حمل داخلی به انبار:</label><input type="number" id="imp-c-inland" value="190000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-inland" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" selected>بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۷. انبارداری گمرک:</label><input type="number" id="imp-c-wh" value="110000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-wh" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" selected>بر اساس کارتن</option><option value="value" >بر اساس ارزش ارزی</option></select></div>
+        <div class="space-y-1"><label class="block text-[10px]">۸. کارمزد بانکی/صرافی:</label><input type="number" id="imp-c-bank" value="240000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /><select id="imp-basis-bank" onchange="renderImportManualAllocations()" class="touch-btn w-full border rounded-lg px-1 text-[10px]"><option value="weight" >بر اساس وزن</option><option value="cartons" >بر اساس کارتن</option><option value="value" selected>بر اساس ارزش ارزی</option></select></div>
       </div>
-      <button onclick="saveImportShipment()" class="touch-btn w-full bg-sky-700 text-white font-black rounded-xl text-sm">✔ ثبت محموله و محاسبه بهای تمام‌شده اقلام</button>
+<div id="imp-manual-allocation-panel" class="hidden rounded-xl border border-violet-200 bg-violet-50 p-3 space-y-2"><div class="font-extrabold text-violet-900">تخصیص دستی هزینه‌ها به اقلام محموله</div><p class="text-[10px] text-violet-800">برای هر هزینه‌ای که مبنای «تخصیص دستی» دارد، سهم هر قلم را وارد کنید. جمع سهم‌ها باید دقیقاً برابر مبلغ همان هزینه باشد.</p><div id="imp-manual-allocation-fields" class="space-y-3"></div></div>
+            <button onclick="saveImportShipment()" class="touch-btn w-full bg-sky-700 text-white font-black rounded-xl text-sm">✔ ثبت محموله و محاسبه بهای تمام‌شده اقلام</button>
     </div>
   </div>
 
@@ -3217,6 +3218,45 @@
       openModal('modal-new-import');
     }
 
+    function renderImportManualAllocations() {
+      const panel = document.getElementById('imp-manual-allocation-panel');
+      const fields = document.getElementById('imp-manual-allocation-fields');
+      if (!panel || !fields) return;
+      const rows = Array.from(document.querySelectorAll('#imp-items-container .imp-item-row'));
+      const expenseMeta = [
+        ['freight', 'حمل دریایی', 'freight'], ['insurance', 'بیمه باربری', 'ins'],
+        ['customs', 'حقوق گمرکی', 'customs'], ['port', 'هزینه بندری', 'port'],
+        ['clearance', 'حق‌العمل ترخیص', 'clear'], ['inland', 'حمل داخلی', 'inland'],
+        ['warehouse', 'انبارداری گمرک', 'wh'], ['bankFee', 'کارمزد بانکی/صرافی', 'bank']
+      ];
+      const manual = expenseMeta.filter(([key, label, suffix]) => {
+        const basis = document.getElementById('imp-basis-' + suffix);
+        return basis && basis.value === 'manual';
+      });
+      panel.classList.toggle('hidden', manual.length === 0);
+      fields.innerHTML = manual.map(([key, label]) => {
+        const amount = Number(document.getElementById(({freight:'imp-c-freight',insurance:'imp-c-ins',customs:'imp-c-customs',port:'imp-c-port',clearance:'imp-c-clear',inland:'imp-c-inland',warehouse:'imp-c-wh',bankFee:'imp-c-bank'})[key]).value || 0);
+        return '<div class="rounded-lg border bg-white p-2 space-y-1"><div class="font-bold">' + label + ' — جمع هزینه: ' + money(amount) + '</div>' +
+          rows.map((row, index) => {
+            const itemId = row.dataset.itemId;
+            const productSelect = row.querySelector('.imp-item-product');
+            const product = state.products.find(p => String(p.id) === String(productSelect && productSelect.value));
+            const name = product ? product.name : ('قلم ' + (index + 1));
+            const existing = row.querySelector('[data-manual-expense="' + key + '"]');
+            const value = existing ? existing.value : '';
+            return '<label class="grid grid-cols-2 gap-2 items-center text-[10px]"><span>' + name + '</span><input type="number" min="0" step="1" data-manual-expense="' + key + '" data-manual-item="' + itemId + '" value="' + value + '" placeholder="سهم ریالی" class="touch-btn border rounded-lg px-2 py-1 tabular-nums" /></label>';
+          }).join('') +
+          '<div class="text-[10px] text-slate-500">جمع سهم‌های واردشده: <strong data-manual-total="' + key + '">0</strong></div></div>';
+      }).join('');
+      fields.querySelectorAll('[data-manual-expense]').forEach(input => input.addEventListener('input', () => {
+        const key = input.dataset.manualExpense;
+        const total = Array.from(fields.querySelectorAll('[data-manual-expense="' + key + '"]')).reduce((sum, el) => sum + Math.max(0, Number(el.value || 0)), 0);
+        const target = fields.querySelector('[data-manual-total="' + key + '"]');
+        if (target) target.textContent = money(total);
+      }));
+      fields.querySelectorAll('[data-manual-expense]').forEach(input => input.dispatchEvent(new Event('input')));
+    }
+
     function saveImportShipment() {
       const supplierPartyId = document.getElementById('imp-supplier-party').value || null;
       const supplier = document.getElementById('imp-supplier').value.trim() || getPartyName(supplierPartyId);
@@ -3253,12 +3293,19 @@
         warehouse: document.getElementById('imp-basis-wh').value,
         bankFee: document.getElementById('imp-basis-bank').value
       };
+      const manualAllocations = {};
+      document.querySelectorAll('#imp-manual-allocation-fields [data-manual-expense]').forEach(input => {
+        const key = input.dataset.manualExpense;
+        const itemId = input.dataset.manualItem;
+        if (!manualAllocations[key]) manualAllocations[key] = {};
+        manualAllocations[key][itemId] = Number(input.value || 0);
+      });
       if (!supplier || !items.length || items.some(item => !state.products.some(p => String(p.id) === String(item.productId)))) {
         showToast('فروشنده و حداقل یک قلم کالای معتبر لازم است.', 'error'); return;
       }
       let costing;
       try {
-        costing = HolooImportDomain.calculateLandedCost(items, fxRate, expenses, expenseAllocationBasis);
+        costing = HolooImportDomain.calculateLandedCost(items, fxRate, expenses, expenseAllocationBasis, manualAllocations);
       } catch (error) {
         showToast(error.message || 'محاسبه بهای تمام‌شده محموله ناموفق بود.', 'error'); return;
       }
