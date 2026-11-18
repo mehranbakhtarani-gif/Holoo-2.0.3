@@ -2263,7 +2263,7 @@
     function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
       const postingDate = normalizeLedgerDate(date);
       if (source?.type !== 'fiscal_year_close' && postingDate && jalaliDateOrdinal(date) !== null) {
-        const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && /^14\\d{2}$/.test(String(v.sourceId || '')) && postingDate <= normalizeLedgerDate(String(v.sourceId) + '/12/30'));
+        const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && /^14\d{2}$/.test(String(v.sourceId || '')) && postingDate >= normalizeLedgerDate(String(v.sourceId) + '/01/01') && postingDate <= normalizeLedgerDate(getFiscalYearEndDate(String(v.sourceId))));
         if (closedYear) throw new Error('سال مالی ' + closedYear.sourceId + ' بسته شده است؛ ثبت با تاریخ این سال مجاز نیست.');
       }
       const d = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
@@ -5804,7 +5804,7 @@
 
     function buildFiscalYearClosePreview(year) {
       const fiscalYear = String(year || '');
-      if (!/^14\\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
+      if (!/^14\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
       const from = fiscalYear + '/01/01';
       const to = getFiscalYearEndDate(fiscalYear);
       const today = getTodayJalaliDate();
