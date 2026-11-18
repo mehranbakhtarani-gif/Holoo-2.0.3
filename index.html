@@ -3539,7 +3539,7 @@
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-        state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: `${state.fiscalYear}/08/27`, dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId });
+        state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: `${state.fiscalYear}/08/27`, dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) });
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
         postVoucher('ثبت چک صیادی ' + sayad, lines, undefined, { type: 'check', id: checkId, event: 'issued' });
       } else {
@@ -3610,15 +3610,31 @@
       if (!['in_progress', 'overdue'].includes(c.status)) { showToast('این چک قبلاً تعیین‌تکلیف شده است؛ ثبت سند تکراری مجاز نیست.', 'error'); return; }
       const amount = Number(c.amount || 0);
       if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ چک معتبر نیست.', 'error'); return; }
+      // A bounced or voided cheque reopens exactly the invoice balances it originally settled.
+      const releasedAllocations = ['bounced', 'voided'].includes(st) ? (Array.isArray(c.allocations) ? c.allocations : []) : [];
+      for (const allocation of releasedAllocations) {
+        const invoice = state.invoices.find(x => String(x.id) === String(allocation.invoiceId));
+        const allocatedAmount = Number(allocation.amount || 0);
+        if (!invoice || !Number.isFinite(allocatedAmount) || allocatedAmount <= 0 || Number(invoice.paidAmount || 0) + 0.000001 < allocatedAmount) {
+          showToast('تخصیص مرتبط با این چک قابل برگشت امن نیست؛ وضعیت چک تغییر نکرد.', 'error'); return;
+        }
+      }
       if (st === 'cleared') {
         const bank = state.bankAccounts.find(x => x.id === c.bankAccountId) || state.bankAccounts.find(x => x.type !== 'cash');
         if (!bank) { showToast('حساب بانکی برای ثبت وصول/پرداخت چک تعریف نشده است.', 'error'); return; }
         const lines = c.dir === 'receive' ? [{ code: '1102', partyId: null, desc: 'واریز چک به بانک', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'تسویه اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'تسویه اسناد پرداختنی', debit: amount, credit: 0 }, { code: '1102', partyId: null, desc: 'برداشت بانک', debit: 0, credit: amount }];
         postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
         bank.balance = Number(bank.balance || 0) + (c.dir === 'receive' ? amount : -amount);
-      } else if (st === 'bounced') {
-        const lines = c.dir === 'receive' ? [{ code: '1103', partyId: c.partyId, desc: 'برگشت چک دریافتی و احیای مطالبات', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'خروج از اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'ابطال اثر چک پرداختی برگشتی', debit: amount, credit: 0 }, { code: '2101', partyId: c.partyId, desc: 'بازگشت بدهی به تأمین‌کننده', debit: 0, credit: amount }];
-        postVoucher('برگشت چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
+      } else if (['bounced', 'voided'].includes(st)) {
+        const lines = c.dir === 'receive'
+          ? [{ code: '1103', partyId: c.partyId, desc: st === 'bounced' ? 'برگشت چک دریافتی و احیای مطالبات' : 'ابطال چک دریافتی و احیای مطالبات', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'خروج از اسناد دریافتنی', debit: 0, credit: amount }]
+          : [{ code: '2102', partyId: c.partyId, desc: st === 'bounced' ? 'ابطال اثر چک پرداختی برگشتی' : 'ابطال چک پرداختی', debit: amount, credit: 0 }, { code: '2101', partyId: c.partyId, desc: 'بازگشت بدهی به تأمین‌کننده', debit: 0, credit: amount }];
+        postVoucher((st === 'bounced' ? 'برگشت' : 'ابطال') + ' چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
+        for (const allocation of releasedAllocations) {
+          const invoice = state.invoices.find(x => String(x.id) === String(allocation.invoiceId));
+          invoice.paidAmount = Math.max(0, Number(invoice.paidAmount || 0) - Number(allocation.amount || 0));
+        }
+        c.allocationsReleasedAt = new Date().toISOString();
       }
       c.status = st; c.statusUpdatedAt = new Date().toISOString();
       addAudit('تغییر وضعیت چک ' + c.sayad + ' به ' + st);
