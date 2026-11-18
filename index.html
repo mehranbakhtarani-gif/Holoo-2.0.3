@@ -3322,12 +3322,10 @@
               issues.push({ type: 'kardex-row', productId, productName, message: 'مقدار ورود، خروج یا مانده یک ردیف کاردکس نامعتبر است؛ ورود و خروج هم‌زمان نیز پذیرفته نیست.', detail: `ردیف: ${index + 1} | ورود: ${movement?.inQty ?? '—'} | خروج: ${movement?.outQty ?? '—'} | مانده: ${movement?.bal ?? '—'}` });
               previousBalance = null;
               chainInterrupted = true;
+              unverified.push({ type: 'kardex-gap', productId, productName, message: 'به‌دلیل ردیف نامعتبر، پیوستگی کاردکس از این نقطه قابل بررسی نیست.', detail: `ردیف نامعتبر: ${index + 1}` });
               return;
             }
-            if (index > 0 && previousBalance === null && chainInterrupted) {
-              unverified.push({ type: 'kardex-gap', productId, productName, message: 'به‌دلیل ردیف نامعتبر قبلی، پیوستگی بخشی از کاردکس قابل بررسی نیست.', detail: `بررسی از ردیف ${index + 1} با مانده ثبت‌شده دوباره ادامه یافت.` });
-              chainInterrupted = false;
-            }
+            if (index > 0 && previousBalance === null && chainInterrupted) chainInterrupted = false;
             if (previousBalance !== null) {
               const expectedBalance = previousBalance + incoming - outgoing;
               if (Math.abs(expectedBalance - balance) > 0.000001) {
@@ -3566,6 +3564,7 @@
       const issueNames = {
         'batch-balance': 'مغایرت موجودی کل با مجموع بچ‌ها',
         'batch-id': 'شناسه بچ مفقود یا تکراری',
+        'kardex-missing': 'کالای دارای موجودی بدون کاردکس',
         'kardex-balance': 'مغایرت مانده کاردکس با موجودی',
         'kardex-row': 'ردیف نامعتبر کاردکس',
         'kardex-sequence': 'مغایرت توالی مانده کاردکس',
