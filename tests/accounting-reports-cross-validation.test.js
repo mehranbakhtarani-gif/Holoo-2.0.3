@@ -59,6 +59,8 @@ vm.runInContext(sliceBetween('    function buildAgingRows(', '    function rende
 vm.runInContext(sliceBetween('    function escapeBankReconcileText(', '    function renderReconcileModule('), sandbox);
 vm.runInContext(sliceBetween('    let actualCashFlowFromDate = null;', '    function saveCustomAccount()') +
   '; this.api={buildAccountLedger,buildBalanceSheetReport,buildProfitLossReport,buildActualCashFlowReport,buildAgingRows,getBankReconciliationCandidates,confirmBankReconcileMatch};', sandbox);
+vm.runInContext(sliceBetween('    let trialBalanceFromDate = null;', '    function renderAccountingModule()') +
+  '; this.api.buildTrialBalanceReport=buildTrialBalanceReport;', sandbox);
 const api = sandbox.api;
 
 const cashLedger = api.buildAccountLedger('1101','1405/01/01','1405/01/30');
@@ -78,6 +80,38 @@ assert.equal(pnl.expenses,100);
 assert.equal(pnl.netProfit,400);
 assert.equal(pnl.invalidAmountLines,1);
 assert.equal(pnl.trialBalanceDifference,0);
+
+const trial = api.buildTrialBalanceReport('1405/01/01','1405/01/30');
+assert.equal(trial.includedVouchers,5);
+assert.equal(trial.invalidAmountLines,1);
+assert.equal(trial.invalidStructureVouchers,0);
+assert.equal(trial.unbalancedVouchers,0);
+assert.equal(trial.totals.periodDebit,1100);
+assert.equal(trial.totals.periodCredit,1100);
+assert.equal(trial.totals.closingBalanceDebit,2300);
+assert.equal(trial.totals.closingBalanceCredit,2300);
+assert.equal(trial.movementDifference,0);
+assert.equal(trial.closingDifference,0);
+for (const [code, expected] of Object.entries({
+  '1101':{debit:0,credit:0,closing:1200},
+  '1102':{debit:500,credit:200,closing:800},
+  '1201':{debit:200,credit:0,closing:200},
+  '2201':{debit:0,credit:300,closing:-300},
+  '3101':{debit:0,credit:0,closing:-1500},
+  '4101':{debit:0,credit:500,closing:-500},
+  '6101':{debit:100,credit:0,closing:100}
+})) {
+  const row = trial.rows.find(r => r.code === code);
+  assert.ok(row, `trial balance must include account ${code}`);
+  assert.equal(row.periodDebit, expected.debit, `period debit for ${code}`);
+  assert.equal(row.periodCredit, expected.credit, `period credit for ${code}`);
+  assert.equal(row.closingBalanceDebit - row.closingBalanceCredit, expected.closing,
+    `closing net for ${code}`);
+  const ledger = api.buildAccountLedger(code,'1405/01/01','1405/01/30');
+  assert.equal(ledger.periodDebit, expected.debit, `ledger/trial period debit for ${code}`);
+  assert.equal(ledger.periodCredit, expected.credit, `ledger/trial period credit for ${code}`);
+  assert.equal(ledger.closingNet, expected.closing, `ledger/trial closing net for ${code}`);
+}
 
 const bs = api.buildBalanceSheetReport('1405/01/30');
 assert.equal(bs.assets,2200);
@@ -117,6 +151,17 @@ assert.equal(cashLedger.closingNet + bankLedger.closingNet,cf.closingCash,
   'cash and bank account ledgers must reconcile to cash flow closing cash');
 assert.equal(bs.assets,bs.liabilities+bs.equity+pnl.netProfit,
   'balance sheet equity plus P&L result must reconcile');
-console.log('PASS: six-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
-console.log('PASS: invalid voucher is excluded consistently from ledger, P&L, balance sheet and cash flow');
-console.log('PASS: bank transaction matching is exact and one voucher cannot be matched twice');
+assert.equal(trial.totals.periodDebit,trial.totals.periodCredit,
+  'trial balance period turnover must balance');
+assert.equal(trial.totals.closingBalanceDebit,trial.totals.closingBalanceCredit,
+  'trial balance closing debit and credit balances must reconcile');
+assert.equal(trial.rows.find(r=>r.code==='4101').closingBalanceCredit -
+  trial.rows.find(r=>r.code==='6101').closingBalanceDebit,pnl.netProfit,
+  'trial balance revenue less expenses must equal P&L net profit');
+assert.equal(trial.rows.find(r=>r.code==='1101').closingBalanceDebit +
+  trial.rows.find(r=>r.code==='1102').closingBalanceDebit,cf.closingCash,
+  'trial balance cash and bank accounts must equal cash flow closing cash');
+console.log('PASS: seven-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
+console.log('PASS: invalid voucher is excluded consistently from ledger, trial balance, P&L, balance sheet and cash flow');
+console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow
+PASS: bank transaction matching is exact and one voucher cannot be matched twice');
