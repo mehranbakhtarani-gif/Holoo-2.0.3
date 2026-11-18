@@ -15,7 +15,7 @@ function section(startMarker, endMarker) {
 }
 function load(source, name, context) {
   const helperStart = html.indexOf('function getReturnCostOfGoods(');
-  const helperEnd = html.indexOf('\\n    function submitPartialReturn()', helperStart);
+  const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   const helperSource = helperStart >= 0 && helperEnd > helperStart ? html.slice(helperStart, helperEnd) : '';
   const sandbox = {
     restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
