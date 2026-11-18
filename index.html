@@ -4465,7 +4465,7 @@
           totalDebit += debit;
           totalCredit += credit;
           const code = String(line.code || '');
-          if (dateKey >= fiscalStart && /^[456]/.test(code)) currentYearProfit += code.startsWith('4') ? credit - debit : debit - credit;
+          if (dateKey >= fiscalStart && /^[456]/.test(code)) currentYearProfit += credit - debit;
           if (!/^[123456]/.test(code)) return;
           if (!accounts.has(code)) {
             const catalog = CHART_ACCOUNTS.find(a => String(a.code) === code) ||
