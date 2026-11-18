@@ -3169,6 +3169,8 @@
     }
 
     let importItemRowCounter = 0;
+    // Keep manual shares while the user temporarily switches an expense to another allocation basis.
+    let importManualAllocationDraft = {};
     function importProductOptions(selectedId) {
       return state.products.map(p => '<option value="' + p.id + '"' + (String(p.id) === String(selectedId || '') ? ' selected' : '') + '>' + p.name + '</option>').join('');
     }
@@ -3214,6 +3216,7 @@
       const fxParty = document.getElementById('fxc-party');
       if (fxParty) fxParty.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
       document.getElementById('imp-items-container').innerHTML = '';
+      importManualAllocationDraft = {};
       importItemRowCounter = 0;
       addImportItemRow({ productId: state.products[0] && state.products[0].id, quantityKg: 22000, cartons: 880, fxAmount: 38500 });
       document.getElementById('imp-fx-rate').value = state.fxRates[document.getElementById('imp-curr').value] || 685000;
@@ -3225,7 +3228,7 @@
       const fields = document.getElementById('imp-manual-allocation-fields');
       if (!panel || !fields) return;
       const rows = Array.from(document.querySelectorAll('#imp-items-container .imp-item-row'));
-      const preserved = {};
+      const preserved = importManualAllocationDraft;
       fields.querySelectorAll('[data-manual-expense]').forEach(input => { preserved[input.dataset.manualExpense + '|' + input.dataset.manualItem] = input.value; });
       const expenseMeta = [
         ['freight', 'حمل دریایی', 'freight'], ['insurance', 'بیمه باربری', 'ins'],
