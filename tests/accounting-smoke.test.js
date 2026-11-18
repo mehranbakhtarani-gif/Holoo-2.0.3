@@ -49,7 +49,7 @@ test('same source event is idempotent; separate check events remain distinct', (
 test('invoice journal stores its source voucher reference', () => {
   const invoice = { id: 7 };
   const state = { fiscalYear: '1405', vouchers: [], checks: [], invoices: [invoice] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() {} });
   post('invoice', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }], undefined, { type: 'invoice', id: 7 });
   assert.equal(invoice.voucherId, 1);
 });
