@@ -136,7 +136,7 @@ test('partial return rejects quantity above remaining invoice quantity', () => {
   };
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'2004','pret-qty-0':'2'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2004','pret-qty-0':'2'}),
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
@@ -257,7 +257,7 @@ test('partial return validates every row before changing any stock or invoice qu
   };
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'3101','pret-qty-0':'2','pret-qty-1':'3'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3101','pret-qty-0':'2','pret-qty-1':'3'}),
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
@@ -276,7 +276,7 @@ test('partial return stores return value so the invoice outstanding is reduced',
   };
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'3102','pret-qty-0':'2'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3102','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
@@ -317,7 +317,7 @@ test('return on a fully settled sales invoice creates customer credit instead of
   };
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'3201','pret-qty-0':'2'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3201','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
@@ -341,7 +341,7 @@ test('return below the unpaid invoice balance does not create excess party credi
   };
   const posted=[];
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'3202','pret-qty-0':'2'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3202','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
     postVoucher(...a){posted.push(a);}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
@@ -487,7 +487,7 @@ test('fully paid supplier purchase return books excess as supplier prepayment in
   };
   const posted=[];
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
-    state, document:doc({'partial-ret-inv-id':'3401','pret-qty-0':'2'}),
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3401','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
     postVoucher(...a){posted.push(a);return 1;}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
