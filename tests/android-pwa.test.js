@@ -27,6 +27,10 @@ assert.match(sw, /Supabase and other API\/auth traffic must always go to the net
 assert.match(sw, /request\.mode === 'navigate'/);
 assert.match(sw, /holoo-pwa-/);
 assert.match(sw, /self\.clients\.claim\(\)/);
+assert.match(html, /async function fetchWithTimeout\(/);
+assert.match(html, /مهلت پاسخ Supabase تمام شد/);
+assert.match(html, /اتصال ابری در هر بار راه‌اندازی به‌صورت خودکار بررسی می‌شود/);
+assert.match(html, /else await pullFromSupabase\(false\)/);
 const releaseGuide = fs.readFileSync('docs/ANDROID_PWA_RELEASE_READINESS.md', 'utf8');
 assert.match(releaseGuide, /not a native Android project/i);
 assert.match(releaseGuide, /three-device acceptance test/i);

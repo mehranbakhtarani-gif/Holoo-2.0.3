@@ -1230,6 +1230,22 @@
       return id;
     })();
 
+    // محدودیت زمانی برای درخواست‌های Supabase؛ اتصال معلق نباید نشانگر را برای همیشه در حالت انتظار نگه دارد.
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error('مهلت پاسخ Supabase تمام شد؛ اتصال اینترنت و دسترسی پروژه را بررسی کنید.');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     function setCloudBadge(text, colorClass) {
       const el = document.getElementById('cloud-status-badge');
       if (!el) return;
@@ -1403,7 +1419,7 @@
         // پیش از ارسال نسخه قدیمی، نسخه ابری با آخرین baseline مقایسه می‌شود.
 
         const baseEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
-        const checkRes = await fetch(baseEndpoint, {
+        const checkRes = await fetchWithTimeout(baseEndpoint, {
           method: 'GET',
           headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
         });
@@ -1444,7 +1460,7 @@
         if (currentRemote && currentRemote.updated_at) {
           // Compare-and-swap: فقط اگر timestamp رکورد هنوز همان نسخه خوانده‌شده باشد، به‌روزرسانی کن.
           const conditionalEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&updated_at=eq.${encodeURIComponent(currentRemote.updated_at)}`;
-          res = await fetch(conditionalEndpoint, {
+          res = await fetchWithTimeout(conditionalEndpoint, {
             method: 'PATCH',
             headers: {
               'apikey': cloudConfig.key,
@@ -1457,7 +1473,7 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
           const changedRows = await res.json().catch(() => []);
           if (!Array.isArray(changedRows) || changedRows.length === 0) {
-            const latestRes = await fetch(baseEndpoint, {
+            const latestRes = await fetchWithTimeout(baseEndpoint, {
               method: 'GET',
               headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
             });
@@ -1479,7 +1495,7 @@
         } else {
           // ساخت اولین رکورد شرکت؛ در حالت معمول تنها یک بار رخ می‌دهد.
           const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?on_conflict=id`;
-          res = await fetch(endpoint, {
+          res = await fetchWithTimeout(endpoint, {
             method: 'POST',
             headers: {
               'apikey': cloudConfig.key,
@@ -1554,7 +1570,7 @@
       setCloudBadge('📥 در حال بررسی نسخه ابری...', 'text-sky-300');
       try {
         const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
-        const res = await fetch(endpoint, {
+        const res = await fetchWithTimeout(endpoint, {
           method: 'GET',
           headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
         });
@@ -1782,7 +1798,7 @@
       let applied = 0;
 
       for (const operation of operations) {
-        const response = await fetch(rpcUrl, {
+        const response = await fetchWithTimeout(rpcUrl, {
           method: 'POST',
           headers: {
             'apikey': cloudConfig.key,
@@ -1820,7 +1836,7 @@
             const readUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' +
               encodeURIComponent(cloudConfig.table) + '?id=eq.' +
               encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
-            const readRes = await fetch(readUrl, {
+            const readRes = await fetchWithTimeout(readUrl, {
               headers: { 'apikey': cloudConfig.key, 'Authorization': 'Bearer ' + cloudConfig.key }
             });
             if (readRes.ok) {
@@ -2366,7 +2382,7 @@
       if (cloudConfig.url && cloudConfig.key && cloudConfig.table && cloudConfig.recordId) {
         try {
           const endpoint = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' + encodeURIComponent(cloudConfig.table) + '?id=eq.' + encodeURIComponent(cloudConfig.recordId) + '&select=id';
-          const response = await fetch(endpoint, {
+          const response = await fetchWithTimeout(endpoint, {
             method: 'GET',
             headers: { apikey: cloudConfig.key, Authorization: 'Bearer ' + cloudConfig.key }
           });
@@ -5529,6 +5545,8 @@
       else if (launchAction === 'treasury') navigateTo('treasury');
       else navigateTo('dashboard');
       // اگر صف محلی از اجرای قبلی باقی مانده، اول آن را بفرست؛ در غیر این صورت نسخه ابر را بررسی کن.
+      // اتصال ابری در هر بار راه‌اندازی به‌صورت خودکار بررسی می‌شود؛ نیازی به زدن دکمه ذخیره تنظیمات نیست.
+      setCloudBadge('🔄 در حال اتصال و بررسی Supabase...', 'text-sky-300');
       if (localStorage.getItem(CLOUD_OUTBOX_KEY)) await pushToSupabase(false);
       else await pullFromSupabase(false);
     });
