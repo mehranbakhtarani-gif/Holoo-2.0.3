@@ -6239,7 +6239,8 @@
       const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
       const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
       let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0, invalidBankLines = 0;
-      (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach(line => {
+      const unassignedLines = [], unknownLines = [];
+      (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach((line, lineIndex) => {
         if (String(line.code) !== '1102') return;
         const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
         if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
@@ -6249,14 +6250,22 @@
         const id = line.bankAccountId == null ? '' : String(line.bankAccountId);
         const target = id ? byId.get(id) : null;
         if (target) { target.debit += debit; target.credit += credit; }
-        else if (!id) { unassignedDebit += debit; unassignedCredit += credit; }
-        else { unknownDebit += debit; unknownCredit += credit; }
+        else {
+          const detail = {
+            voucherId: voucher.id, date: voucher.date || '', lineIndex: lineIndex + 1,
+            voucherDesc: voucher.desc || '', lineDesc: line.desc || '',
+            debit, credit, bankAccountId: id
+          };
+          if (!id) { unassignedDebit += debit; unassignedCredit += credit; unassignedLines.push(detail); }
+          else { unknownDebit += debit; unknownCredit += credit; unknownLines.push(detail); }
+        }
       }));
       return {
         accounts: [...byId.values()].map(row => ({ ...row, net: row.debit - row.credit })),
         unassignedNet: unassignedDebit - unassignedCredit,
         unknownNet: unknownDebit - unknownCredit,
-        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit, invalidBankLines
+        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit,
+        unassignedLines, unknownLines, invalidBankLines
       };
     }
     function renderReconcileModule() {
@@ -6267,14 +6276,25 @@
       const bankRows = bankBalances.accounts.map(row => `
         <div class="rounded-lg bg-white/10 p-2"><span class="block text-slate-300">${window.escapeBankReconcileText(row.account.name)}</span><strong class="tabular-nums">${money(row.net)}</strong></div>
       `).join('');
-      const unassigned = bankBalances.unassignedNet || bankBalances.unknownNet
-        ? `<div class="rounded-lg bg-amber-900/30 p-2"><span class="block text-amber-200">گردش‌های بدون حساب مشخص / شناسه ناشناخته</span><strong class="tabular-nums">${money(bankBalances.unassignedNet + bankBalances.unknownNet)}</strong></div>`
+      const renderUnassignedBankLines = (rows, kind) => rows.map(item =>
+        '<div class="rounded-lg bg-white/70 border border-amber-200 p-2 text-xs space-y-1">' +
+          '<div class="flex flex-wrap justify-between gap-2"><strong>سند #' + faNum(item.voucherId) + ' — ردیف ' + faNum(item.lineIndex) + '</strong><span>' + faNum(item.date) + '</span></div>' +
+          '<div>' + window.escapeBankReconcileText(item.voucherDesc) + (item.lineDesc ? ' — ' + window.escapeBankReconcileText(item.lineDesc) : '') + '</div>' +
+          (kind === 'unknown' ? '<div class="text-rose-700">شناسه حساب: ' + window.escapeBankReconcileText(item.bankAccountId) + '</div>' : '') +
+          '<div class="flex flex-wrap gap-3 tabular-nums"><span>بدهکار: ' + money(item.debit) + '</span><span>بستانکار: ' + money(item.credit) + '</span></div>' +
+        '</div>'
+      ).join('');
+      const unassigned = bankBalances.unassignedLines.length
+        ? '<details class="rounded-lg bg-amber-900/30 p-2 text-amber-100"><summary class="cursor-pointer font-bold">گردش‌های فاقد شناسه حساب بانکی — ' + faNum(bankBalances.unassignedLines.length) + ' ردیف | مانده ' + money(bankBalances.unassignedNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unassignedLines, 'unassigned') + '</div></details>'
+        : '';
+      const unknown = bankBalances.unknownLines.length
+        ? '<details class="rounded-lg bg-rose-900/30 p-2 text-rose-100"><summary class="cursor-pointer font-bold">گردش‌های دارای شناسه حساب ناشناخته — ' + faNum(bankBalances.unknownLines.length) + ' ردیف | مانده ' + money(bankBalances.unknownNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unknownLines, 'unknown') + '</div></details>'
         : '';
       const invalidBankWarning = bankBalances.invalidBankLines
         ? `<div class="col-span-full rounded-lg bg-amber-900/30 p-2 text-amber-200">توجه: ${faNum(bankBalances.invalidBankLines)} ردیف حساب بانکی به دلیل مبلغ نامعتبر، منفی یا ثبت هم‌زمان بدهکار و بستانکار در مانده دفتری محاسبه نشده است.</div>`
         : '';
       document.getElementById('reconcile-summary-bar').innerHTML = `
-        <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${unassigned}</div></div>
+        <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${unassigned}${unknown}</div></div>
         ${invalidBankWarning}
         <div><span class="text-slate-400 block">تراکنش‌های وصل‌شده به سند:</span><strong class="text-emerald-300">${faNum(verified.length)}</strong></div>
         <div><span class="text-slate-400 block">نیازمند بررسی:</span><strong class="text-amber-300">${faNum(pending)} مورد</strong></div>
