@@ -3532,6 +3532,7 @@
       if (!Number.isFinite(rate) || rate <= 0) { showToast('نرخ روز ارز معتبر نیست؛ ابتدا نرخ را ثبت کنید.', 'error'); return; }
       const bankId = document.getElementById(`fx-pay-bank-${c.id}`).value;
       const bank = (state.bankAccounts || []).find(x => x.id === bankId);
+      if (!bank) { showToast('برای ثبت پرداخت ارزی، حساب بانک مقصد را انتخاب کنید.', 'error'); return; }
       const bookRial = Math.round(amount * Number(c.initialRate));
       const paidRial = Math.round(amount * rate);
       const diff = bookRial - paidRial;
@@ -3581,6 +3582,7 @@
       if (!Number.isFinite(curRate) || curRate <= 0) { showToast('نرخ روز ارز معتبر نیست.', 'error'); return; }
       const bankId = document.getElementById(`fx-import-bank-${shipment.id}`)?.value || '';
       const bank = (state.bankAccounts || []).find(x => x.id === bankId);
+      if (!bank) { showToast('برای ثبت پرداخت ارزی محموله، حساب بانک مقصد را انتخاب کنید.', 'error'); return; }
       const bookRial = Math.round(payFx * Number(shipment.fxRate));
       const paidRial = Math.round(payFx * curRate);
       const diff = bookRial - paidRial;
