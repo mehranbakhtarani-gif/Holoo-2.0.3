@@ -332,6 +332,7 @@
                 <option value="FIFO">بهای تمام‌شده: FIFO (اولین وارده)</option>
               </select>
               <button onclick="openModal('modal-wh-transfer')" class="touch-btn bg-indigo-700 text-white px-3 rounded-xl font-bold">🔄 حواله انتقال بین انبارها</button>
+              <button onclick="openInventoryReconciliation()" class="touch-btn bg-slate-800 text-white px-3 rounded-xl font-bold">🔎 گزارش تطبیق موجودی و کاردکس</button>
               <button onclick="openModal('modal-stock-adjust')" class="touch-btn bg-amber-500 text-slate-950 px-3 rounded-xl font-extrabold">⚖️ اصلاح موجودی / انبارگردانی</button>
             </div>
           </div>
@@ -1204,6 +1205,21 @@
         <button onclick="clearKardexDateFilter()" class="bg-slate-200 rounded-lg py-2 font-bold">نمایش همه گردش‌ها</button>
       </div>
       <div id="kardex-modal-list" class="space-y-1.5"></div>
+    </div>
+  </div>
+
+  <div id="modal-inventory-reconciliation" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-3xl w-full max-w-2xl max-h-[90dvh] overflow-y-auto p-4 shadow-2xl space-y-3 text-xs">
+      <div class="flex justify-between items-center border-b pb-2">
+        <div><h3 class="font-black text-sm">گزارش تطبیق موجودی، بچ‌ها و کاردکس</h3><p class="text-[10px] text-slate-500">گزارش فقط‌خواندنی؛ هیچ داده‌ای اصلاح یا ذخیره نمی‌شود.</p></div>
+        <button onclick="closeModal('modal-inventory-reconciliation')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button>
+      </div>
+      <div id="inventory-reconciliation-summary" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+      <div id="inventory-reconciliation-list" class="space-y-2"></div>
+      <div class="flex flex-wrap gap-2 pt-2 border-t">
+        <button onclick="printInventoryReconciliation()" class="bg-holoo-700 text-white px-3 py-2 rounded-xl font-bold">🖨️ چاپ / ذخیره PDF</button>
+        <button onclick="closeModal('modal-inventory-reconciliation')" class="bg-slate-100 px-3 py-2 rounded-xl font-bold">بستن</button>
+      </div>
     </div>
   </div>
 
@@ -3253,6 +3269,57 @@
       };
     }
 
+    function inspectInventoryReconciliation(products) {
+      const items = Array.isArray(products) ? products : [];
+      const issues = [];
+      const transferGroups = new Map();
+      let checkedBatches = 0;
+      let checkedMovements = 0;
+      items.forEach(product => {
+        const productId = String(product?.id ?? 'بدون شناسه');
+        const productName = String(product?.name ?? 'کالای بدون نام');
+        const batchReport = inspectProductBatchReconciliation(product);
+        if (!batchReport.valid) issues.push({ type: 'batch-balance', productId, productName, message: batchReport.issue || 'مغایرت موجودی کل و جمع بچ‌ها', detail: `موجودی کل: ${batchReport.stock} | جمع بچ‌ها: ${batchReport.tracked} | اختلاف: ${batchReport.difference}` });
+        const batches = Array.isArray(product?.batches) ? product.batches : [];
+        const seenBatchIds = new Set();
+        batches.forEach((batch, index) => {
+          checkedBatches++;
+          const batchId = String(batch?.id ?? '').trim();
+          if (!batchId) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه بچ ثبت نشده است.', detail: `ردیف بچ: ${index + 1}` });
+          else if (seenBatchIds.has(batchId)) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه بچ تکراری است.', detail: batchId });
+          else seenBatchIds.add(batchId);
+        });
+        const movements = Array.isArray(product?.kardex) ? product.kardex : [];
+        checkedMovements += movements.length;
+        if (movements.length) {
+          const last = movements[movements.length - 1];
+          const lastBalance = Number(last?.bal), stock = Number(product?.stock);
+          if (!Number.isFinite(lastBalance) || !Number.isFinite(stock) || Math.abs(lastBalance - stock) > 0.000001) {
+            issues.push({ type: 'kardex-balance', productId, productName, message: 'مانده آخرین ردیف کاردکس با موجودی فعلی کالا برابر نیست.', detail: `مانده کاردکس: ${last?.bal ?? 'نامعتبر'} | موجودی فعلی: ${product?.stock ?? 'نامعتبر'}` });
+          }
+        }
+        movements.forEach(movement => {
+          const doc = String(movement?.doc || '');
+          const match = doc.match(/TR-\d+-[a-z0-9]+/i);
+          if (!match) return;
+          const transferId = match[0];
+          if (!transferGroups.has(transferId)) transferGroups.set(transferId, []);
+          const type = doc.includes('خروج انتقال') ? 'source' : doc.includes('ورود انتقال') ? 'destination' : 'unknown';
+          transferGroups.get(transferId).push({ type, qty: type === 'source' ? Number(movement?.outQty) : type === 'destination' ? Number(movement?.inQty) : NaN });
+        });
+      });
+      transferGroups.forEach((events, transferId) => {
+        const sources = events.filter(event => event.type === 'source');
+        const destinations = events.filter(event => event.type === 'destination');
+        const sourceQty = sources.reduce((sum, event) => sum + event.qty, 0);
+        const destinationQty = destinations.reduce((sum, event) => sum + event.qty, 0);
+        if (sources.length !== 1 || destinations.length !== 1 || !Number.isFinite(sourceQty) || !Number.isFinite(destinationQty) || Math.abs(sourceQty - destinationQty) > 0.000001) {
+          issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}` });
+        }
+      });
+      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, issueCount: issues.length, issues };
+    }
+
     function ensureProductBatches(product) {
       if (!product) return [];
       if (!Array.isArray(product.batches)) product.batches = [];
@@ -3437,6 +3504,30 @@
           <input type="number" id="st-real-${p.id}" value="${p.stock}" class="w-24 border rounded-lg px-2 py-1 text-center font-bold tabular-nums" />
         </div>
       `).join('');
+    }
+
+    let latestInventoryReconciliation = null;
+    function openInventoryReconciliation() {
+      latestInventoryReconciliation = inspectInventoryReconciliation(state.products);
+      const report = latestInventoryReconciliation;
+      document.getElementById('inventory-reconciliation-summary').innerHTML = [
+        ['کالاهای بررسی‌شده', report.checkedProducts], ['بچ‌های بررسی‌شده', report.checkedBatches],
+        ['ردیف‌های کاردکس', report.checkedMovements], ['انتقال‌های بررسی‌شده', report.checkedTransfers]
+      ].map(([label, value]) => `<div class="rounded-xl border bg-slate-50 p-2"><div class="text-[10px] text-slate-500">${label}</div><strong class="text-base tabular-nums">${faNum(value)}</strong></div>`).join('');
+      const list = document.getElementById('inventory-reconciliation-list');
+      if (!report.issues.length) list.innerHTML = '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 font-bold">مغایرتی در موارد بررسی‌شده پیدا نشد.</div>';
+      else list.innerHTML = `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 font-bold text-amber-900">${faNum(report.issueCount)} مورد نیازمند بررسی؛ هیچ اصلاح خودکاری انجام نشده است.</div>` +
+        report.issues.map((issue, index) => `<div class="rounded-xl border border-slate-200 p-3 space-y-1"><div class="font-bold text-slate-900">${faNum(index + 1)}. ${escapeKardexText(issue.message)}</div><div class="text-[10px] text-slate-600">${escapeKardexText(issue.productName)} | کد: ${escapeKardexText(issue.productId)}</div><div class="text-[10px] text-slate-500 break-words">${escapeKardexText(issue.detail)}</div></div>`).join('');
+      openModal('modal-inventory-reconciliation');
+    }
+
+    function printInventoryReconciliation() {
+      const report = latestInventoryReconciliation || inspectInventoryReconciliation(state.products);
+      const rows = report.issues.length ? report.issues.map((issue, index) => `<tr><td>${faNum(index + 1)}</td><td>${escapeKardexText(issue.productName)}</td><td>${escapeKardexText(issue.productId)}</td><td>${escapeKardexText(issue.message)}</td><td>${escapeKardexText(issue.detail)}</td></tr>`).join('') : '<tr><td colspan="5">مغایرتی در موارد بررسی‌شده پیدا نشد.</td></tr>';
+      document.getElementById('print-title').textContent = 'گزارش تطبیق موجودی، بچ‌ها و کاردکس';
+      document.getElementById('print-area').innerHTML = `<div dir="rtl" class="space-y-3"><h2 class="font-black text-lg">گزارش تطبیق موجودی، بچ‌ها و کاردکس</h2><p>گزارش فقط‌خواندنی؛ هیچ داده‌ای اصلاح یا ذخیره نشده است.</p><p>کالاها: ${faNum(report.checkedProducts)} | بچ‌ها: ${faNum(report.checkedBatches)} | ردیف‌های کاردکس: ${faNum(report.checkedMovements)} | انتقال‌ها: ${faNum(report.checkedTransfers)} | موارد: ${faNum(report.issueCount)}</p><table class="w-full border-collapse text-xs"><thead><tr><th>ردیف</th><th>کالا</th><th>کد</th><th>شرح</th><th>جزئیات</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      closeModal('modal-inventory-reconciliation');
+      openModal('modal-print-preview');
     }
 
     function escapeKardexText(value) {
