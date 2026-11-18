@@ -173,6 +173,24 @@ test('inventory reconciliation detects an incorrect intermediate kardex balance 
   assert.equal(report.issues.some(x => x.type === 'kardex-balance'), false);
 });
 
+test('inventory reconciliation marks a kardex without an opening baseline as unverified', () => {
+  const report = inspectInventoryReconciliation([{ id: 'R-BASE', name: 'بدون مانده پایه', stock: 7, batches: [{ id: 'B-BASE', remainingQty: 7, unitCost: 1 }], kardex: [
+    { bal: 7, inQty: 2, outQty: 0, doc: 'رسید خرید' }
+  ] }]);
+  assert.ok(report.unverified.some(x => x.type === 'kardex-baseline'));
+  assert.equal(report.issueCount, 0);
+});
+
+test('inventory reconciliation reports an interrupted kardex chain as unverified', () => {
+  const report = inspectInventoryReconciliation([{ id: 'R-GAP', name: 'کاردکس ناقص', stock: 4, batches: [], kardex: [
+    { bal: 5, inQty: 5, outQty: 0, doc: 'موجودی اولیه' },
+    { bal: 'نامعتبر', inQty: 0, outQty: 1, doc: 'سند خراب' },
+    { bal: 4, inQty: 0, outQty: 1, doc: 'فروش بعدی' }
+  ] }]);
+  assert.ok(report.issues.some(x => x.type === 'kardex-row'));
+  assert.ok(report.unverified.some(x => x.type === 'kardex-gap'));
+});
+
 test('inventory reconciliation detects a positive-stock product with no kardex history', () => {
   const report = inspectInventoryReconciliation([{ id: 'R-NO-KARDEX', name: 'بدون کاردکس', stock: 4, batches: [], kardex: [] }]);
   assert.ok(report.issues.some(x => x.type === 'kardex-missing'));
@@ -191,4 +209,4 @@ test('inventory reconciliation validates paired warehouse transfer references an
   assert.ok(mismatch.issues.some(x => x.type === 'transfer'));
 });
 
-console.log('PASS: 15 FIFO and inventory reconciliation tests');
+console.log('PASS: 17 FIFO and inventory reconciliation tests');
