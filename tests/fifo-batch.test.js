@@ -31,6 +31,19 @@ test('new purchases add a distinct lot without changing stock quantity themselve
   assert.equal(p.batches[1].lot, 'LOT-B');
 });
 
+test('legacy AVG stock with over-counted historical lots is reconciled without shipment attribution', () => {
+  const p = { id: 'P-AVG', stock: 5, buyPrice: 120, batches: [
+    { id: 'OLD-1', sourceType: 'import', sourceRef: 'IMP-OLD', remainingQty: 6, quantity: 6, unitCost: 100 },
+    { id: 'OLD-2', sourceType: 'purchase', sourceRef: 'PUR-OLD', remainingQty: 4, quantity: 4, unitCost: 150 }
+  ] };
+  const batches = ensureProductBatches(p);
+  assert.equal(batches.reduce((sum, batch) => sum + Number(batch.remainingQty || 0), 0), 5);
+  assert.equal(batches.filter(batch => batch.sourceType === 'import' && batch.sourceRef === 'IMP-OLD').reduce((sum,b)=>sum+b.remainingQty,0), 0);
+  const opening = batches.find(batch => batch.sourceType === 'legacy_balance_reconciled');
+  assert.equal(opening.remainingQty, 5);
+  assert.equal(opening.unitCost, 120);
+});
+
 test('FIFO consumes oldest available batches first and calculates exact cost', () => {
   const p = { id: 'P3', stock: 10, batches: [
     { id: 'B1', lot: 'L1', receivedDate: '1405/01/01', remainingQty: 4, quantity: 4, unitCost: 100 },
@@ -93,14 +106,16 @@ test('purchase and import forms retain batch, production and expiry metadata', (
   assert.match(html, /id="inv-line-lot"/);
   assert.match(html, /id="inv-line-prod-date"/);
   assert.match(html, /id="inv-line-expiry"/);
-  assert.match(html, /id="imp-lot"/);
-  assert.match(html, /id="imp-production-date"/);
-  assert.match(html, /id="imp-expiry-date"/);
+  assert.match(html, /id="imp-items-container"/);
+  assert.match(html, /class="imp-item-lot/);
+  assert.match(html, /class="imp-item-production/);
+  assert.match(html, /class="imp-item-expiry/);
+  assert.match(html, /function addImportItemRow\(/);
 });
 
 test('FIFO sales costing is wired to invoice lines and cost-of-goods-sold voucher', () => {
   assert.match(html, /const fifo = consumeFifoStock\(p, l\.kg\)/);
-  assert.match(html, /l\.costOfGoodsSold = fifo\.totalCost/);
+  assert.match(html, /l\.costOfGoodsSold = lineCost/);
   assert.match(html, /cogs \+= lineCost/);
 });
 
