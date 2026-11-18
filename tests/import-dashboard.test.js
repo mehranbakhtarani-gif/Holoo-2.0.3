@@ -9,6 +9,9 @@ assert.match(html, /function receiveImportShipment\(/);
 assert.match(html, /postedToWh: false/);
 assert.match(html, /nextStatus === 'received'\) receiveImportShipment\(shipment\)/);
 assert.match(html, /warehouse_receipt/);
+assert.match(html, /code: '2106'.*credit: costing\.totalExpenseRial/);
+assert.match(html, /SUB-2106/);
+assert.match(html, /بستانکاران هزینه‌های واردات/);
 
 assert.match(html, /تأخیر در ETA/);
 assert.match(html, /id="imp-eta"/);
