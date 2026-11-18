@@ -22,4 +22,14 @@ assert.match(sw, /icon-512\.svg/);
 for (const file of ['icons/icon-192.svg', 'icons/icon-512.svg']) {
   assert.ok(fs.existsSync(file), file + ' must exist');
 }
-console.log('PASS: 14 Android PWA installation and offline checks');
+
+assert.match(sw, /Supabase and other API\/auth traffic must always go to the network/);
+assert.match(sw, /request\.mode === 'navigate'/);
+assert.match(sw, /holoo-pwa-/);
+assert.match(sw, /self\.clients\.claim\(\)/);
+const releaseGuide = fs.readFileSync('docs/ANDROID_PWA_RELEASE_READINESS.md', 'utf8');
+assert.match(releaseGuide, /not a native Android project/i);
+assert.match(releaseGuide, /three-device acceptance test/i);
+assert.match(releaseGuide, /actor names and device labels are not verified identities/i);
+
+console.log('PASS: Android PWA installation, cache safety, and release-readiness checks');
