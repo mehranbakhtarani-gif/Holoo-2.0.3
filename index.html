@@ -3077,7 +3077,7 @@
         return;
       }
       select.disabled = false;
-      select.innerHTML = accounts.map(account => '<option value="' + escapeBankReconcileText(account.id) + '">' + escapeBankReconcileText(account.name || account.id) + '</option>').join('');
+      select.innerHTML = accounts.map(account => '<option value="' + window.escapeBankReconcileText(account.id) + '">' + window.escapeBankReconcileText(account.name || account.id) + '</option>').join('');
       select.value = accounts.some(account => String(account.id) === String(previousId)) ? previousId : String(accounts[0].id);
     }
     function checkPartyCredit() {
@@ -4740,13 +4740,13 @@
           <div class="text-[10px] text-slate-600 tabular-nums">صیادی: ${faNum(c.sayad)} | سررسید: ${faNum(c.dueDate)} | طرف: ${getPartyName(c.partyId)}</div>
           ${!c.bankAccountId && ['in_progress', 'overdue'].includes(c.status) ? `
             <div class="flex gap-1 items-center">
-              <select id="legacy-check-bank-${escapeBankReconcileText(c.id)}" class="min-w-0 flex-1 border rounded-lg px-2 py-1 text-[10px] bg-white">
+              <select id="legacy-check-bank-${window.escapeBankReconcileText(c.id)}" class="min-w-0 flex-1 border rounded-lg px-2 py-1 text-[10px] bg-white">
                 <option value="">تعیین حساب بانکی چک قدیمی</option>
-                ${(state.bankAccounts || []).filter(account => account.type === 'bank').map(account => `<option value="${escapeBankReconcileText(account.id)}">${escapeBankReconcileText(account.name)}</option>`).join('')}
+                ${(state.bankAccounts || []).filter(account => account.type === 'bank').map(account => `<option value="${window.escapeBankReconcileText(account.id)}">${window.escapeBankReconcileText(account.name)}</option>`).join('')}
               </select>
-              <button onclick="assignLegacyCheckBankAccount('${escapeBankReconcileText(c.id)}')" class="bg-sky-700 text-white px-2 py-1 rounded font-bold text-[10px]">ذخیره بانک</button>
+              <button onclick="assignLegacyCheckBankAccount('${window.escapeBankReconcileText(c.id)}')" class="bg-sky-700 text-white px-2 py-1 rounded font-bold text-[10px]">ذخیره بانک</button>
             </div>
-          ` : (c.bankAccountId ? `<div class="text-[10px] text-slate-500">حساب بانکی: ${escapeBankReconcileText((state.bankAccounts || []).find(account => String(account.id) === String(c.bankAccountId))?.name || 'حساب ثبت‌شده')}</div>` : '')}
+          ` : (c.bankAccountId ? `<div class="text-[10px] text-slate-500">حساب بانکی: ${window.escapeBankReconcileText((state.bankAccounts || []).find(account => String(account.id) === String(c.bankAccountId))?.name || 'حساب ثبت‌شده')}</div>` : '')}
           <div class="flex flex-wrap justify-between items-center pt-1 border-t gap-1">
             <strong class="tabular-nums">${money(c.amount)}</strong>
             <div class="flex gap-1">
@@ -4801,7 +4801,7 @@
     }
 
     function renderGuaranteesAndCommitments() {
-      const partyOptions = (state.parties || []).map(p => `<option value="${escapeBankReconcileText(p.id)}">${escapeBankReconcileText(p.name)}</option>`).join('');
+      const partyOptions = (state.parties || []).map(p => `<option value="${window.escapeBankReconcileText(p.id)}">${window.escapeBankReconcileText(p.name)}</option>`).join('');
       ['guarantee-party', 'commitment-party'].forEach(id => {
         const select = document.getElementById(id);
         if (select) { const current = select.value; select.innerHTML = partyOptions || '<option value="">ابتدا طرف‌حساب تعریف کنید</option>'; if (current) select.value = current; }
@@ -4810,21 +4810,21 @@
       if (guaranteeBox) guaranteeBox.innerHTML = (state.guarantees || []).length ? state.guarantees.map(g => {
         const party = (state.parties || []).find(p => String(p.id) === String(g.partyId));
         return `<div class="p-2.5 rounded-xl border bg-slate-50 space-y-1">
-          <div class="flex justify-between gap-2"><strong>${escapeBankReconcileText(GUARANTEE_KIND_LABELS[g.kind] || g.kind)} • ${escapeBankReconcileText(GUARANTEE_DIRECTION_LABELS[g.direction] || g.direction)}</strong><span class="text-[10px] font-bold">${escapeBankReconcileText(GUARANTEE_STATUS_LABELS[g.status] || g.status)}</span></div>
-          <div class="text-[10px] text-slate-600">${escapeBankReconcileText(g.reference)} • ${escapeBankReconcileText(party?.name || 'طرف‌حساب حذف‌شده')}</div>
-          <div class="flex justify-between text-xs"><b>${money(g.amount)}</b><span>انقضا: ${escapeBankReconcileText(g.expiryDate)}</span></div>
-          ${g.description ? `<div class="text-[10px] text-slate-500">${escapeBankReconcileText(g.description)}</div>` : ''}
-          ${g.status === 'active' ? `<div class="flex gap-1"><button onclick="changeGuaranteeStatus('${escapeBankReconcileText(g.id)}','released')" class="bg-emerald-700 text-white rounded px-2 py-1 text-[10px]">آزادسازی</button><button onclick="changeGuaranteeStatus('${escapeBankReconcileText(g.id)}','claimed')" class="bg-rose-700 text-white rounded px-2 py-1 text-[10px]">مطالبه</button></div>` : ''}
+          <div class="flex justify-between gap-2"><strong>${window.escapeBankReconcileText(GUARANTEE_KIND_LABELS[g.kind] || g.kind)} • ${window.escapeBankReconcileText(GUARANTEE_DIRECTION_LABELS[g.direction] || g.direction)}</strong><span class="text-[10px] font-bold">${window.escapeBankReconcileText(GUARANTEE_STATUS_LABELS[g.status] || g.status)}</span></div>
+          <div class="text-[10px] text-slate-600">${window.escapeBankReconcileText(g.reference)} • ${window.escapeBankReconcileText(party?.name || 'طرف‌حساب حذف‌شده')}</div>
+          <div class="flex justify-between text-xs"><b>${money(g.amount)}</b><span>انقضا: ${window.escapeBankReconcileText(g.expiryDate)}</span></div>
+          ${g.description ? `<div class="text-[10px] text-slate-500">${window.escapeBankReconcileText(g.description)}</div>` : ''}
+          ${g.status === 'active' ? `<div class="flex gap-1"><button onclick="changeGuaranteeStatus('${window.escapeBankReconcileText(g.id)}','released')" class="bg-emerald-700 text-white rounded px-2 py-1 text-[10px]">آزادسازی</button><button onclick="changeGuaranteeStatus('${window.escapeBankReconcileText(g.id)}','claimed')" class="bg-rose-700 text-white rounded px-2 py-1 text-[10px]">مطالبه</button></div>` : ''}
         </div>`;
       }).join('') : '<p class="text-[10px] text-slate-400">هنوز ضمانت‌نامه‌ای ثبت نشده است.</p>';
       const commitmentBox = document.getElementById('payable-commitments-list');
       if (commitmentBox) commitmentBox.innerHTML = (state.payableCommitments || []).length ? state.payableCommitments.map(c => {
         const party = (state.parties || []).find(p => String(p.id) === String(c.partyId));
         return `<div class="p-2.5 rounded-xl border bg-slate-50 space-y-1">
-          <div class="flex justify-between gap-2"><strong>${escapeBankReconcileText(c.title)}</strong><span class="text-[10px] font-bold">${escapeBankReconcileText(COMMITMENT_STATUS_LABELS[c.status] || c.status)}</span></div>
-          <div class="text-[10px] text-slate-600">${escapeBankReconcileText(party?.name || 'طرف‌حساب حذف‌شده')} • ${escapeBankReconcileText(c.reference || 'بدون مرجع')}</div>
-          <div class="flex justify-between text-xs"><b>${money(c.amount)}</b><span>سررسید: ${escapeBankReconcileText(c.dueDate)}</span></div>
-          ${c.status === 'open' ? `<div class="flex gap-1"><button onclick="changePayableCommitmentStatus('${escapeBankReconcileText(c.id)}','fulfilled')" class="bg-emerald-700 text-white rounded px-2 py-1 text-[10px]">انجام شد</button><button onclick="changePayableCommitmentStatus('${escapeBankReconcileText(c.id)}','cancelled')" class="bg-slate-600 text-white rounded px-2 py-1 text-[10px]">لغو تعهد</button></div>` : ''}
+          <div class="flex justify-between gap-2"><strong>${window.escapeBankReconcileText(c.title)}</strong><span class="text-[10px] font-bold">${window.escapeBankReconcileText(COMMITMENT_STATUS_LABELS[c.status] || c.status)}</span></div>
+          <div class="text-[10px] text-slate-600">${window.escapeBankReconcileText(party?.name || 'طرف‌حساب حذف‌شده')} • ${window.escapeBankReconcileText(c.reference || 'بدون مرجع')}</div>
+          <div class="flex justify-between text-xs"><b>${money(c.amount)}</b><span>سررسید: ${window.escapeBankReconcileText(c.dueDate)}</span></div>
+          ${c.status === 'open' ? `<div class="flex gap-1"><button onclick="changePayableCommitmentStatus('${window.escapeBankReconcileText(c.id)}','fulfilled')" class="bg-emerald-700 text-white rounded px-2 py-1 text-[10px]">انجام شد</button><button onclick="changePayableCommitmentStatus('${window.escapeBankReconcileText(c.id)}','cancelled')" class="bg-slate-600 text-white rounded px-2 py-1 text-[10px]">لغو تعهد</button></div>` : ''}
         </div>`;
       }).join('') : '<p class="text-[10px] text-slate-400">هنوز تعهد پرداختنی ثبت نشده است.</p>';
     }
@@ -5039,7 +5039,7 @@
       const legacy = (state.bankReconcileItems || []).filter(x => x.matched && !x.linkedVoucherId).length;
       const pending = (state.bankReconcileItems || []).length - verified.length;
       const bankRows = bankBalances.accounts.map(row => `
-        <div class="rounded-lg bg-white/10 p-2"><span class="block text-slate-300">${escapeBankReconcileText(row.account.name)}</span><strong class="tabular-nums">${money(row.net)}</strong></div>
+        <div class="rounded-lg bg-white/10 p-2"><span class="block text-slate-300">${window.escapeBankReconcileText(row.account.name)}</span><strong class="tabular-nums">${money(row.net)}</strong></div>
       `).join('');
       const unassigned = bankBalances.unassignedNet || bankBalances.unknownNet
         ? `<div class="rounded-lg bg-amber-900/30 p-2"><span class="block text-amber-200">گردش‌های بدون حساب مشخص / شناسه ناشناخته</span><strong class="tabular-nums">${money(bankBalances.unassignedNet + bankBalances.unknownNet)}</strong></div>`
@@ -5054,14 +5054,14 @@
         const linked = r.matched && r.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(r.linkedVoucherId));
         const candidates = linked ? [] : getBankReconciliationCandidates(r);
         const actions = linked
-          ? `<div class="text-emerald-700 font-bold">وصل به سند #${faNum(r.linkedVoucherId)} <button onclick="toggleReconcileMatch('${escapeBankReconcileText(r.id)}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`
+          ? `<div class="text-emerald-700 font-bold">وصل به سند #${faNum(r.linkedVoucherId)} <button onclick="toggleReconcileMatch('${window.escapeBankReconcileText(r.id)}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`
           : candidates.length
-            ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">سندهای هم‌مبلغ و هم‌تاریخ؛ یکی را بررسی و تأیید کنید:</span>${candidates.map(v => `<button onclick="confirmBankReconcileMatch('${escapeBankReconcileText(r.id)}','${escapeBankReconcileText(v.id)}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید سند #${faNum(v.id)} — ${escapeBankReconcileText(v.desc)}</button>`).join('')}</div>`
+            ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">سندهای هم‌مبلغ و هم‌تاریخ؛ یکی را بررسی و تأیید کنید:</span>${candidates.map(v => `<button onclick="confirmBankReconcileMatch('${window.escapeBankReconcileText(r.id)}','${window.escapeBankReconcileText(v.id)}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید سند #${faNum(v.id)} — ${window.escapeBankReconcileText(v.desc)}</button>`).join('')}</div>`
             : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع سند ندارد و نیازمند بازبینی است.' : 'سند دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>`;
-        const legacyReset = !linked && r.matched ? `<button onclick="clearLegacyReconcileFlag('${escapeBankReconcileText(r.id)}')" class="text-xs underline text-rose-700">پاک‌کردن وضعیت تطبیق قدیمی</button>` : '';
+        const legacyReset = !linked && r.matched ? `<button onclick="clearLegacyReconcileFlag('${window.escapeBankReconcileText(r.id)}')" class="text-xs underline text-rose-700">پاک‌کردن وضعیت تطبیق قدیمی</button>` : '';
         return `
           <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
-            <div><strong>${escapeBankReconcileText(r.desc)}</strong> <span class="text-[10px] text-slate-400 tabular-nums">(${faNum(r.date)} | پیگیری: ${escapeBankReconcileText(r.ref)})</span></div>
+            <div><strong>${window.escapeBankReconcileText(r.desc)}</strong> <span class="text-[10px] text-slate-400 tabular-nums">(${faNum(r.date)} | پیگیری: ${window.escapeBankReconcileText(r.ref)})</span></div>
             <div class="flex items-center gap-2"><strong class="tabular-nums ${r.amount >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(r.amount)}</strong></div>
             <div class="w-full">${actions} ${legacyReset}</div>
           </div>`;
@@ -5122,7 +5122,7 @@
     function openBankCsvImport() {
       const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
       const select = document.getElementById('bank-csv-account');
-      select.innerHTML = accounts.map(account => `<option value="${escapeBankReconcileText(account.id)}">${escapeBankReconcileText(account.name)}</option>`).join('');
+      select.innerHTML = accounts.map(account => `<option value="${window.escapeBankReconcileText(account.id)}">${window.escapeBankReconcileText(account.name)}</option>`).join('');
       if (!accounts.length) { showToast('برای ورود صورتحساب، ابتدا یک حساب بانکی تعریف کنید.', 'error'); return; }
       if (accounts.length === 1) select.value = String(accounts[0].id);
       openModal('modal-import-bank-csv');
