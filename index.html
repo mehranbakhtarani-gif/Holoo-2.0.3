@@ -764,6 +764,10 @@
                     <option value="invoices">منبع: فاکتورهای خرید و فروش</option>
                     <option value="imports">منبع: محموله‌های وارداتی</option>
                     <option value="checks">منبع: چک‌های صیادی</option>
+                    <option value="guarantees">منبع: ضمانت‌نامه‌ها و وثایق</option>
+                    <option value="payableCommitments">منبع: تعهدات پرداختنی</option>
+                    <option value="payrollRuns">منبع: دوره‌های حقوق</option>
+                    <option value="fixedAssets">منبع: دارایی‌های ثابت</option>
                   </select>
                   <button onclick="exportCustomReportCSV()" class="touch-btn bg-slate-800 text-amber-300 font-bold rounded-xl">📥 خروجی CSV گزارش</button>
                 </div>
@@ -1150,10 +1154,11 @@
       <div class="flex justify-between items-center border-b pb-2 no-print">
         <h3 id="print-title" class="font-black text-sm">پیش‌نمایش چاپ و اشتراک‌گذاری</h3>
         <div class="flex gap-1.5">
-          <button onclick="window.print()" class="bg-holoo-700 text-white px-3 py-1.5 rounded-xl font-bold">🖨️ چاپ</button>
+          <button onclick="window.print()" class="bg-holoo-700 text-white px-3 py-1.5 rounded-xl font-bold">🖨️ چاپ / ذخیره PDF</button>
           <button onclick="closeModal('modal-print-preview')" class="bg-slate-200 px-3 py-1.5 rounded-xl font-bold">بستن</button>
         </div>
       </div>
+      <p class="no-print text-[10px] text-slate-500">برای دریافت PDF، در پنجره چاپ گوشی یا رایانه گزینه «ذخیره به‌صورت PDF» را انتخاب کنید.</p>
       <div id="print-area" class="border-2 border-slate-800 p-4 rounded-xl"></div>
     </div>
   </div>
@@ -5595,5 +5600,6 @@
     }
 
   </script>
+  <script src="./operational-tools.js"></script>
 </body>
 </html>
