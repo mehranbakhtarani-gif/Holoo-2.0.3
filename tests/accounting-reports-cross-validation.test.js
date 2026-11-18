@@ -55,7 +55,7 @@ const sandbox = {
 };
 vm.createContext(sandbox);
 vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()'), sandbox);
-vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function saveCustomAccount()') +
+vm.runInContext(sliceBetween('    let actualCashFlowFromDate = null;', '    function saveCustomAccount()') +
   '; this.api={buildAccountLedger,buildBalanceSheetReport,buildProfitLossReport,buildActualCashFlowReport,buildAgingRows,getBankReconciliationCandidates,confirmBankReconcileMatch};', sandbox);
 const api = sandbox.api;
 
