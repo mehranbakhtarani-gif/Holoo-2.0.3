@@ -3533,13 +3533,22 @@
 
       // Preflight FIFO on isolated copies so an invalid batch cannot leave a half-posted transfer.
       let fifoPlan = null;
+      let sourceSimulation = null;
       if (state.costingMethod === 'FIFO') {
         try {
-          const sourceSimulation = JSON.parse(JSON.stringify(p));
+          sourceSimulation = JSON.parse(JSON.stringify(p));
           fifoPlan = consumeFifoStock(sourceSimulation, qty);
+          const allocatedQty = Array.isArray(fifoPlan?.allocations)
+            ? fifoPlan.allocations.reduce((sum, item) => sum + Number(item.quantity), 0)
+            : NaN;
           if (!fifoPlan || !Array.isArray(fifoPlan.allocations) ||
-              fifoPlan.allocations.reduce((sum, item) => sum + Number(item.quantity || 0), 0) + 0.000001 < qty) {
-            throw new Error('تخصیص بچ‌ها برای کل مقدار انتقال کافی نیست.');
+              !Number.isFinite(fifoPlan.totalCost) || !Number.isFinite(fifoPlan.unitCost) ||
+              !Number.isFinite(allocatedQty) || Math.abs(allocatedQty - qty) > 0.000001 ||
+              fifoPlan.allocations.some(item =>
+                !item.batchId || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0 ||
+                !Number.isFinite(Number(item.unitCost)) || Number(item.unitCost) < 0
+              )) {
+            throw new Error('مقادیر یا بهای تخصیص بچ‌ها معتبر نیست.');
           }
           if (destination) ensureProductBatches(JSON.parse(JSON.stringify(destination)));
         } catch (error) {
@@ -3551,18 +3560,9 @@
       const date = getTodayJalaliDate();
       const transferId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       const sourceName = getWhName(sourceWh), destinationName = getWhName(destWh);
-      // Apply the same FIFO consumption that passed the preflight check.
+      // Commit only the already-validated simulated batch state; do not rerun a mutating FIFO operation.
       if (state.costingMethod === 'FIFO') {
-        try {
-          const actualPlan = consumeFifoStock(p, qty);
-          if (Math.abs(actualPlan.totalCost - fifoPlan.totalCost) > 0.000001) {
-            throw new Error('بهای تخصیص بچ‌ها در زمان ثبت تغییر کرده است.');
-          }
-          fifoPlan = actualPlan;
-        } catch (error) {
-          showToast('انتقال انجام نشد: ' + (error?.message || ''), 'error');
-          return;
-        }
+        p.batches = sourceSimulation.batches;
       }
 
       // Source and destination must never share the same mutable batch array.
