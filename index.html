@@ -2946,7 +2946,7 @@
         }
         p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
       }
-      const outstandingBeforeReturn = getInvoiceOutstanding(inv);
+      const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
       const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
       const returnVoucherLines = inv.type === 'sale'
         ? [
