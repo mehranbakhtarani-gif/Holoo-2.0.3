@@ -181,8 +181,8 @@
     const cogs = rows.reduce((sum, row) => sum + row.cogs, 0);
     return {
       items: rows, revenue, cogs, grossProfit: revenue - cogs,
-      realizedFx: Math.round(realizedFx), unrealizedFx: Math.round(unrealizedFx),
-      profitAfterRealizedFx: Math.round(revenue - cogs + realizedFx),
+      realizedFx: Math.round(realizedFx) || 0, unrealizedFx: Math.round(unrealizedFx) || 0,
+      profitAfterRealizedFx: Math.round(revenue - cogs + realizedFx) || 0,
       untraceableSalesKg: Math.round(untraceableSales * 1000) / 1000
     };
   }
