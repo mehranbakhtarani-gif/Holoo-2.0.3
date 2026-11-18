@@ -4365,6 +4365,14 @@
       const grossSub = invoiceLines.reduce((sum, line) => sum + (Number(line.kg) * Number(line.price)), 0);
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
+      const salespersonName = String(document.getElementById('inv-salesperson').value || '').trim();
+      const normalizePartyName = value => String(value || '').normalize('NFKC').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\\u200c\\s]+/g, ' ').trim().toLocaleLowerCase('fa');
+      const salespersonParty = type === 'sale' && commAmount > 0
+        ? state.parties.find(p => normalizePartyName(p.name) === normalizePartyName(salespersonName) && p.accountingStatus !== 'inactive')
+        : null;
+      if (type === 'sale' && commAmount > 0 && !salespersonParty) {
+        showToast('برای ثبت پورسانت، بازاریاب باید دقیقاً از اشخاص ثبت‌شده انتخاب/تطبیق داده شود. نام واردشده با هیچ شخص فعالی یکسان نیست؛ فاکتور ثبت نشد.', 'error'); return;
+      }
       const grandTotal = sub + vatAmount;
       if (![sub, disc, grossSub, vatAmount, commAmount, grandTotal].every(Number.isFinite)) {
         showToast('جمع مبالغ فاکتور معتبر نیست؛ از ثبت جلوگیری شد.', 'error'); return;
@@ -4374,7 +4382,7 @@
       const invoice = {
         id, type, date, dueDate: document.getElementById('inv-due-date').value, partyId, warehouseId,
         payMethod, ...(settlementAccount ? { bankAccountId: settlementAccount.id } : {}),
-        salesperson: document.getElementById('inv-salesperson').value, commRate, commAmount,
+        salesperson: salespersonName, salespersonPartyId: salespersonParty?.id || null, commRate, commAmount,
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
         paidAmount: payMethod === 'credit' ? 0 : grandTotal,
         status: 'active', items: invoiceLines
@@ -4434,8 +4442,8 @@
         ];
         if (vatAmount > 0) voucherLines.push({ code: '2103', partyId: null, desc: `ارزش افزوده #${id}`, debit: 0, credit: vatAmount });
         if (commAmount > 0) {
-          voucherLines.push({ code: '6101', partyId: null, desc: `پورسانت فروش #${id}`, debit: commAmount, credit: 0 });
-          voucherLines.push({ code: '2101', partyId: null, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
+          voucherLines.push({ code: '6101', partyId: salespersonParty.id, desc: `پورسانت فروش #${id}`, debit: commAmount, credit: 0 });
+          voucherLines.push({ code: '2101', partyId: salespersonParty.id, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
         }
       } else {
         const purchaseCreditCode = settlementAccountCode || '2101';
