@@ -2821,6 +2821,12 @@
       return { balances: map, quality };
     }
 
+    // Backward-compatible single-ledger balance helper; never aggregates control accounts.
+    function getPartyNetBalance(partyId) {
+      const party = (state.parties || []).find(p => String(p.id) === String(partyId));
+      return getPartyAccountNetBalance(partyId, party?.ledgerAccountCode || '1103');
+    }
+
     function getPartyAccountNetBalance(partyId, accountCode) {
       let net = 0;
       (state.vouchers || []).forEach(v => (v.lines || []).forEach(l => {
@@ -2829,12 +2835,6 @@
         }
       }));
       return net;
-    }
-
-    // Backward-compatible single-ledger balance helper; never aggregates control accounts.
-    function getPartyNetBalance(partyId) {
-      const party = (state.parties || []).find(p => String(p.id) === String(partyId));
-      return getPartyAccountNetBalance(partyId, party?.ledgerAccountCode || '1103');
     }
 
     function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
