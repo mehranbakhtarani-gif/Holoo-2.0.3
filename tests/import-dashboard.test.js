@@ -47,3 +47,64 @@ assert.equal(sandbox.receive(shipment), false);
 assert.equal(product.stock, 110);
 console.log('PASS: import stock is posted once, only on warehouse receipt');
 
+
+const multiProducts = [
+  { id: 'P-A', stock: 10, buyPrice: 50, batches: [], kardex: [], lastMoveDays: 2 },
+  { id: 'P-B', stock: 20, buyPrice: 80, batches: [], kardex: [], lastMoveDays: 3 }
+];
+const multiShipment = {
+  id: 'IMP-MULTI', supplierPartyId: 'SUP-1', totalLandedRial: 5000, status: 'cleared', postedToWh: false,
+  items: [
+    { id: 'IMP-MULTI-A', productId: 'P-A', quantityKg: 2, cartons: 2, fxAmount: 20, landedCostRial: 2000, unitCost: 1000, landedCostPerKg: 1000, lot: 'LOT-A' },
+    { id: 'IMP-MULTI-B', productId: 'P-B', quantityKg: 4, cartons: 4, fxAmount: 30, landedCostRial: 3000, unitCost: 750, landedCostPerKg: 750, lot: 'LOT-B' }
+  ]
+};
+const multiVouchers = [];
+const multiSandbox = {
+  state: { products: multiProducts, costingMethod: 'FIFO', activeRole: 'ehsan', fiscalYear: '1405' },
+  HolooImportDomain: require('../import-domain.js'), DEVICE_ID: 'DEVICE-MULTI',
+  createStableId: (() => { let n = 0; return p => p + '-' + (++n); })(),
+  getTodayJalaliDate: () => '1405/09/02', addAudit() {},
+  postVoucher(...args) { multiVouchers.push(args); }
+};
+vm.createContext(multiSandbox);
+vm.runInContext(html.slice(helperStart, helperEnd) + html.slice(receiptStart, receiptEnd) + '; this.receive = receiveImportShipment;', multiSandbox);
+assert.equal(multiSandbox.receive(multiShipment), true);
+assert.equal(multiProducts[0].stock, 12);
+assert.equal(multiProducts[1].stock, 24);
+assert.equal(multiProducts[0].batches.find(batch => batch.sourceRef === 'IMP-MULTI').sourceItemId, 'IMP-MULTI-A');
+assert.equal(multiProducts[1].batches.find(batch => batch.sourceRef === 'IMP-MULTI').sourceItemId, 'IMP-MULTI-B');
+assert.equal(multiProducts[0].batches.find(batch => batch.sourceRef === 'IMP-MULTI').unitCost, 1000);
+assert.equal(multiVouchers.length, 1);
+assert.equal(multiVouchers[0][1][0].debit, 5000);
+assert.equal(multiVouchers[0][1][1].credit, 5000);
+assert.equal(multiShipment.postedToWh, true);
+assert.equal(multiSandbox.receive(multiShipment), false);
+assert.equal(multiProducts[0].stock, 12);
+console.log('PASS: multi-item shipment receipt creates item-linked lots and one balanced voucher');
+
+const rollbackProducts = [
+  { id: 'P-ROLL-1', stock: 5, buyPrice: 10, batches: [], kardex: [] },
+  { id: 'P-ROLL-2', stock: 7, buyPrice: 20, batches: [], kardex: [] }
+];
+const rollbackShipment = {
+  id: 'IMP-ROLLBACK', totalLandedRial: 300, postedToWh: false,
+  items: [
+    { id: 'R1', productId: 'P-ROLL-1', quantityKg: 2, landedCostRial: 100, unitCost: 50 },
+    { id: 'R2', productId: 'P-ROLL-2', quantityKg: 2, landedCostRial: 200, unitCost: 100 }
+  ]
+};
+const rollbackSandbox = {
+  state: { products: rollbackProducts, costingMethod: 'FIFO', activeRole: 'mehran', fiscalYear: '1405' },
+  HolooImportDomain: require('../import-domain.js'), DEVICE_ID: 'DEVICE-ROLLBACK',
+  createStableId: (() => { let n = 0; return p => p + '-' + (++n); })(),
+  getTodayJalaliDate: () => '1405/09/02', addAudit() {},
+  postVoucher() { throw new Error('simulated voucher failure'); }
+};
+vm.createContext(rollbackSandbox);
+vm.runInContext(html.slice(helperStart, helperEnd) + html.slice(receiptStart, receiptEnd) + '; this.receive = receiveImportShipment;', rollbackSandbox);
+assert.throws(() => rollbackSandbox.receive(rollbackShipment), /simulated voucher failure/);
+assert.deepEqual(rollbackProducts.map(product => product.stock), [5, 7]);
+assert.deepEqual(rollbackProducts.map(product => product.batches.length), [0, 0]);
+assert.equal(rollbackShipment.postedToWh, false);
+console.log('PASS: failed multi-item receipt rolls back every product and lot');
