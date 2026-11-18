@@ -14,6 +14,9 @@ function section(startMarker, endMarker) {
   return html.slice(start, end).trim();
 }
 function load(source, name, context) {
+  const helperStart = html.indexOf('function getReturnCostOfGoods(');
+  const helperEnd = html.indexOf('\\n    function submitPartialReturn()', helperStart);
+  const helperSource = helperStart >= 0 && helperEnd > helperStart ? html.slice(helperStart, helperEnd) : '';
   const sandbox = {
     restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
       product.batches = product.batches || [];
@@ -58,6 +61,7 @@ function load(source, name, context) {
     ...context
   };
   vm.createContext(sandbox);
+  if (helperSource) vm.runInContext(helperSource, sandbox);
   vm.runInContext(source + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
@@ -144,6 +148,73 @@ test('partial return rejects quantity above remaining invoice quantity', () => {
   assert.equal(state.products[0].stock,1);
   assert.equal(posted.length,0);
   assert.equal(saves,0);
+});
+
+// Sales returns must reverse the original cost, not the sales price.
+test('partial FIFO sales return reverses exact allocated COGS and restores inventory value', () => {
+  const item = {
+    productId:'X1', kg:10, returnedKg:2, price:30, costingMethod:'FIFO', costOfGoodsSold:1500,
+    fifoAllocations:[
+      {batchId:'B1',quantity:5,unitCost:100},
+      {batchId:'B2',quantity:5,unitCost:200}
+    ],
+    fifoReturnedAllocations:[{batchId:'B1',quantity:2}]
+  };
+  const state = {
+    fiscalYear:'1405', costingMethod:'FIFO',
+    invoices:[{id:2050,type:'sale',partyId:'P1',grandTotal:300,paidAmount:0,items:[item]}],
+    products:[{id:'X1',stock:8,buyPrice:150,batches:[
+      {id:'B1',remainingQty:0,quantity:5,unitCost:100},
+      {id:'B2',remainingQty:0,quantity:5,unitCost:200}
+    ],kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2050','pret-qty-0':'4'}),
+    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  submit();
+  const lines=posted[0][1];
+  assert.equal(lines.find(line=>line.code==='1105')?.debit,500);
+  assert.equal(lines.find(line=>line.code==='5101')?.credit,500);
+  assert.equal(lines.reduce((sum,line)=>sum+line.debit,0),lines.reduce((sum,line)=>sum+line.credit,0));
+  assert.equal(state.invoices[0].returnRefs[0].costOfGoodsSold,500);
+  assert.equal(state.products[0].stock,12);
+  assert.equal(saves,1);
+});
+
+test('sales invoice cancellation reverses only the unreturned FIFO COGS', () => {
+  const item = {
+    productId:'X2', kg:10, returnedKg:4, price:100, costingMethod:'FIFO', costOfGoodsSold:1500,
+    fifoAllocations:[
+      {batchId:'C1',quantity:5,unitCost:100},
+      {batchId:'C2',quantity:5,unitCost:200}
+    ],
+    fifoReturnedAllocations:[{batchId:'C1',quantity:4}]
+  };
+  const state = {
+    fiscalYear:'1405',
+    invoices:[{id:2051,type:'sale',status:'active',partyId:'P1',grandTotal:1000,paidAmount:0,returnRefs:[{amount:400}],items:[item]}],
+    products:[{id:'X2',stock:4,buyPrice:150,batches:[
+      {id:'C1',remainingQty:0,quantity:5,unitCost:100},
+      {id:'C2',remainingQty:0,quantity:5,unitCost:200}
+    ],kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+    state, getInvoiceReturnedAmount(inv){return (inv.returnRefs||[]).reduce((sum,ref)=>sum+Number(ref.amount||0),0);},
+    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+  });
+  cancel(2051);
+  const lines=posted[0][1];
+  assert.equal(lines.find(line=>line.code==='1105')?.debit,1100);
+  assert.equal(lines.find(line=>line.code==='5101')?.credit,1100);
+  assert.equal(lines.find(line=>line.code==='4103')?.debit,600);
+  assert.equal(lines.find(line=>line.code==='1103')?.credit,600);
+  assert.equal(lines.reduce((sum,line)=>sum+line.debit,0),lines.reduce((sum,line)=>sum+line.credit,0));
+  assert.equal(state.invoices[0].cancelledCostOfGoodsSold,1100);
+  assert.equal(state.products[0].stock,10);
+  assert.equal(saves,1);
 });
 
 // Check issue rejects a repeated SAYAD identifier.
