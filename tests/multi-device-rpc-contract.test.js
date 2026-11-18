@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const html = fs.readFileSync('index.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/202611180001_multi_device_operation_journal.sql', 'utf8');
 const latestMigration = fs.readFileSync('supabase/migrations/202611180003_guarantees_payable_commitments.sql', 'utf8');
+const sequentialMergeMigration = fs.readFileSync('supabase/migrations/202611180004_same_device_sequential_merge.sql', 'utf8');
 
 function quotedList(source, pattern, label) {
   const match = source.match(pattern);
@@ -40,4 +41,9 @@ for (const parameter of [
 assert.match(migration, /security invoker/i);
 assert.match(migration, /before update or delete on public\.holoo_operation_log/i);
 assert.match(migration, /where id = p_record_id\s+and updated_at = p_expected_updated_at/i);
-console.log('PASS: multi-device RPC contract and collection allowlist');
+assert.equal((sequentialMergeMigration.match(/prior\.device_id <> p_device_id/g) || []).length, 2,
+  'same-device sequential operations must not conflict with their own earlier operations');
+assert.match(html, /let didMerge = false/);
+assert.match(html, /if \(result\.merged === true\)/);
+assert.match(html, /دریافت نسخه ادغام‌شده پس از ثبت عملیات ناموفق بود/);
+console.log('PASS: multi-device RPC contract, collection allowlist and sequential same-device merge safety');
