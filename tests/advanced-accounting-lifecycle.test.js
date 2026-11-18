@@ -14,7 +14,49 @@ function section(startMarker, endMarker) {
   return html.slice(start, end).trim();
 }
 function load(source, name, context) {
-  const sandbox = { ...context };
+  const sandbox = {
+    restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
+      product.batches = product.batches || [];
+      const restored = [];
+      if (Array.isArray(allocations) && allocations.length) {
+        let remaining = Number(quantityToRestore || 0);
+        for (const allocation of allocations) {
+          if (remaining <= 0.000001) break;
+          const prior = alreadyRestored.filter(item => item.batchId === allocation.batchId).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+          const take = Math.min(remaining, Math.max(0, Number(allocation.quantity || 0) - prior));
+          if (take <= 0) continue;
+          const batch = product.batches.find(item => item.id === allocation.batchId);
+          if (batch) batch.remainingQty = Number(batch.remainingQty || 0) + take;
+          else product.batches.push({ id: allocation.batchId, remainingQty: take, quantity: take, unitCost: allocation.unitCost || fallbackCost || 0 });
+          restored.push({ batchId: allocation.batchId, quantity: take });
+          remaining -= take;
+        }
+        if (remaining > 0.000001) throw new Error('return exceeds allocated test batches');
+        return restored;
+      }
+      const id = 'TEST-RETURN-' + sourceRef;
+      product.batches.push({ id, remainingQty: quantityToRestore, quantity: quantityToRestore, unitCost: fallbackCost || 0 });
+      return [{ batchId: id, quantity: quantityToRestore }];
+    },
+    consumeFifoStock(product, quantity) {
+      product.batches = product.batches || [];
+      if (!product.batches.length) product.batches.push({ id: 'TEST-OPENING-' + product.id, remainingQty: Number(product.stock || 0), quantity: Number(product.stock || 0), unitCost: Number(product.buyPrice || 0) });
+      let remaining = Number(quantity || 0);
+      const allocations = [];
+      for (const batch of product.batches) {
+        const take = Math.min(remaining, Number(batch.remainingQty || 0));
+        if (take > 0) {
+          batch.remainingQty -= take;
+          allocations.push({ batchId: batch.id, lot: batch.lot || '', quantity: take, unitCost: Number(batch.unitCost || 0) });
+          remaining -= take;
+        }
+        if (remaining <= 0.000001) break;
+      }
+      if (remaining > 0.000001) throw new Error('insufficient test batch stock');
+      return { totalCost: Math.round(allocations.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)), allocations };
+    },
+    ...context
+  };
   vm.createContext(sandbox);
   vm.runInContext(source + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
