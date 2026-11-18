@@ -25,6 +25,31 @@ function test(name, fn) {
   results.push(name);
 }
 
+// Dashboard and cashflow balances must ignore malformed postings without hiding imbalances.
+test('dashboard balances exclude invalid-date and invalid-amount vouchers and report quality', () => {
+  const source = section('function buildDashboardAccountBalances()', 'function getPartyNetBalance(');
+  const build = loadFunction(source, 'buildDashboardAccountBalances', {
+    CHART_ACCOUNTS: [{ code: '1101', name: 'Cash' }, { code: '4101', name: 'Sales' }],
+    state: { vouchers: [
+      { date: '1405/01/01', lines: [{ code: '1101', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }] },
+      { date: 'invalid', lines: [{ code: '1101', debit: 900, credit: 0 }, { code: '4101', debit: 0, credit: 900 }] },
+      { date: '1405/01/02', lines: [{ code: '1101', debit: 'bad', credit: 0 }, { code: '4101', debit: 0, credit: 50 }] },
+      { date: '1405/01/03', lines: [{ code: '1101', debit: 30, credit: 0 }] },
+      { date: '1405/01/04', lines: [{ code: '1101', debit: 40, credit: 0 }, { code: '4101', debit: 0, credit: 25 }] }
+    ] },
+    jalaliDateOrdinal(value) {
+      return /^1405\\/01\\/0[1-4]$/.test(String(value)) ? Number(String(value).slice(-2)) : null;
+    }
+  });
+  const result = build();
+  assert.equal(result.balances['1101'].debTurn, 140);
+  assert.equal(result.balances['4101'].credTurn, 125);
+  assert.equal(result.quality.invalidDateVouchers, 1);
+  assert.equal(result.quality.invalidAmountVouchers, 1);
+  assert.equal(result.quality.invalidStructureVouchers, 1);
+  assert.equal(result.quality.unbalancedVouchers, 1);
+});
+
 // 1. Double-entry posting, source idempotency and cross-document references.
 test('balanced journals post; unbalanced journals are rejected', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [{ id: 7 }] };
