@@ -1,15 +1,11 @@
-name: Accounting smoke tests
+name: Accounting and feature tests
 
 on:
   push:
     branches: [main]
     paths:
       - 'index.html'
-      - 'tests/accounting-smoke.test.js'
-      - 'tests/extended-workflow.test.js'
-      - 'tests/advanced-accounting-lifecycle.test.js'
-      - 'tests/reporting-and-sync.test.js'
-      - 'tests/full-fiscal-period.integration.test.js'
+      - 'tests/**'
       - '.github/workflows/accounting-smoke-tests.yml'
   workflow_dispatch:
 
@@ -17,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  accounting-smoke:
+  accounting-and-features:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,10 +22,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Run accounting smoke tests
+      - name: Run every test suite
         run: |
-          node tests/accounting-smoke.test.js
-          node tests/extended-workflow.test.js
-          node tests/advanced-accounting-lifecycle.test.js
-          node tests/reporting-and-sync.test.js
-          node tests/full-fiscal-period.integration.test.js
+          set -e
+          for test_file in tests/*.test.js; do
+            echo "::group::${test_file}"
+            node "${test_file}"
+            echo "::endgroup::"
+          done
