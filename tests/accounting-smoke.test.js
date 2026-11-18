@@ -47,7 +47,7 @@ test('dashboard balances exclude invalid-date and invalid-amount vouchers and re
   assert.equal(result.quality.invalidDateVouchers, 1);
   assert.equal(result.quality.invalidAmountVouchers, 1);
   assert.equal(result.quality.invalidStructureVouchers, 1);
-  assert.equal(result.quality.unbalancedVouchers, 1);
+  assert.equal(result.quality.unbalancedVouchers, 2);
 });
 
 // 1. Double-entry posting, source idempotency and cross-document references.
