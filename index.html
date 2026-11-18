@@ -4873,18 +4873,23 @@
     function bankTxDateKey(value) { return normalizeLedgerDate(value); }
     function getBankReconciliationCandidates(item) {
       const dateKey = bankTxDateKey(item.date);
-      const amount = Math.abs(Number(item.amount || 0));
-      if (!dateKey || !Number.isFinite(amount) || amount <= 0) return [];
+      const signedAmount = Number(item.amount);
+      const amount = Math.abs(signedAmount);
+      if (!dateKey || !Number.isFinite(signedAmount) || amount <= 0) return [];
       const usedVoucherIds = new Set((state.bankReconcileItems || []).filter(x => x.id !== item.id && x.matched && x.linkedVoucherId).map(x => String(x.linkedVoucherId)));
       return (state.vouchers || []).filter(v => {
         if (usedVoucherIds.has(String(v.id)) || bankTxDateKey(v.date || v.operationDate) !== dateKey) return false;
-        let debit = 0, credit = 0;
-        (v.lines || []).filter(line => String(line.code) === '1102').forEach(line => {
-          debit += Number(line.debit || 0); credit += Number(line.credit || 0);
-        });
-        return Number(item.amount) > 0
-          ? Math.abs(debit - amount) < 0.01 && credit < 0.01
-          : Math.abs(credit - amount) < 0.01 && debit < 0.01;
+        // A single statement transaction must not be matched against an aggregate
+        // of multiple bank-account ledger lines in one voucher.
+        const bankLines = (v.lines || []).filter(line => String(line.code) === '1102');
+        if (bankLines.length !== 1) return false;
+        const line = bankLines[0];
+        const debit = Number(line.debit || 0);
+        const credit = Number(line.credit || 0);
+        if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0) return false;
+        return signedAmount > 0
+          ? debit > 0 && credit === 0 && Math.abs(debit - amount) < 0.01
+          : credit > 0 && debit === 0 && Math.abs(credit - amount) < 0.01;
       }).map(v => ({ id: v.id, desc: v.desc || 'سند بانکی', date: v.date || v.operationDate }));
     }
     function confirmBankReconcileMatch(itemId, voucherId) {
