@@ -47,9 +47,12 @@ async function test(name, fn) { await fn(); passed.push(name); }
         {lines:[{code:'1103',partyId:'P2',debit:900,credit:0}]}
       ]
     };
-    const get=load('getPartyNetBalance',{state});
+    const getAccount=load('getPartyAccountNetBalance',{state});
+    const get=load('getPartyNetBalance',{state,getPartyAccountNetBalance:getAccount});
     assert.equal(get('P1'),350);
     assert.equal(get('P2'),900);
+    assert.equal(getAccount('P1','1103'),350);
+    assert.equal(getAccount('P1','2101'),0);
   });
 
   // RPC success and CAS conflict are simulated; no network/database calls are made.

@@ -16,7 +16,7 @@ function section(startMarker, endMarker) {
 function loadFunction(source, name, context) {
   const sandbox = { ...context };
   vm.createContext(sandbox);
-  vm.runInContext(source + `; this.__testFn = ${name};`, sandbox);
+  sandbox.__testFn = vm.runInContext(`(function () {\n${source}\n; return ${name};\n})()`, sandbox);
   return sandbox.__testFn;
 }
 const results = [];
