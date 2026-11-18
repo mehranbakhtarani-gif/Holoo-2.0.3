@@ -3269,6 +3269,17 @@
       };
     }
 
+    function isOpeningKardexDocument(value) {
+      const normalized = String(value ?? '')
+        .normalize('NFKC')
+        .replace(/[يى]/g, 'ی')
+        .replace(/ك/g, 'ک')
+        .replace(/[\u200c\u200f\u202a-\u202e]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return /(?:^|[\sـ])(?:موجودی\s+(?:اول\s+دوره|اولیه|افتتاح)|افتتاحیه)(?=$|[\sـ])/i.test(normalized);
+    }
+
     function inspectInventoryReconciliation(products) {
       const items = Array.isArray(products) ? products : [];
       const issues = [];
@@ -3303,7 +3314,7 @@
           const firstIncoming = Number(first?.inQty ?? 0);
           const firstOutgoing = Number(first?.outQty ?? 0);
           const firstBalance = Number(first?.bal);
-          const hasOpeningMarker = /موجودی اولیه|افتتاحیه|موجودی افتتاح/i.test(String(first?.doc || ''));
+          const hasOpeningMarker = isOpeningKardexDocument(first?.doc);
           if (!hasOpeningMarker) {
             unverified.push({ type: 'kardex-baseline', productId, productName, message: 'مانده پایه کاردکس مشخص نیست؛ صحت اولین ردیف قابل تأیید نیست.', detail: `اولین سند: ${first?.doc || 'بدون شرح'} | مانده ثبت‌شده: ${first?.bal ?? '—'}` });
           } else if (Number.isFinite(firstIncoming) && Number.isFinite(firstOutgoing) && Number.isFinite(firstBalance) &&

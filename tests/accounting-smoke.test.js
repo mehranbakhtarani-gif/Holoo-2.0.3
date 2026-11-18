@@ -119,5 +119,17 @@ test('chart catalog contains group/general/subsidiary levels and custom accounts
   assert.equal(saves, 1);
 });
 
+// 6. Kardex opening-document labels are recognized narrowly and normalized safely.
+test('opening balance labels include first-period inventory but exclude ordinary receipts', () => {
+  const helperSource = section('function isOpeningKardexDocument(value)', 'function inspectInventoryReconciliation(products)');
+  const isOpening = loadFunction(helperSource, 'isOpeningKardexDocument', {});
+  assert.equal(isOpening('موجودی اول دوره'), true);
+  assert.equal(isOpening('موجودی اول‌دوره'), true);
+  assert.equal(isOpening('موجودی اولیه'), true);
+  assert.equal(isOpening('افتتاحیه'), true);
+  assert.equal(isOpening('ورود محموله هند'), false);
+  assert.equal(isOpening('رسید خرید اول دوره'), false);
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
