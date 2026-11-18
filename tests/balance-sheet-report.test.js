@@ -64,11 +64,11 @@ vm.runInContext(html.slice(normalizeStart, normalizeEnd), sandbox);
 vm.runInContext(html.slice(reportStart, reportEnd) + '; this.buildBalanceSheetReport = buildBalanceSheetReport;', sandbox);
 
 const report = sandbox.buildBalanceSheetReport('1405/01/30');
-assert.equal(report.assets, 1350, 'cash plus custom non-current asset');
+assert.equal(report.assets, 1450, 'cash plus custom non-current asset and prior-year activity');
 assert.equal(report.liabilities, 50);
-assert.equal(report.equity, 1000, 'capital plus retained earnings');
+assert.equal(report.equity, 1100, 'capital plus opening and prior-year retained earnings');
 assert.equal(report.currentYearProfit, 300, 'only active fiscal year profit, not prior year results');
-assert.equal(report.liabilitiesAndEquity, 1350);
+assert.equal(report.liabilitiesAndEquity, 1450);
 assert.equal(report.difference, 0);
 assert.equal(report.trialBalanceDifference, 0);
 assert.equal(report.invalidDateVouchers, 1);
