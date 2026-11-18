@@ -40,7 +40,7 @@ The receipt routine snapshots all affected products and restores stock, batches,
 
 Import-level staged payments reduce the shipment foreign-currency balance. Independent FX commitments can optionally link to a supplier party. Settlement requires a real bank account selection, updates its balance, records the payment event and posts realized FX gain/loss to 4104/6104. The original commitment rate is retained for calculating realized differences.
 
-Open-balance unrealized FX is currently a report estimate based on the current rate. It is deliberately not posted as a period-end journal; doing so safely requires carrying-value/reversal handling in subsequent settlements.
+Open-balance unrealized FX is a report estimate until the user explicitly posts a period-end revaluation. The revaluation journal adjusts account 2105 against 4104/6104 and updates the carrying rate; later staged settlements use that carrying rate so the same exchange difference is not recognized twice. Legacy independent commitments created before opening-journal support remain memorandum-only and are excluded from posted revaluation until reconciled. New independent commitments require an offset account (1105 inventory in transit or 6101 expense) and receive a balanced opening voucher.
 
 ## Shipment profitability
 
