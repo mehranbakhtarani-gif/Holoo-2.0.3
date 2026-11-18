@@ -134,3 +134,14 @@ const oldReturnWithoutBatchRefs = calculateShipmentProfit(
 assert.equal(oldReturnWithoutBatchRefs.revenue, 600);
 assert.equal(oldReturnWithoutBatchRefs.cogs, 200);
 console.log('PASS: legacy returns without batch references reduce FIFO shipment cost correctly');
+
+const postedRevaluationProfit = calculateShipmentProfit(
+  { id: 'IMP-REVAL', productId: 'P-REVAL', weightKg: 1, fxTotal: 10, fxPaid: 10, fxRate: 100,
+    revaluationHistory: [{ difference: 500 }, { difference: -100 }] },
+  [{ id: 'P-REVAL', batches: [] }],
+  [],
+  { USD: 100 }
+);
+assert.equal(postedRevaluationProfit.postedRevaluationFx, 400);
+assert.equal(postedRevaluationProfit.profitAfterPostedFx, 400);
+console.log('PASS: posted period-end FX revaluation is included in shipment profit reporting');
