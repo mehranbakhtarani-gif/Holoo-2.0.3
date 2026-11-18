@@ -28,10 +28,10 @@ async function test(name, fn) { await fn(); passed.push(name); }
   // Trial-balance math and party subledger reconciliation using synthetic journal lines.
   await test('account balances calculate debit and credit turnovers and ending balances', () => {
     const state = { vouchers: [
-      { lines: [{code:'1101',debit:1000,credit:0},{code:'4101',debit:0,credit:1000}] },
-      { lines: [{code:'1101',debit:250,credit:0},{code:'1101',debit:0,credit:100}] }
+      { date:'1405/01/01', lines: [{code:'1101',debit:1000,credit:0},{code:'4101',debit:0,credit:1000}] },
+      { date:'1405/01/02', lines: [{code:'1101',debit:250,credit:0},{code:'1101',debit:0,credit:100}] }
     ] };
-    const get = load('getAccountBalances', { state, CHART_ACCOUNTS:[{code:'1101',name:'Cash'},{code:'4101',name:'Sales'}] });
+    const get = load('getAccountBalances', { state, CHART_ACCOUNTS:[{code:'1101',name:'Cash'},{code:'4101',name:'Sales'}], normalizeLedgerDate(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||'')) ? String(value).replace(/\\//g,'') : null;}, jalaliDateOrdinal(value){return /^\\d{4}\\/(0[1-9]|1[0-2])\\/(0[1-9]|[12]\\d|3[01])$/.test(String(value||'')) ? 1 : null;}, countInvalidReportVoucherLines(v){return (v.lines||[]).filter(line=>{const d=Number(line.debit||0),c=Number(line.credit||0);return !Number.isFinite(d)||!Number.isFinite(c)||d<0||c<0||(d>0&&c>0);}).length;} });
     const balances = get();
     assert.equal(balances['1101'].debTurn,1250);
     assert.equal(balances['1101'].credTurn,100);
