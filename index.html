@@ -1289,6 +1289,7 @@
         state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
         lastSavedState = JSON.parse(JSON.stringify(state));
         ensureAuditLogIds(state);
+        lastQueuedAuditId = null;
         const stamp = conflict.remoteUpdatedAt || new Date().toISOString();
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
@@ -1861,6 +1862,8 @@
       'employees', 'fixedAssets', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits'
     ];
     let lastSavedState = JSON.parse(JSON.stringify(state));
+    // آخرین رویداد حسابرسی که برای یک عملیات ثبت شده؛ از تکرار خلاصهٔ قدیمی در ذخیره‌های بعدی جلوگیری می‌کند.
+    let lastQueuedAuditId = null;
 
     function ensureAuditLogIds(target) {
       if (!Array.isArray(target.auditLogs)) target.auditLogs = [];
@@ -1923,6 +1926,9 @@
       const operationPayload = JSON.parse(snapshot);
       operationPayload.activeRole = 'mehran';
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
+      const previousAuditId = lastQueuedAuditId ?? lastSavedState?.auditLogs?.[0]?.id ?? null;
+      const hasNewAuditEvent = !!lastAudit && lastAudit.id !== previousAuditId;
+      if (hasNewAuditEvent) lastQueuedAuditId = lastAudit.id;
       const changeSet = buildEntityChangeSet(lastSavedState, state, sequence);
       const operation = {
         operationId,
@@ -1933,7 +1939,7 @@
         deviceId: DEVICE_ID,
         createdAt: updatedAt,
         operationType: 'state_snapshot',
-        summary: lastAudit?.action || 'به‌روزرسانی اطلاعات شرکت',
+        summary: hasNewAuditEvent ? lastAudit.action : 'ذخیره وضعیت شرکت',
         payload: operationPayload,
         entityChanges: changeSet.entityChanges,
         rootChanges: changeSet.rootChanges,
