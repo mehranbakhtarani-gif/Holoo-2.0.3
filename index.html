@@ -2946,11 +2946,30 @@
         }
         p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
       }
-      postVoucher(`برگشت جزئی ردیف‌های فاکتور #${invId}`, inv.type === 'sale'
-        ? [{ code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 }, { code: '1103', partyId: inv.partyId, desc: 'کاهش بدهی مشتری', debit: 0, credit: retTotal }]
-        : [{ code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal, credit: 0 }, { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }]
-      , undefined, { type: 'invoice_return', id: returnId, event: String(invId) });
-      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, items: returnPlan.map(x => ({ productId: x.item.productId, qty: x.qty, amount: x.amount })), createdAt: new Date().toISOString() }];
+      const outstandingBeforeReturn = getInvoiceOutstanding(inv);
+      const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
+      const returnVoucherLines = inv.type === 'sale'
+        ? [
+            { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 },
+            { code: '1103', partyId: inv.partyId, desc: `کاهش مطالبات مشتری بابت برگشت #${invId}`, debit: 0, credit: retTotal - partyCreditAmount },
+            ...(partyCreditAmount > 0 ? [{ code: '2101', partyId: inv.partyId, desc: `اعتبار بستانکاری مشتری بابت برگشت #${invId}`, debit: 0, credit: partyCreditAmount }] : [])
+          ]
+        : [
+            { code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal - partyCreditAmount, credit: 0 },
+            ...(partyCreditAmount > 0 ? [{ code: '1103', partyId: inv.partyId, desc: `مطالبه اعتبار از تأمین‌کننده بابت برگشت #${invId}`, debit: partyCreditAmount, credit: 0 }] : []),
+            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }
+          ];
+      postVoucher(`برگشت جزئی ردیف‌های فاکتور #${invId}`, returnVoucherLines, undefined, { type: 'invoice_return', id: returnId, event: String(invId) });
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, items: returnPlan.map(x => ({ productId: x.item.productId, qty: x.qty, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
+      if (partyCreditAmount > 0) {
+        state.treasuryTxs = state.treasuryTxs || [];
+        state.treasuryTxs.unshift({
+          id: 'CREDIT-' + returnId, kind: 'party_credit', creditDirection: inv.type,
+          partyId: inv.partyId, amount: partyCreditAmount, remainingAmount: partyCreditAmount,
+          sourceReturnId: returnId, sourceInvoiceId: invId, date: getTodayJalaliDate(),
+          desc: inv.type === 'sale' ? `اعتبار مشتری از برگشت فاکتور #${invId}` : `اعتبار تأمین‌کننده از برگشت فاکتور #${invId}`
+        });
+      }
       saveState(); closeModal('modal-partial-return'); renderAll();
       showToast('برگشت جزئی ردیف‌ها ثبت، انبار اصلاح و سند حسابداری صادر شد ✔');
     }
@@ -3425,6 +3444,16 @@
       return Math.max(0, Number(inv.grandTotal || 0) - getInvoiceReturnedAmount(inv) - Number(inv.paidAmount || 0));
     }
 
+    function getPartyCreditBalance(partyId, direction) {
+      return (state.treasuryTxs || []).filter(tx =>
+        tx.kind === 'party_credit' && String(tx.partyId) === String(partyId) &&
+        (!direction || tx.creditDirection === direction)
+      ).reduce((sum, tx) => {
+        const remaining = Number(tx.remainingAmount ?? tx.amount ?? 0);
+        return sum + (Number.isFinite(remaining) && remaining > 0 ? remaining : 0);
+      }, 0);
+    }
+
     function agingBucket(daysPastDue) {
       if (daysPastDue <= 0) return 'سررسید نشده';
       if (daysPastDue <= 30) return '۱ تا ۳۰ روز';
@@ -3624,9 +3653,12 @@
         </div>
       `).join('');
 
-      document.getElementById('treasury-tx-list').innerHTML = state.treasuryTxs.map(t => `
+      const customerCredits = (state.parties || []).reduce((sum, p) => sum + getPartyCreditBalance(p.id, 'sale'), 0);
+      const supplierCredits = (state.parties || []).reduce((sum, p) => sum + getPartyCreditBalance(p.id, 'purchase'), 0);
+      const creditSummary = `<div class="p-2.5 rounded-xl border bg-amber-50 text-[10px] space-y-1"><div class="font-black">اعتبار دفتری طرف‌حساب‌ها (جدا از موجودی نقد و بانک)</div><div>اعتبار مشتریان: <b>${money(customerCredits)}</b></div><div>اعتبار تأمین‌کنندگان: <b>${money(supplierCredits)}</b></div></div>`;
+      document.getElementById('treasury-tx-list').innerHTML = creditSummary + state.treasuryTxs.map(t => `
         <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
-          <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv} | ${t.desc}</span></div>
+          <div><strong class="${t.kind === 'party_credit' ? 'text-amber-700' : (t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700')}">${t.kind === 'party_credit' ? (t.creditDirection === 'sale' ? 'اعتبار مشتری' : 'اعتبار تأمین‌کننده') : (t.dir === 'receive' ? 'دریافت' : 'پرداخت')}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">${t.kind === 'party_credit' ? 'مانده اعتبار: ' + money(t.remainingAmount ?? t.amount) + ' | ' : 'تخصیص فاکتور: ' + (t.allocInv || '—') + ' | '}${t.desc}</span></div>
           <strong class="tabular-nums">${money(t.amount)}</strong>
         </div>
       `).join('');
