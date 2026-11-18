@@ -2909,36 +2909,48 @@
     function submitPartialReturn() {
       const invId = Number(document.getElementById('partial-ret-inv-id').value);
       const inv = state.invoices.find(i => i.id === invId);
-      if (!inv) return;
+      if (!inv || inv.status === 'cancelled') return;
+      const returnPlan = [];
       let retTotal = 0;
-      const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-      inv.items.forEach((it, idx) => {
-        const q = Number(document.getElementById(`pret-qty-${idx}`)?.value || 0);
-        const avail = it.kg - (it.returnedKg || 0);
-        if (q > 0 && q <= avail) {
-          it.returnedKg = (it.returnedKg || 0) + q;
-          retTotal += q * it.price;
-          const p = state.products.find(x => x.id === it.productId);
-          if (p) {
-            if (inv.type === 'sale') {
-              p.stock += q;
-              if (state.costingMethod === 'FIFO') {
-                it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], q, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, returnId, it.fifoReturnedAllocations || [])];
-              }
-            } else {
-              if (state.costingMethod === 'FIFO') consumeFifoStock(p, q);
-              p.stock -= q;
-            }
-            p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
-          }
+      for (let idx = 0; idx < inv.items.length; idx++) {
+        const it = inv.items[idx];
+        const raw = document.getElementById(`pret-qty-${idx}`)?.value;
+        const q = Number(raw || 0);
+        const avail = Number(it.kg || 0) - Number(it.returnedKg || 0);
+        if (!Number.isFinite(q) || q < 0 || q > avail) {
+          showToast('مقدار برگشتی یکی از ردیف‌ها معتبر نیست؛ هیچ تغییری ثبت نشد.', 'error'); return;
         }
-      });
-      if (retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
+        if (q > 0) {
+          const product = state.products.find(x => x.id === it.productId);
+          if (!product) { showToast('کالای یکی از ردیف‌های برگشتی پیدا نشد؛ عملیات لغو شد.', 'error'); return; }
+          const lineAmount = q * Number(it.price || 0);
+          if (!Number.isFinite(lineAmount) || lineAmount <= 0) { showToast('مبلغ یکی از ردیف‌های برگشتی معتبر نیست.', 'error'); return; }
+          returnPlan.push({ item: it, product, qty: q, amount: lineAmount });
+          retTotal += lineAmount;
+        }
+      }
+      if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
+      const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      // Apply inventory and item mutations only after the complete return plan passes validation.
+      for (const entry of returnPlan) {
+        const { item: it, product: p, qty: q } = entry;
+        it.returnedKg = Number(it.returnedKg || 0) + q;
+        if (inv.type === 'sale') {
+          p.stock += q;
+          if (state.costingMethod === 'FIFO') {
+            it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], q, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, returnId, it.fifoReturnedAllocations || [])];
+          }
+        } else {
+          if (state.costingMethod === 'FIFO') consumeFifoStock(p, q);
+          p.stock -= q;
+        }
+        p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
+      }
       postVoucher(`برگشت جزئی ردیف‌های فاکتور #${invId}`, inv.type === 'sale'
         ? [{ code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 }, { code: '1103', partyId: inv.partyId, desc: 'کاهش بدهی مشتری', debit: 0, credit: retTotal }]
         : [{ code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal, credit: 0 }, { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }]
       , undefined, { type: 'invoice_return', id: returnId, event: String(invId) });
-      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, createdAt: new Date().toISOString() }];
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, items: returnPlan.map(x => ({ productId: x.item.productId, qty: x.qty, amount: x.amount })), createdAt: new Date().toISOString() }];
       saveState(); closeModal('modal-partial-return'); renderAll();
       showToast('برگشت جزئی ردیف‌ها ثبت، انبار اصلاح و سند حسابداری صادر شد ✔');
     }
@@ -2947,9 +2959,12 @@
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv || inv.status === 'cancelled') return;
       if (Number(inv.paidAmount || 0) > 0) { showToast('این فاکتور دریافت/پرداخت دارد؛ ابتدا تسویه‌های مرتبط را تعیین‌تکلیف کنید.', 'error'); return; }
+      const returnedAmount = getInvoiceReturnedAmount(inv);
+      const cancelAmount = Math.max(0, Number(inv.grandTotal || 0) - returnedAmount);
+      if (!Number.isFinite(cancelAmount)) { showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return; }
       inv.status = 'cancelled';
       inv.items.forEach(it => {
-        const netKg = it.kg - (it.returnedKg || 0);
+        const netKg = Number(it.kg || 0) - Number(it.returnedKg || 0);
         const p = state.products.find(x => x.id === it.productId);
         if (p && netKg > 0) {
           if (inv.type === 'sale') {
@@ -2961,11 +2976,13 @@
           }
         }
       });
-      postVoucher(`ابطال فاکتور #${invId}`, inv.type === 'sale'
-        ? [{ code: '4103', partyId: inv.partyId, desc: `ابطال فاکتور #${invId}`, debit: inv.grandTotal, credit: 0 }, { code: '1103', partyId: inv.partyId, desc: `ابطال بدهی #${invId}`, debit: 0, credit: inv.grandTotal }]
-        : [{ code: '2101', partyId: inv.partyId, desc: `ابطال خرید #${invId}`, debit: inv.grandTotal, credit: 0 }, { code: '1105', partyId: null, desc: `ابطال ورود انبار #${invId}`, debit: 0, credit: inv.grandTotal }],
-        undefined, { type: 'invoice_cancel', id: invId, event: 'cancel' }
-      );
+      if (cancelAmount > 0) {
+        postVoucher(`ابطال فاکتور #${invId}`, inv.type === 'sale'
+          ? [{ code: '4103', partyId: inv.partyId, desc: `ابطال مانده فاکتور #${invId}`, debit: cancelAmount, credit: 0 }, { code: '1103', partyId: inv.partyId, desc: `ابطال مانده بدهی #${invId}`, debit: 0, credit: cancelAmount }]
+          : [{ code: '2101', partyId: inv.partyId, desc: `ابطال مانده خرید #${invId}`, debit: cancelAmount, credit: 0 }, { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار #${invId}`, debit: 0, credit: cancelAmount }],
+          undefined, { type: 'invoice_cancel', id: invId, event: 'cancel' }
+        );
+      }
       saveState(); renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info');
     }
 
@@ -3396,6 +3413,18 @@
       return jalaliDateOrdinal(`${get('year')}/${get('month')}/${get('day')}`);
     }
 
+    function getInvoiceReturnedAmount(inv) {
+      return (inv?.returnRefs || []).reduce((sum, ref) => {
+        const amount = Number(ref.amount || 0);
+        return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+      }, 0);
+    }
+
+    function getInvoiceOutstanding(inv) {
+      if (!inv) return 0;
+      return Math.max(0, Number(inv.grandTotal || 0) - getInvoiceReturnedAmount(inv) - Number(inv.paidAmount || 0));
+    }
+
     function agingBucket(daysPastDue) {
       if (daysPastDue <= 0) return 'سررسید نشده';
       if (daysPastDue <= 30) return '۱ تا ۳۰ روز';
@@ -3408,7 +3437,7 @@
       const today = currentJalaliOrdinal();
       return (state.invoices || []).filter(inv => inv.type === type && inv.status !== 'cancelled').map(inv => {
         const due = jalaliDateOrdinal(inv.dueDate);
-        const outstanding = Math.max(0, Number(inv.grandTotal || 0) - Number(inv.paidAmount || 0));
+        const outstanding = getInvoiceOutstanding(inv);
         if (!outstanding) return null;
         const daysPastDue = due === null || today === null ? null : today - due;
         return { invoiceId: inv.id, partyId: inv.partyId, party: getPartyName(inv.partyId), dueDate: inv.dueDate || '—', outstanding, daysPastDue, bucket: daysPastDue === null ? 'تاریخ نامعتبر' : agingBucket(daysPastDue) };
@@ -3478,8 +3507,8 @@
       const pId = document.getElementById('tr-party').value;
       const dir = document.getElementById('tr-dir')?.value || 'receive';
       const expectedType = dir === 'receive' ? 'sale' : 'purchase';
-      const openInvs = state.invoices.filter(i => String(i.partyId) === String(pId) && i.status === 'active' && (!i.type || i.type === expectedType) && (Number(i.grandTotal || 0) - Number(i.paidAmount || 0)) > 0);
-      document.getElementById('tr-alloc-inv').innerHTML = openInvs.map(i => `<option value="${i.id}">فاکتور #${faNum(i.id)} (مانده: ${money(Number(i.grandTotal || 0) - Number(i.paidAmount || 0))})</option>`).join('');
+      const openInvs = state.invoices.filter(i => String(i.partyId) === String(pId) && i.status === 'active' && (!i.type || i.type === expectedType) && getInvoiceOutstanding(i) > 0);
+      document.getElementById('tr-alloc-inv').innerHTML = openInvs.map(i => `<option value="${i.id}">فاکتور #${faNum(i.id)} (مانده: ${money(getInvoiceOutstanding(i))})</option>`).join('');
     }
     function toggleCheckFields() {
       const isChk = document.getElementById('tr-method').value === 'check';
@@ -3508,7 +3537,7 @@
         if (!invoice || invoice.status !== 'active' || String(invoice.partyId) !== String(partyId) || (invoice.type && invoice.type !== expectedType)) {
           showToast('یکی از فاکتورهای انتخاب‌شده فعال نیست یا با طرف حساب/نوع تراکنش سازگار نیست.', 'error'); return;
         }
-        const remaining = Number(invoice.grandTotal || 0) - Number(invoice.paidAmount || 0);
+        const remaining = getInvoiceOutstanding(invoice);
         if (!Number.isFinite(remaining) || remaining <= 0) { showToast('مانده یکی از فاکتورهای انتخاب‌شده معتبر نیست.', 'error'); return; }
         selectedInvoices.push({ invoice, remaining });
       }
