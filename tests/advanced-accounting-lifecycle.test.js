@@ -324,5 +324,63 @@ test('party credit balances are separated by party and customer/supplier directi
   assert.equal(balance('P2','sale'),30);
 });
 
+
+test('customer credit applies to the same party sales invoice and reduces both balances', () => {
+  const state={
+    treasuryTxs:[{id:'CREDIT-1',kind:'party_credit',creditDirection:'sale',partyId:'P1',amount:120,remainingAmount:120}],
+    invoices:[{id:3301,type:'sale',status:'active',partyId:'P1',grandTotal:500,paidAmount:100}],
+    vouchers:[]
+  };
+  const posted=[]; let saves=0;
+  const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
+    state, document:doc({'credit-invoice-CREDIT-1':'3301','credit-amount-CREDIT-1':'80'}),
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-Number(inv.paidAmount||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0));},
+    createStableId(){return 'APPLY-1';}, postVoucher(...a){posted.push(a);return 44;}, addAudit(){}, saveState(){saves++;}, renderAll(){}, showToast(){}
+  });
+  apply('CREDIT-1');
+  assert.equal(state.invoices[0].paidAmount,180);
+  assert.equal(state.treasuryTxs[0].remainingAmount,40);
+  assert.equal(state.treasuryTxs[0].applications[0].amount,80);
+  assert.equal(posted.length,1);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),80);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),80);
+  assert.equal(saves,1);
+});
+
+test('supplier credit cannot be applied to another party or to a sales invoice', () => {
+  for (const invoice of [
+    {id:3302,type:'purchase',status:'active',partyId:'P2',grandTotal:500,paidAmount:0},
+    {id:3303,type:'sale',status:'active',partyId:'P1',grandTotal:500,paidAmount:0}
+  ]) {
+    const state={treasuryTxs:[{id:'CREDIT-2',kind:'party_credit',creditDirection:'purchase',partyId:'P1',amount:100,remainingAmount:100}],invoices:[invoice]};
+    const posted=[]; let saves=0;
+    const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
+      state, document:doc({'credit-invoice-CREDIT-2':String(invoice.id),'credit-amount-CREDIT-2':'50'}),
+      getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
+      createStableId(){return 'APPLY-2';}, postVoucher(...a){posted.push(a);return 1;}, addAudit(){}, saveState(){saves++;}, renderAll(){}, showToast(){}
+    });
+    apply('CREDIT-2');
+    assert.equal(posted.length,0);
+    assert.equal(state.treasuryTxs[0].remainingAmount,100);
+    assert.equal(invoice.paidAmount,0);
+    assert.equal(saves,0);
+  }
+});
+
+test('credit application rejects an amount above either the credit or invoice balance', () => {
+  const state={treasuryTxs:[{id:'CREDIT-3',kind:'party_credit',creditDirection:'sale',partyId:'P1',amount:100,remainingAmount:40}],invoices:[{id:3304,type:'sale',status:'active',partyId:'P1',grandTotal:30,paidAmount:0}]};
+  const posted=[]; let saves=0;
+  const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
+    state, document:doc({'credit-invoice-CREDIT-3':'3304','credit-amount-CREDIT-3':'50'}),
+    getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
+    createStableId(){return 'APPLY-3';}, postVoucher(...a){posted.push(a);return 1;}, addAudit(){}, saveState(){saves++;}, renderAll(){}, showToast(){}
+  });
+  apply('CREDIT-3');
+  assert.equal(posted.length,0);
+  assert.equal(state.treasuryTxs[0].remainingAmount,40);
+  assert.equal(state.invoices[0].paidAmount,0);
+  assert.equal(saves,0);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
