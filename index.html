@@ -4214,13 +4214,21 @@
           : candidates.length
             ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">سندهای هم‌مبلغ و هم‌تاریخ؛ یکی را بررسی و تأیید کنید:</span>${candidates.map(v => `<button onclick="confirmBankReconcileMatch('${r.id}','${v.id}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید سند #${faNum(v.id)} — ${v.desc}</button>`).join('')}</div>`
             : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع سند ندارد و نیازمند بازبینی است.' : 'سند دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>`;
+        const legacyReset = !linked && r.matched ? `<button onclick="clearLegacyReconcileFlag('${r.id}')" class="text-xs underline text-rose-700">پاک‌کردن وضعیت تطبیق قدیمی</button>` : '';
         return `
           <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
             <div><strong>${r.desc}</strong> <span class="text-[10px] text-slate-400 tabular-nums">(${faNum(r.date)} | پیگیری: ${r.ref})</span></div>
             <div class="flex items-center gap-2"><strong class="tabular-nums ${r.amount >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(r.amount)}</strong></div>
-            ${actions}
+            <div class="w-full">${actions} ${legacyReset}</div>
           </div>`;
       }).join('');
+    }
+    function clearLegacyReconcileFlag(id) {
+      const item = (state.bankReconcileItems || []).find(x => x.id === id);
+      if (!item || !item.matched || item.linkedVoucherId) return;
+      item.matched = false;
+      saveState(); renderAll();
+      showToast('علامت تطبیق قدیمیِ بدون سند پاک شد؛ هیچ سند حسابداری تغییر نکرد.');
     }
     function toggleReconcileMatch(id) {
       const item = (state.bankReconcileItems || []).find(x => x.id === id);
