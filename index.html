@@ -4387,6 +4387,12 @@
       showToast('خروجی گردش حساب دانلود شد.');
     }
 
+    function exportAccountLedgerCSVFromUI() {
+      const from = document.getElementById('ledger-from')?.value || '';
+      const to = document.getElementById('ledger-to')?.value || '';
+      exportAccountLedgerCSV(reviewKol, from, to);
+    }
+
     function openVoucherFromLedger(voucherId) { journalVoucherFilter = String(voucherId); setAccTab('journal'); }
     function clearJournalVoucherFilter() { journalVoucherFilter = null; renderAccountingModule(); }
     function setAccTab(tab) {
@@ -4463,10 +4469,10 @@
           const rows = ledger.rows.map(r => `<div class="grid grid-cols-1 md:grid-cols-9 gap-1.5 p-2.5 rounded-xl bg-slate-50 border text-xs"><span>${faNum(r.date)}</span><span>سند #${faNum(r.voucherId)}</span><span>${escapeLedgerText(r.voucherDesc)}</span><span>${escapeLedgerText(r.desc)}</span><span>${escapeLedgerText(r.partyName)}</span><strong class="text-emerald-700">${r.debit ? money(r.debit) : '—'}</strong><strong class="text-rose-700">${r.credit ? money(r.credit) : '—'}</strong><strong>${balanceLabel(r.balance)}</strong><button onclick="openVoucherFromLedger('${escapeLedgerText(r.voucherId)}')" class="text-holoo-700 underline font-bold">مشاهده سند</button></div>`).join('');
           box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3">
             <div class="flex flex-wrap justify-between items-center gap-2"><button onclick="reviewKol=null; renderAccountingModule()" class="bg-slate-200 px-3 py-1 rounded-lg font-bold">⬅ بازگشت به حساب‌ها</button><strong>${faNum(reviewKol)} - ${accountName}</strong></div>
-            <div class="flex flex-wrap justify-between items-center gap-2"><span class="text-[11px] text-slate-500">ریز گردش بر اساس ردیف‌های سند؛ مانده‌ها از دفتر ثبت‌شده محاسبه می‌شوند.</span><button onclick="exportAccountLedgerCSV('${reviewKol}','${from}','${to}')" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV گردش</button></div>
+            <div class="flex flex-wrap justify-between items-center gap-2"><span class="text-[11px] text-slate-500">ریز گردش بر اساس ردیف‌های سند؛ مانده‌ها از دفتر ثبت‌شده محاسبه می‌شوند.</span><button onclick="exportAccountLedgerCSVFromUI()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV گردش</button></div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-2 border rounded-xl p-3">
-              <label class="text-xs font-bold">از تاریخ (شمسی)<input id="ledger-from" value="${from}" onchange="reviewFromDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
-              <label class="text-xs font-bold">تا تاریخ (شمسی)<input id="ledger-to" value="${to}" onchange="reviewToDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
+              <label class="text-xs font-bold">از تاریخ (شمسی)<input id="ledger-from" value="${escapeLedgerText(from)}" onchange="reviewFromDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
+              <label class="text-xs font-bold">تا تاریخ (شمسی)<input id="ledger-to" value="${escapeLedgerText(to)}" onchange="reviewToDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
               <div class="text-xs flex flex-col justify-center"><span>مانده اول دوره</span><strong>${balanceLabel(ledger.openingNet)}</strong></div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
