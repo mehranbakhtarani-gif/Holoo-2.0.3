@@ -4002,10 +4002,18 @@
         showToast('نرخ مالیات یا پورسانت معتبر نیست.', 'error'); return;
       }
       const invoiceLines = invDraft.lines.map(line => ({ ...line }));
-      if (invoiceLines.some(line => !Number.isFinite(Number(line.kg)) || Number(line.kg) <= 0 ||
-          !Number.isFinite(Number(line.price)) || Number(line.price) < 0 ||
-          !Number.isFinite(Number(line.total)) || Number(line.total) < 0)) {
-        showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست.', 'error'); return;
+      if (invoiceLines.some(line => {
+        const kg = Number(line.kg), price = Number(line.price);
+        const discount = Number(line.disc ?? 0), total = Number(line.total);
+        const gross = kg * price;
+        const expectedTotal = Math.max(0, gross - discount);
+        return !Number.isFinite(kg) || kg <= 0 ||
+          !Number.isFinite(price) || price < 0 ||
+          !Number.isFinite(discount) || discount < 0 || discount > gross ||
+          !Number.isFinite(total) || total < 0 ||
+          Math.abs(total - expectedTotal) > 0.000001;
+      })) {
+        showToast('مقدار، قیمت یا تخفیف یکی از ردیف‌ها معتبر نیست؛ تخفیف نباید از مبلغ ناخالص ردیف بیشتر باشد.', 'error'); return;
       }
       const sub = invoiceLines.reduce((sum, line) => sum + Number(line.total || 0), 0);
       const disc = invoiceLines.reduce((sum, line) => sum + Number(line.disc || 0), 0);
@@ -4013,6 +4021,9 @@
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
       const grandTotal = sub + vatAmount;
+      if (![sub, disc, grossSub, vatAmount, commAmount, grandTotal].every(Number.isFinite)) {
+        showToast('جمع مبالغ فاکتور معتبر نیست؛ از ثبت جلوگیری شد.', 'error'); return;
+      }
       const id = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
       const date = getTodayJalaliDate();
       const invoice = {
