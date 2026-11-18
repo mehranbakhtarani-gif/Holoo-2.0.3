@@ -3272,6 +3272,23 @@
       if (!inv || inv.status === 'cancelled') return;
       const returnPlan = [];
       let retTotal = 0;
+      const getInvoiceLineNetTotal = line => {
+        if (line.total !== undefined && line.total !== null) return Number(line.total);
+        return Math.max(0, Number(line.kg || 0) * Number(line.price || 0) - Number(line.disc || 0));
+      };
+      const invoiceNetSubtotal = inv.netSubtotal !== undefined && inv.netSubtotal !== null
+        ? Number(inv.netSubtotal)
+        : inv.items.reduce((sum, line) => sum + getInvoiceLineNetTotal(line), 0);
+      const invoiceVatAmount = inv.vatAmount !== undefined && inv.vatAmount !== null
+        ? Number(inv.vatAmount)
+        : (inv.grandTotal !== undefined && inv.grandTotal !== null
+          ? Math.max(0, Number(inv.grandTotal) - invoiceNetSubtotal)
+          : Math.round(invoiceNetSubtotal * Number(inv.vatRate || 0) / 100));
+      const invoiceVatRatio = Number.isFinite(invoiceNetSubtotal) && invoiceNetSubtotal > 0 &&
+        Number.isFinite(invoiceVatAmount) && invoiceVatAmount > 0
+        ? invoiceVatAmount / invoiceNetSubtotal : 0;
+      let returnBaseTotal = 0;
+      let returnVatTotal = 0;
       for (let idx = 0; idx < inv.items.length; idx++) {
         const it = inv.items[idx];
         const raw = document.getElementById(`pret-qty-${idx}`)?.value;
@@ -3283,10 +3300,29 @@
         if (q > 0) {
           const product = state.products.find(x => x.id === it.productId);
           if (!product) { showToast('کالای یکی از ردیف‌های برگشتی پیدا نشد؛ عملیات لغو شد.', 'error'); return; }
-          const lineAmount = q * Number(it.price || 0);
-          if (!Number.isFinite(lineAmount) || lineAmount <= 0) { showToast('مبلغ یکی از ردیف‌های برگشتی معتبر نیست.', 'error'); return; }
-          returnPlan.push({ item: it, product, qty: q, amount: lineAmount });
+          const lineQty = Number(it.kg || 0);
+          const previousReturnedQty = Number(it.returnedKg || 0);
+          const lineNetTotal = getInvoiceLineNetTotal(it);
+          if (!Number.isFinite(lineQty) || lineQty <= 0 || !Number.isFinite(previousReturnedQty) ||
+              !Number.isFinite(lineNetTotal) || lineNetTotal < 0 || previousReturnedQty + q > lineQty + 0.000001) {
+            showToast('مقدار یا مبلغ خالص ردیف برگشتی معتبر نیست.', 'error'); return;
+          }
+          // Allocate line discount and invoice VAT proportionally; cumulative rounding keeps
+          // multiple partial returns equal to the exact full-line amount and tax.
+          const previousBaseAmount = Math.round(lineNetTotal * previousReturnedQty / lineQty);
+          const cumulativeBaseAmount = Math.round(lineNetTotal * (previousReturnedQty + q) / lineQty);
+          const baseAmount = cumulativeBaseAmount - previousBaseAmount;
+          const previousVatAmount = Math.round(previousBaseAmount * invoiceVatRatio);
+          const cumulativeVatAmount = Math.round(cumulativeBaseAmount * invoiceVatRatio);
+          const lineVatAmount = cumulativeVatAmount - previousVatAmount;
+          const lineAmount = baseAmount + lineVatAmount;
+          if (!Number.isFinite(lineAmount) || lineAmount <= 0 || baseAmount < 0 || lineVatAmount < 0) {
+            showToast('مبلغ خالص یا مالیات ردیف برگشتی معتبر نیست.', 'error'); return;
+          }
+          returnPlan.push({ item: it, product, qty: q, amount: lineAmount, baseAmount, vatAmount: lineVatAmount, lineIndex: idx });
           retTotal += lineAmount;
+          returnBaseTotal += baseAmount;
+          returnVatTotal += lineVatAmount;
         }
       }
       if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
@@ -3307,14 +3343,16 @@
       const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + getReturnCostOfGoods(entry.item, entry.qty, entry.product.buyPrice), 0) : 0;
       const returnVoucherLines = inv.type === 'sale'
         ? [
-            { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 },
+            { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: returnBaseTotal, credit: 0 },
+            ...(returnVatTotal > 0 ? [{ code: '2103', partyId: null, desc: `برگشت مالیات ارزش افزوده فروش #${invId}`, debit: returnVatTotal, credit: 0 }] : []),
             { code: '1103', partyId: inv.partyId, desc: `کاهش مطالبات مشتری بابت برگشت #${invId}`, debit: 0, credit: retTotal - partyCreditAmount },
             ...(partyCreditAmount > 0 ? [{ code: '2101', partyId: inv.partyId, desc: `اعتبار بستانکاری مشتری بابت برگشت #${invId}`, debit: 0, credit: partyCreditAmount }] : [])
           ]
         : [
             { code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal - partyCreditAmount, credit: 0 },
             ...(partyCreditAmount > 0 ? [{ code: '1107', partyId: inv.partyId, desc: `پیش‌پرداخت تأمین‌کننده بابت برگشت #${invId}`, debit: partyCreditAmount, credit: 0 }] : []),
-            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }
+            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: returnBaseTotal },
+            ...(returnVatTotal > 0 ? [{ code: '1106', partyId: null, desc: `اصلاح اعتبار مالیات خرید بابت برگشت #${invId}`, debit: 0, credit: returnVatTotal }] : [])
           ];
       if (inv.type === 'sale' && returnCogs > 0) returnVoucherLines.push(
         { code: '1105', partyId: null, desc: `بازگشت موجودی بابت برگشت فروش #${invId}`, debit: returnCogs, credit: 0 },
@@ -3340,7 +3378,7 @@
         p.kardex.push({ date: getTodayJalaliDate(), doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
       }
 
-      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, qty: x.qty, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
       if (partyCreditAmount > 0) {
         state.treasuryTxs = state.treasuryTxs || [];
         state.treasuryTxs.unshift({
