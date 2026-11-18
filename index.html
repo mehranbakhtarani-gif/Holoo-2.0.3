@@ -5326,14 +5326,10 @@
           invalidAmountLines += validation.invalidLines;
           return;
         }
-        if (validation.invalidStructure) {
-          invalidStructureVouchers++;
-          return;
-        }
-        if (validation.unbalanced) {
-          unbalancedVouchers++;
-          return;
-        }
+        if (validation.invalidStructure) invalidStructureVouchers++;
+        if (validation.unbalanced) unbalancedVouchers++;
+        // Keep valid postings from incomplete or unbalanced vouchers visible.
+        // Excluding them would hide the exact imbalance the trial balance must expose.
         includedVouchers++;
         (voucher.lines || []).forEach(line => {
           const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
