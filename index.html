@@ -1174,8 +1174,8 @@
     <div class="bg-white rounded-3xl w-full max-w-lg max-h-[85dvh] overflow-y-auto p-4 space-y-2.5 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 id="kardex-modal-title" class="font-black text-sm">کاردکس گردش کالا</h3><button onclick="closeModal('modal-kardex')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
       <div class="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-50 border">
-        <div><label for="kardex-from-date" class="block text-[10px] font-bold mb-1">از تاریخ (شمسی)</label><input id="kardex-from-date" type="text" inputmode="numeric" placeholder="۰۱/۰۱/۱۴۰۵" class="w-full border rounded-lg px-2 py-2 tabular-nums" /></div>
-        <div><label for="kardex-to-date" class="block text-[10px] font-bold mb-1">تا تاریخ (شمسی)</label><input id="kardex-to-date" type="text" inputmode="numeric" placeholder="۲۹/۱۲/۱۴۰۵" class="w-full border rounded-lg px-2 py-2 tabular-nums" /></div>
+        <div><label for="kardex-from-date" class="block text-[10px] font-bold mb-1">از تاریخ (شمسی)</label><input id="kardex-from-date" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱" class="w-full border rounded-lg px-2 py-2 tabular-nums" /></div>
+        <div><label for="kardex-to-date" class="block text-[10px] font-bold mb-1">تا تاریخ (شمسی)</label><input id="kardex-to-date" type="text" inputmode="numeric" placeholder="۱۴۰۵/۱۲/۲۹" class="w-full border rounded-lg px-2 py-2 tabular-nums" /></div>
         <button onclick="applyKardexDateFilter()" class="bg-indigo-700 text-white rounded-lg py-2 font-bold">اعمال بازه</button>
         <button onclick="clearKardexDateFilter()" class="bg-slate-200 rounded-lg py-2 font-bold">نمایش همه گردش‌ها</button>
       </div>
@@ -2312,7 +2312,7 @@
       return `${get('year')}/${String(get('month')).padStart(2, '0')}/${String(get('day')).padStart(2, '0')}`;
     }
 
-    // Date fields are entered/displayed as Jalali DD/MM/YYYY; persisted date logic remains canonical YYYY/MM/DD.
+    // Jalali date fields use YYYY/MM/DD, matching the canonical persisted date order.
     function normalizeJalaliDateInputValue(value, finalize = false) {
       const raw = String(value == null ? '' : value).trim()
         .replace(/[۰-۹٠-٩]/g, ch => '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch) >= 0
@@ -2320,21 +2320,29 @@
           : String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
       if (!raw) return '';
       const separated = raw.replace(/-/g, '/').split('/');
-      if (finalize && separated.length === 3 && separated.every(part => /^\d{1,4}$/.test(part))) {
+      if (separated.length === 3 && separated.every(part => /^\d{1,4}$/.test(part))) {
         const [first, second, third] = separated;
-        const legacyYearFirst = first.length === 4 && Number(first) >= 1000;
-        const day = legacyYearFirst ? third : first;
-        const year = legacyYearFirst ? first : third;
-        const month = second;
-        if (Number(day) >= 1 && Number(day) <= 31 && Number(month) >= 1 && Number(month) <= 12 && year.length === 4) {
-          return day.padStart(2, '0') + '/' + month.padStart(2, '0') + '/' + year;
+        const yearFirst = first.length === 4 && Number(first) >= 1000;
+        const dayFirst = third.length === 4 && Number(third) >= 1000;
+        if (yearFirst && Number(second) >= 1 && Number(second) <= 12 && Number(third) >= 1 && Number(third) <= 31) {
+          return first + '/' + second.padStart(2, '0') + '/' + third.padStart(2, '0');
+        }
+        if (dayFirst && Number(first) >= 1 && Number(first) <= 31 && Number(second) >= 1 && Number(second) <= 12) {
+          return third + '/' + second.padStart(2, '0') + '/' + first.padStart(2, '0');
         }
       }
       const digits = raw.replace(/\D/g, '').slice(0, 8);
       const trailingSeparator = /[\/-]$/.test(raw);
-      if (digits.length <= 2) return digits + (trailingSeparator && digits.length === 2 ? '/' : '');
-      if (digits.length <= 4) return digits.slice(0, 2) + '/' + digits.slice(2) + (trailingSeparator && digits.length === 4 ? '/' : '');
-      return digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
+      if (digits.length === 8 && Number(digits.slice(0, 4)) < 1000 && Number(digits.slice(4, 8)) >= 1000) {
+        const legacyDay = Number(digits.slice(0, 2));
+        const legacyMonth = Number(digits.slice(2, 4));
+        if (legacyDay >= 1 && legacyDay <= 31 && legacyMonth >= 1 && legacyMonth <= 12) {
+          return digits.slice(4, 8) + '/' + digits.slice(2, 4) + '/' + digits.slice(0, 2);
+        }
+      }
+      if (digits.length <= 4) return digits + (trailingSeparator ? '/' : '');
+      if (digits.length <= 6) return digits.slice(0, 4) + '/' + digits.slice(4) + (trailingSeparator ? '/' : '');
+      return digits.slice(0, 4) + '/' + digits.slice(4, 6) + '/' + digits.slice(6, 8);
     }
 
     function isJalaliDateInput(input) {
@@ -2469,7 +2477,7 @@
     function chooseJalaliCalendarDay(day) {
       if (!activeJalaliCalendarInput) return;
       const input = activeJalaliCalendarInput;
-      input.value = String(day).padStart(2, '0') + '/' + String(jalaliCalendarMonth).padStart(2, '0') + '/' + jalaliCalendarYear;
+      input.value = jalaliCalendarYear + '/' + String(jalaliCalendarMonth).padStart(2, '0') + '/' + String(day).padStart(2, '0');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       closeJalaliCalendar();
