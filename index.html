@@ -2412,7 +2412,27 @@
       if (!product) return [];
       if (!Array.isArray(product.batches)) product.batches = [];
       const tracked = product.batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.remainingQty ?? batch.quantity ?? 0)), 0);
-      const untracked = Math.max(0, Number(product.stock || 0) - tracked);
+      const currentStock = Math.max(0, Number(product.stock || 0));
+      if (tracked > currentStock + 0.000001) {
+        // Older AVG-cost sales did not consume batch quantities. Reclassify the unexplained balance
+        // into one non-import opening lot so future sales are not falsely attributed to old shipments.
+        const weightedCost = tracked > 0
+          ? product.batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.remainingQty ?? batch.quantity ?? 0)) * Number(batch.unitCost || 0), 0) / tracked
+          : Number(product.buyPrice || 0);
+        product.batches.forEach(batch => { batch.remainingQty = 0; });
+        if (currentStock > 0.000001) {
+          let openingId = 'LEGACY-RECONCILED-' + String(product.id);
+          if (product.batches.some(batch => String(batch.id) === openingId)) openingId += '-BALANCE';
+          product.batches.push({
+            id: openingId, lot: 'LEGACY-RECONCILED', receivedDate: '0000/00/00',
+            productionDate: '', expiryDate: '', quantity: currentStock, remainingQty: currentStock,
+            unitCost: Math.round(weightedCost || Number(product.buyPrice || 0)),
+            sourceType: 'legacy_balance_reconciled', sourceRef: 'legacy-balance-reconciliation'
+          });
+        }
+        return product.batches;
+      }
+      const untracked = Math.max(0, currentStock - tracked);
       if (untracked > 0.000001) {
         product.batches.push({
           id: 'LEGACY-' + String(product.id),
