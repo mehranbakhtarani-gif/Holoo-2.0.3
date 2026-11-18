@@ -162,7 +162,7 @@ test('partial FIFO sales return reverses exact allocated COGS and restores inven
   };
   const state = {
     fiscalYear:'1405', costingMethod:'FIFO',
-    invoices:[{id:2050,type:'sale',partyId:'P1',grandTotal:300,paidAmount:0,items:[item]}],
+    invoices:[{id:2050,type:'sale',partyId:'P1',items:[item]}],
     products:[{id:'X1',stock:8,buyPrice:150,batches:[
       {id:'B1',remainingQty:0,quantity:5,unitCost:100},
       {id:'B2',remainingQty:0,quantity:5,unitCost:200}
