@@ -225,7 +225,7 @@ test('check issue rejects duplicate SAYAD and does not create a treasury transac
     bankAccounts:[{id:'B1',type:'cash',name:'صندوق',balance:0}], treasuryTxs:[]
   };
   const posted=[]; let saves=0;
-  const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'500','tr-alloc-inv':'0','tr-desc':'duplicate','tr-sayad':'111122223333444455556666','tr-chk-due':'1405/09/01','tr-chk-bank':'بانک تست','tr-bank-acc':'B1'};
+  const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'500','tr-alloc-inv':'0','tr-desc':'duplicate','tr-sayad':'111122223333444455556666','tr-chk-due':'1405/09/01','tr-chk-bank':'بانک تست','tr-bank-acc':'B1','tr-check-account':'B1'};
   const save=load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
     state, document:doc(values), getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
   });
@@ -237,7 +237,7 @@ test('check issue rejects duplicate SAYAD and does not create a treasury transac
 });
 
 test('failed cheque issue journal does not leave a check or treasury transaction behind', () => {
-  const state={fiscalYear:'1405',parties:[{id:'P1'}],invoices:[],checks:[],bankAccounts:[{id:'B1',type:'cash',name:'صندوق',balance:1000}],treasuryTxs:[]};
+  const state={fiscalYear:'1405',parties:[{id:'P1'}],invoices:[],checks:[],bankAccounts:[{id:'B1',type:'bank',name:'بانک تست',balance:1000}],treasuryTxs:[]};
   const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'500','tr-alloc-inv':'0','tr-desc':'failed check','tr-sayad':'123456789012345678901234','tr-chk-due':'1405/09/01','tr-chk-bank':'بانک تست','tr-bank-acc':'B1'};
   let saves=0; const messages=[];
   const save=load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
@@ -885,6 +885,58 @@ test('purchase cancellation reverses inventory and input VAT in separate account
   assert.equal(state.products[0].stock,0);
   assert.equal(state.invoices[0].status,'cancelled');
   assert.equal(saves,1);
+});
+
+
+test('new cheque stores the selected bank and clearing updates only that bank', () => {
+  const state={
+    fiscalYear:'1405',parties:[{id:'P1'}],invoices:[],checks:[],
+    bankAccounts:[
+      {id:'BANK-A',type:'bank',name:'بانک الف',balance:100},
+      {id:'BANK-B',type:'bank',name:'بانک ب',balance:200}
+    ],treasuryTxs:[]
+  };
+  const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'75','tr-alloc-inv':'0',
+    'tr-desc':'چک آزمایشی','tr-sayad':'123456789012345678901234','tr-chk-due':'1405/09/01',
+    'tr-chk-bank':'بانک صادرکننده','tr-bank-acc':'BANK-A','tr-check-account':'BANK-B'};
+  const posted=[];let saves=0;
+  const save=load(section('function saveTreasuryEntry()','function renderTreasuryModule()'),'saveTreasuryEntry',{
+    state,document:doc(values),getTodayJalaliDate(){return '1405/09/02';},getInvoiceOutstanding(){return 0;},
+    postVoucher(...args){posted.push(args);return 7001;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){},faNum:String
+  });
+  save();
+  assert.equal(state.checks.length,1);
+  assert.equal(state.checks[0].bankAccountId,'BANK-B');
+  assert.equal(posted.length,1);
+  assert.equal(saves,1);
+  const update=load(section('function updateCheckStatus(id, st)','function computeCheckRas()'),'updateCheckStatus',{
+    state,postVoucher(...args){posted.push(args);return 7002;},showToast(){},addAudit(){},saveState(){saves++;},renderAll(){}
+  });
+  update(state.checks[0].id,'cleared');
+  assert.equal(state.bankAccounts[0].balance,100);
+  assert.equal(state.bankAccounts[1].balance,275);
+  assert.equal(state.checks[0].status,'cleared');
+  assert.equal(posted.length,2);
+  assert.equal(saves,2);
+});
+
+test('legacy cheque with multiple banks and no bank reference cannot clear against an arbitrary bank', () => {
+  const state={
+    checks:[{id:'LEGACY-MULTI',sayad:'223456789012345678901234',status:'in_progress',dir:'receive',amount:50,partyId:'P1'}],
+    bankAccounts:[{id:'BANK-A',type:'bank',balance:100},{id:'BANK-B',type:'bank',balance:200}]
+  };
+  const posted=[];let saves=0;const messages=[];
+  const update=load(section('function updateCheckStatus(id, st)','function computeCheckRas()'),'updateCheckStatus',{
+    state,postVoucher(...args){posted.push(args);return 1;},showToast(msg,type){messages.push({msg,type});},
+    addAudit(){},saveState(){saves++;},renderAll(){}
+  });
+  update('LEGACY-MULTI','cleared');
+  assert.equal(state.checks[0].status,'in_progress');
+  assert.equal(state.bankAccounts[0].balance,100);
+  assert.equal(state.bankAccounts[1].balance,200);
+  assert.equal(posted.length,0);
+  assert.equal(saves,0);
+  assert.equal(messages[0].type,'error');
 });
 
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
