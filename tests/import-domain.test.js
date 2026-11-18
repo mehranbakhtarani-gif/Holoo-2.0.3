@@ -84,6 +84,16 @@ assert.equal(profit.realizedFx, 2500);
 assert.equal(profit.unrealizedFx, 0);
 assert.equal(profit.profitAfterRealizedFx, 2660);
 assert.equal(profit.items.find(x => x.itemId === 'IMP-1-A').returnedKg, 2);
+assert.equal(profit.untraceableSalesKg, 0);
 assert.equal(profit.items.find(x => x.itemId === 'IMP-1-B').revenue, 0);
 
 console.log('PASS: import multi-item costing, allocation, legacy compatibility and shipment profit tests');
+
+const legacyUntraceable = calculateShipmentProfit(
+  { id: 'IMP-LEGACY', productId: 'P-OLD', weightKg: 10, fxTotal: 10, fxPaid: 0, fxRate: 100, currency: 'USD' },
+  [{ id: 'P-OLD', batches: [] }],
+  [{ type: 'sale', status: 'active', items: [{ productId: 'P-OLD', kg: 3, price: 50, total: 150, costOfGoodsSold: 90 }] }],
+  { USD: 110 }
+);
+assert.equal(legacyUntraceable.untraceableSalesKg, 3);
+console.log('PASS: legacy non-FIFO sales are explicitly flagged as untraceable');
