@@ -106,9 +106,26 @@ assert.match(exportCapture.download, /1405-01-02_1405-01-31/);
 assert.equal(exportCapture.clicked, true);
 assert.equal(exportCapture.revoked, true);
 assert.match(exportCapture.toast, /دانلود شد/);
+const renderCapture = { innerHTML: '' };
+sandbox.document = { getElementById: id => renderCapture };
+sandbox.faNum = value => String(value);
+sandbox.money = value => String(value);
+sandbox.escapeLedgerText = value => String(value == null ? '' : value);
+sandbox.getTodayJalaliDate = () => '1405/01/31';
+vm.runInContext(
+  sliceBetween('    function renderTrialBalanceReport()', '    function renderAccountingModule()') +
+  '; this.renderTrialBalanceReport = renderTrialBalanceReport;',
+  sandbox
+);
+sandbox.renderTrialBalanceReport();
+assert.match(renderCapture.innerHTML, /ردیف‌های معتبر این اسناد در تراز باقی مانده‌اند/);
+assert.match(renderCapture.innerHTML, /ردیف‌های معتبر آن در گزارش باقی مانده‌اند/);
+assert.doesNotMatch(renderCapture.innerHTML, /کل سند از تراز آزمایشی کنار گذاشته شد/);
+assert.doesNotMatch(renderCapture.innerHTML, /از محاسبه کنار گذاشته شد/);
 assert.match(html, /activeAccTab === 'trial'[\s\S]{0,100}renderTrialBalanceReport\(\)/);
 assert.match(html, /function exportTrialBalanceCSV\(\)/);
 console.log('PASS: four-column trial balance turnover, closing balances and inclusive date range');
 console.log('PASS: flags unbalanced and structurally incomplete vouchers without hiding their valid postings');
 console.log('PASS: reports invalid dates and leaves source accounting data unchanged');
 console.log('PASS: CSV export includes UTF-8 BOM, formula-safe text and date-based filename');
+console.log('PASS: trial balance UI warnings accurately describe retained incomplete and unbalanced postings');
