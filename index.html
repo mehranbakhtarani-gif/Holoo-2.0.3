@@ -4330,6 +4330,7 @@
     let reviewKol = null;
     let reviewFromDate = null;
     let reviewToDate = null;
+    let journalVoucherFilter = null;
 
     function normalizeLedgerDate(value) {
       const digits = String(value || '').replace(/[۰-۹٠-٩]/g, ch => '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch) >= 0 ? String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)) : String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
@@ -4343,7 +4344,7 @@
     function buildAccountLedger(accountCode, fromDate, toDate) {
       const from = normalizeLedgerDate(fromDate);
       const to = normalizeLedgerDate(toDate);
-      if (!from || !to || from > to) throw new Error('بازه تاریخ دفتر حساب معتبر نیست.');
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) throw new Error('بازه تاریخ دفتر حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       const entries = [];
       let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
       (state.vouchers || []).forEach(v => {
@@ -4356,7 +4357,7 @@
           if (dateKey < from) { openingDebit += debit; openingCredit += credit; }
           else if (dateKey <= to) {
             periodDebit += debit; periodCredit += credit;
-            entries.push({ dateKey, date: v.date || v.operationDate, voucherId: v.id, desc: line.desc || v.desc || '', debit, credit });
+            entries.push({ dateKey, date: v.date || v.operationDate, voucherId: v.id, voucherDesc: v.desc || '', partyId: line.partyId ?? null, partyName: line.partyId != null ? ((state.parties || []).find(p => String(p.id) === String(line.partyId))?.name || '—') : '—', desc: line.desc || v.desc || '', debit, credit });
           }
         });
       });
@@ -4370,6 +4371,30 @@
       };
     }
 
+    function escapeLedgerText(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    }
+
+    function exportAccountLedgerCSV(accountCode, fromDate, toDate) {
+      let ledger;
+      try { ledger = buildAccountLedger(accountCode, fromDate, toDate); } catch (error) { showToast(error.message, 'error'); return; }
+      const accountName = CHART_ACCOUNTS.find(a => String(a.code) === String(accountCode))?.name || accountCode;
+      const cell = value => { let raw = String(value == null ? '' : value); if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw; return '"' + raw.replace(/"/g, '""') + '"'; };
+      const rows = [['تاریخ','شماره سند','شرح سند','شرح ردیف','طرف حساب','بدهکار','بستانکار','مانده خالص'], ...ledger.rows.map(r => [r.date,r.voucherId,r.voucherDesc,r.desc,r.partyName,r.debit,r.credit,r.balance])];
+      const csv = '\uFEFF' + [['حساب',accountCode,accountName],['از تاریخ',fromDate,'تا تاریخ',toDate],['مانده اول دوره',ledger.openingNet,'گردش بدهکار',ledger.periodDebit,'گردش بستانکار',ledger.periodCredit,'مانده پایان دوره',ledger.closingNet], ...rows].map(row => row.map(cell).join(',')).join('\r\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8'}); const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'Holoo_Ledger_' + accountCode + '.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('خروجی گردش حساب دانلود شد.');
+    }
+
+    function exportAccountLedgerCSVFromUI() {
+      const from = document.getElementById('ledger-from')?.value || '';
+      const to = document.getElementById('ledger-to')?.value || '';
+      exportAccountLedgerCSV(reviewKol, from, to);
+    }
+
+    function openVoucherFromLedger(voucherId) { journalVoucherFilter = String(voucherId); setAccTab('journal'); }
+    function clearJournalVoucherFilter() { journalVoucherFilter = null; renderAccountingModule(); }
     function setAccTab(tab) {
       activeAccTab = tab;
       document.querySelectorAll('.acc-nav').forEach(b => { b.classList.remove('bg-holoo-700', 'text-white'); b.classList.add('bg-slate-100', 'text-slate-700'); });
@@ -4403,7 +4428,8 @@
         const parents = (state.accountCatalog || []).filter(a => a.level === 'general' && a.active);
         box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3"><div class="font-black text-sm">درخت حساب‌ها: گروه ← کل ← معین</div><div class="space-y-1">${rows}</div><div class="border-t pt-3 space-y-2"><strong>افزودن حساب معین جدید</strong><div class="grid grid-cols-1 md:grid-cols-3 gap-2"><select id="new-acc-parent" class="touch-btn border rounded-xl px-2">${parents.map(p => `<option value="${p.id}">${faNum(p.code)} - ${p.name}</option>`).join('')}</select><input id="new-acc-code" class="touch-btn border rounded-xl px-2" inputmode="numeric" placeholder="کد حساب (۴ رقم یا بیشتر)" /><input id="new-acc-name" class="touch-btn border rounded-xl px-2" placeholder="نام حساب" /></div><button onclick="saveCustomAccount()" class="touch-btn bg-holoo-700 text-white rounded-xl px-4 font-bold">ثبت حساب جدید</button><p class="text-[10px] text-slate-500">حساب دارای گردش حذف نمی‌شود؛ کدهای فعلی و اسناد قبلی حفظ شده‌اند.</p></div></div>`;
       } else if (activeAccTab === 'journal') {
-        box.innerHTML = state.vouchers.map(v => `
+        const journalRows = (state.vouchers || []).filter(v => !journalVoucherFilter || String(v.id) === journalVoucherFilter);
+        box.innerHTML = `<div class="flex items-center justify-between gap-2 bg-white border rounded-xl p-3"><strong>دفتر روزنامه ${journalVoucherFilter ? `— نمایش سند #${faNum(journalVoucherFilter)}` : '— همه اسناد'}</strong>${journalVoucherFilter ? '<button onclick="clearJournalVoucherFilter()" class="px-3 py-1 rounded-lg bg-slate-200 font-bold">نمایش همه اسناد</button>' : ''}</div>` + journalRows.map(v => `
           <div class="bg-white rounded-2xl p-3.5 border ${v.locked ? 'border-emerald-400' : 'border-slate-200'} space-y-2">
             <div class="flex justify-between items-center border-b pb-1.5">
               <div class="flex items-center gap-2"><span class="bg-holoo-900 text-white px-2 py-0.5 rounded font-black tabular-nums">سند #${faNum(v.id)}</span><strong>${v.desc}</strong></div>
@@ -4440,12 +4466,13 @@
           }
           const accountName = CHART_ACCOUNTS.find(a => String(a.code) === String(reviewKol))?.name || reviewKol;
           const balanceLabel = value => value > 0 ? `${money(value)} بدهکار` : value < 0 ? `${money(Math.abs(value))} بستانکار` : 'صفر';
-          const rows = ledger.rows.map(r => `<div class="grid grid-cols-1 md:grid-cols-6 gap-1 p-2.5 rounded-xl bg-slate-50 border text-xs"><span>${faNum(r.date)}</span><span>سند #${faNum(r.voucherId)}</span><span class="md:col-span-2">${r.desc}</span><strong class="text-emerald-700">${r.debit ? money(r.debit) : '—'}</strong><strong class="text-rose-700">${r.credit ? money(r.credit) : '—'}</strong><strong>${balanceLabel(r.balance)}</strong></div>`).join('');
+          const rows = ledger.rows.map(r => `<div class="grid grid-cols-1 md:grid-cols-9 gap-1.5 p-2.5 rounded-xl bg-slate-50 border text-xs"><span>${faNum(r.date)}</span><span>سند #${faNum(r.voucherId)}</span><span>${escapeLedgerText(r.voucherDesc)}</span><span>${escapeLedgerText(r.desc)}</span><span>${escapeLedgerText(r.partyName)}</span><strong class="text-emerald-700">${r.debit ? money(r.debit) : '—'}</strong><strong class="text-rose-700">${r.credit ? money(r.credit) : '—'}</strong><strong>${balanceLabel(r.balance)}</strong><button onclick="openVoucherFromLedger('${escapeLedgerText(r.voucherId)}')" class="text-holoo-700 underline font-bold">مشاهده سند</button></div>`).join('');
           box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3">
             <div class="flex flex-wrap justify-between items-center gap-2"><button onclick="reviewKol=null; renderAccountingModule()" class="bg-slate-200 px-3 py-1 rounded-lg font-bold">⬅ بازگشت به حساب‌ها</button><strong>${faNum(reviewKol)} - ${accountName}</strong></div>
+            <div class="flex flex-wrap justify-between items-center gap-2"><span class="text-[11px] text-slate-500">ریز گردش بر اساس ردیف‌های سند؛ مانده‌ها از دفتر ثبت‌شده محاسبه می‌شوند.</span><button onclick="exportAccountLedgerCSVFromUI()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV گردش</button></div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-2 border rounded-xl p-3">
-              <label class="text-xs font-bold">از تاریخ (شمسی)<input id="ledger-from" value="${from}" onchange="reviewFromDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
-              <label class="text-xs font-bold">تا تاریخ (شمسی)<input id="ledger-to" value="${to}" onchange="reviewToDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
+              <label class="text-xs font-bold">از تاریخ (شمسی)<input id="ledger-from" value="${escapeLedgerText(from)}" onchange="reviewFromDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
+              <label class="text-xs font-bold">تا تاریخ (شمسی)<input id="ledger-to" value="${escapeLedgerText(to)}" onchange="reviewToDate=this.value; renderAccountingModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>
               <div class="text-xs flex flex-col justify-center"><span>مانده اول دوره</span><strong>${balanceLabel(ledger.openingNet)}</strong></div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
@@ -4455,7 +4482,7 @@
               <div class="p-2 bg-slate-50 rounded-lg">جمع بستانکار اول دوره<strong class="block">${money(ledger.openingCredit)}</strong></div>
             </div>
             <div class="p-3 bg-holoo-950 text-amber-300 rounded-xl flex justify-between font-black"><span>مانده پایان دوره</span><span>${balanceLabel(ledger.closingNet)}</span></div>
-            <div class="grid grid-cols-1 md:grid-cols-6 gap-1 text-[10px] font-black text-slate-500 px-2"><span>تاریخ</span><span>شماره سند</span><span class="md:col-span-2">شرح</span><span>بدهکار</span><span>بستانکار</span><span>مانده</span></div>
+            <div class="grid grid-cols-1 md:grid-cols-8 gap-1.5 text-[10px] font-black text-slate-500 px-2"><span>تاریخ</span><span>شماره سند</span><span>شرح سند</span><span>شرح ردیف</span><span>طرف حساب</span><span>بدهکار</span><span>بستانکار</span><span>مانده</span><span>پیگیری</span></div>
             ${rows || '<p class="text-center text-slate-400 p-4">در این بازه گردش ثبت نشده است.</p>'}
           </div>`;
         }
