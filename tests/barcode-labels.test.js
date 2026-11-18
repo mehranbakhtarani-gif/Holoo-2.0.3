@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].map(match => match[1]).filter(source => source.trim());
+const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).filter(source => source.trim());
 for (const [index, source] of scripts.entries()) new vm.Script(source, { filename: 'index.html:inline-script-' + index });
 
 assert.match(html, /id="modal-barcode-settings"/);
