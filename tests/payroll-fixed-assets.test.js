@@ -18,13 +18,13 @@ function load(source, name, context = {}) {
   vm.runInContext(source + '; this.fn = ' + name + ';', sandbox);
   return sandbox.fn;
 }
-const rowsFn = load(extract('function getPayrollRows(', 'function savePayrollSettings()'), 'getPayrollRows');
+const rowsFn = load(extract('function getPayrollRows(', 'function savePayrollSettings()'), 'getPayrollRows', { state: { employees: [{ id: 'E1', name: 'نمونه', base: 1000000, benefits: 200000, deductions: 50000 }] } });
 const periodFn = load(extract('function payrollPeriodOrdinal(', 'function getPayrollRows('), 'payrollPeriodOrdinal', {
   jalaliDateOrdinal(value) { return /^\\d{4}\\/(0[1-9]|1[0-2])\\/01$/.test(value) ? Number(value.replaceAll('/', '')) : null; }
 });
 const depreciationFn = load(extract('function calculateAssetMonthlyDepreciation(', 'function renderAssetsModule()'), 'calculateAssetMonthlyDepreciation');
 
-const rows = rowsFn([{ id: 'E1', name: 'نمونه', base: 1000000, benefits: 200000, deductions: 50000 }], 7, 23);
+const rows = rowsFn(7, 23);
 assert.equal(rows[0].gross, 1200000);
 assert.equal(rows[0].employeeInsurance, 84000);
 assert.equal(rows[0].employerInsurance, 276000);
