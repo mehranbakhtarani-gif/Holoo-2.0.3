@@ -182,7 +182,7 @@
     const realizedFx = (shipment.fxPayments || []).reduce((sum, payment) => sum + Number(payment.realizedDiff || 0), 0);
     const remainingFx = Math.max(0, Number(shipment.fxTotal || 0) - Number(shipment.fxPaid || 0));
     const currentRate = Number((currentRates || {})[shipment.currency] || shipment.fxRate || 0);
-    const unrealizedFx = (Number(shipment.fxRate || 0) - currentRate) * remainingFx;
+    const unrealizedFx = (Number(shipment.carryingRate || shipment.fxRate || 0) - currentRate) * remainingFx;
     const revenue = rows.reduce((sum, row) => sum + row.revenue, 0);
     const cogs = rows.reduce((sum, row) => sum + row.cogs, 0);
     return {
