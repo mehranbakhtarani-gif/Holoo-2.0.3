@@ -116,3 +116,21 @@ assert.equal(fifoProfit.revenue, 600);
 assert.equal(fifoProfit.cogs, 200);
 assert.equal(fifoProfit.grossProfit, 400);
 console.log('PASS: FIFO shipment profit uses the exact source-batch cost after returns');
+
+const oldReturnWithoutBatchRefs = calculateShipmentProfit(
+  { id: 'IMP-FIFO', productId: 'P-FIFO', weightKg: 4, fxTotal: 40, fxPaid: 40, fxRate: 100, currency: 'USD',
+    items: [{ id: 'IMP-FIFO-ITEM', productId: 'P-FIFO', quantityKg: 4, fxAmount: 40 }] },
+  [{ id: 'P-FIFO', batches: [
+    { id: 'BF1', sourceRef: 'IMP-FIFO', sourceItemId: 'IMP-FIFO-ITEM' },
+    { id: 'BF2', sourceRef: 'IMP-OTHER' }
+  ] }],
+  [{ type: 'sale', status: 'active', items: [{
+    productId: 'P-FIFO', kg: 10, total: 3000, costOfGoodsSold: 1600, costingMethod: 'FIFO',
+    fifoAllocations: [{ batchId: 'BF1', quantity: 4, unitCost: 100 }, { batchId: 'BF2', quantity: 6, unitCost: 200 }],
+    returnedKg: 2
+  }] }],
+  { USD: 100 }
+);
+assert.equal(oldReturnWithoutBatchRefs.revenue, 600);
+assert.equal(oldReturnWithoutBatchRefs.cogs, 200);
+console.log('PASS: legacy returns without batch references reduce FIFO shipment cost correctly');
