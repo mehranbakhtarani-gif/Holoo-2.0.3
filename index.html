@@ -2858,6 +2858,7 @@
             const fifo = consumeFifoStock(p, l.kg);
             let lineCost = l.kg * p.buyPrice;
             l.fifoAllocations = fifo.allocations;
+            l.costingMethod = state.costingMethod;
             if (state.costingMethod === 'FIFO') lineCost = fifo.totalCost;
             l.costOfGoodsSold = lineCost;
             p.stock -= l.kg; p.lastMoveDays = 0; cogs += lineCost;
@@ -3419,6 +3420,7 @@
               </select>
             </div>
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
+            <div class="text-[10px] text-slate-500">مبنای بهای فروش: ${state.costingMethod === 'FIFO' ? 'FIFO بر اساس بهای هر بچ' : 'میانگین موزون؛ تخصیص فروش به بچ‌ها بر اساس مقدار'}</div>
             <div class="rounded-lg border px-2 py-1"><strong>سود هر قلم محموله</strong>${profitRows}</div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-50 border tabular-nums">
               <div><span class="text-slate-400 block">وزن و کارتن:</span><strong>${faNum(m.weightKg)} KG (${faNum(m.cartons)} کارتن)</strong></div>
