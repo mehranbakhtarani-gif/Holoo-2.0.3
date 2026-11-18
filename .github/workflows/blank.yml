@@ -34,6 +34,7 @@ jobs:
           node tests/fx-revaluation.test.js
           node tests/operation-dates.test.js
           node tests/android-pwa.test.js
+          node tests/jalali-date-input.test.js
           node tests/device-actor-assignment.test.js
           node tests/product-editing.test.js
           node tests/party-editing.test.js
