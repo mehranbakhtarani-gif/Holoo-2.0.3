@@ -1493,6 +1493,23 @@
       return succeeded;
     }
 
+    // پس از دریافت دستی نسخه ابری، یک فایل پشتیبان JSON نیز از طریق مرورگر دانلود می‌شود.
+    function downloadCloudBackup(snapshot) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = 'holoo-cloud-backup-' + stamp + '.json';
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      return filename;
+    }
+
     async function pullFromSupabase(notify = false) {
       if (!cloudConfig.url || !cloudConfig.key) {
         setCloudBadge('⚠️ تنظیمات ابر ناقص است', 'text-amber-300');
@@ -1539,7 +1556,15 @@
           setCloudBadge(`☁️ دریافت و همگام‌سازی موفق (${nowStr})`, 'text-emerald-300');
           const lbl = document.getElementById('sb-last-sync-label');
           if (lbl) lbl.textContent = `آخرین دریافت موفق از ابر: ساعت ${nowStr}`;
-          if (notify) showToast('نسخه ابری دریافت و ذخیره شد 📥✔');
+          if (notify) {
+            try {
+              const backupName = downloadCloudBackup(incoming);
+              showToast('نسخه ابری دریافت شد و فایل پشتیبان در دانلودهای گوشی ذخیره شد: ' + backupName);
+            } catch (downloadError) {
+              console.warn('Cloud backup download failed:', downloadError);
+              showToast('اطلاعات در حافظه برنامه ذخیره شد، اما دانلود فایل پشتیبان انجام نشد.', 'error');
+            }
+          }
           return true;
         }
         isSyncing = false;
