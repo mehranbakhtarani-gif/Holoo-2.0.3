@@ -195,5 +195,42 @@ test('kardex baseline remains unverified when the earliest dated movement is an 
   assert.match(result.unverified[0].detail, /ورود محموله هند/);
 });
 
+
+test('party control reconciliation lists legacy rows with missing or unknown party IDs without mutating vouchers', () => {
+  const source = section('function buildPartyControlReconciliation(fromDate, toDate)', 'function openPartyControlReconciliation()');
+  const vouchers = [
+    { id: 17, date: '1405/01/01', desc: 'سند قدیمی بدون تفصیلی', lines: [
+      { code: '1103', debit: 250, credit: 0, desc: 'مانده مشتری' },
+      { code: '4101', debit: 0, credit: 250, desc: 'فروش' }
+    ] },
+    { id: 18, date: '1405/01/02', desc: 'شناسه نامعتبر', lines: [
+      { code: '2101', debit: 0, credit: 90, partyId: 'MISSING', desc: 'بدهی تأمین‌کننده' },
+      { code: '4101', debit: 90, credit: 0, desc: 'تعدیل' }
+    ] },
+    { id: 19, date: '1405/01/03', desc: 'دارای تفصیلی', lines: [
+      { code: '1103', debit: 40, credit: 0, partyId: 'P1' },
+      { code: '4101', debit: 0, credit: 40 }
+    ] }
+  ];
+  const before = JSON.stringify(vouchers);
+  const build = loadFunction(source, 'buildPartyControlReconciliation', {
+    state: { parties: [{ id: 'P1', name: 'مشتری' }], vouchers },
+    normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
+    jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
+    countInvalidReportVoucherLines() { return 0; }
+  });
+  const result = build('1405/01/01', '1405/01/31');
+  assert.equal(result.unassignedLines, 2);
+  assert.equal(result.unassignedDetails.length, 2);
+  assert.equal(result.unassignedDetails[0].voucherId, '17');
+  assert.equal(result.unassignedDetails[0].lineIndex, 1);
+  assert.equal(result.unassignedDetails[0].reason, 'شناسه طرف حساب ثبت نشده است');
+  assert.equal(result.unassignedDetails[1].voucherId, '18');
+  assert.equal(result.unassignedDetails[1].reason, 'شناسه طرف حساب در فهرست اشخاص وجود ندارد');
+  assert.equal(result.totals.glClosing, 200);
+  assert.equal(result.totals.subClosing, 40);
+  assert.equal(JSON.stringify(vouchers), before);
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
