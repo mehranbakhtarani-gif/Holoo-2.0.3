@@ -1186,6 +1186,14 @@
 
   <script src="./import-domain.js"></script>
   <script>
+    // Shared HTML escaping helper used by HR, assets, approvals and bank reconciliation.
+    window.escapeBankReconciliationText = function(value) {
+      return String(value == null ? '' : value).replace(/[&<>\"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+      })[ch]);
+    };
+  </script>
+  <script>
     // =========================================================================
     // 1. SUPABASE CLOUD SYNC ENGINE (DIRECT REST API TO YOUR SUPABASE PROJECT)
     // =========================================================================
