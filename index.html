@@ -7230,6 +7230,81 @@
     }
 
   </script>
-  <script src="./operational-tools.js"></script>
+  <script src="./operational-tools.js">
+    
+    // Universal printing for report views: print the exact visible report without changing business data.
+    function openReportPrintPreview(title, sourceIds) {
+      const area = document.getElementById('print-area');
+      if (!area) { showToast('بخش پیش‌نمایش چاپ پیدا نشد.', 'error'); return; }
+      const company = state?.settings?.companyName || 'هولو';
+      const address = state?.settings?.address || '';
+      const phone = state?.settings?.phone || '';
+      const clones = (sourceIds || []).map(id => document.getElementById(id)).filter(Boolean);
+      if (!clones.length) { showToast('محتوای گزارش برای چاپ پیدا نشد.', 'error'); return; }
+      const content = clones.map(node => {
+        const clone = node.cloneNode(true);
+        clone.querySelectorAll('.no-print, button, a, input[type="button"], input[type="submit"]').forEach(el => el.remove());
+        clone.querySelectorAll('input, select, textarea').forEach(el => {
+          const value = el.tagName === 'SELECT' ? (el.selectedOptions[0]?.textContent || '') : (el.value || '');
+          const replacement = document.createElement('span');
+          replacement.className = 'print-filter-value';
+          replacement.textContent = value;
+          el.replaceWith(replacement);
+        });
+        clone.querySelectorAll('[contenteditable="true"]').forEach(el => el.removeAttribute('contenteditable'));
+        return clone.innerHTML;
+      }).join('<div class="print-section-break"></div>');
+      document.getElementById('print-title').textContent = title || 'گزارش هولو';
+      area.innerHTML =
+        '<header class="print-company-header"><div><h1>' + escapeLedgerText(company) + '</h1>' +
+        (address ? '<div>' + escapeLedgerText(address) + '</div>' : '') +
+        (phone ? '<div>تلفن: ' + escapeLedgerText(phone) + '</div>' : '') +
+        '</div><div class="print-report-heading"><strong>' + escapeLedgerText(title || 'گزارش') +
+        '</strong><span>تاریخ تهیه: ' + escapeLedgerText(faNum(getTodayJalaliDate())) + '</span></div></header>' +
+        '<main class="print-report-content">' + content + '</main>';
+      openModal('modal-print-preview');
+    }
+
+    function ensureReportPrintButton(targetId, title, sourceIds) {
+      const target = document.getElementById(targetId);
+      if (!target || target.querySelector('[data-holoo-report-print="' + targetId + '"]')) return;
+      const text = (target.innerText || target.textContent || '').trim();
+      if (!text || text.length < 12) return;
+      if (targetId === 'accounting-panel-body' &&
+          !/(تراز آزمایشی|ترازنامه|سود و زیان|گردش حساب|دفتر کل|حساب معین)/.test(text)) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'no-print flex justify-end mb-2';
+      wrap.setAttribute('data-holoo-report-print', targetId);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'touch-btn bg-slate-800 text-amber-300 rounded-lg px-4 py-2 font-bold';
+      button.textContent = '🖨️ چاپ نسخه گزارش';
+      button.addEventListener('click', () => openReportPrintPreview(title, sourceIds || [targetId]));
+      wrap.appendChild(button);
+      target.insertBefore(wrap, target.firstChild);
+    }
+
+    function installUniversalReportPrinting() {
+      const targets = [
+        ['accounting-panel-body', 'گزارش حسابداری', ['accounting-panel-body']],
+        ['cashflow-actual-report', 'صورت جریان وجوه نقد واقعی', ['cashflow-actual-report']],
+        ['cashflow-horizons-grid', 'پیش‌بینی جریان نقدینگی', ['cashflow-horizons-grid']],
+        ['mod-aging', 'گزارش سنی مطالبات و بدهی‌ها', ['mod-aging']],
+        ['kardex-modal-list', 'گزارش کاردکس و گردش کالا', ['kardex-modal-list']],
+        ['rep-builder-table', 'گزارش سفارشی', ['rep-builder-table']]
+      ];
+      const scan = () => targets.forEach(([id, title, sources]) => ensureReportPrintButton(id, title, sources));
+      scan();
+      if (typeof MutationObserver !== 'undefined' && document.body) {
+        const observer = new MutationObserver(scan);
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installUniversalReportPrinting, { once: true });
+      else installUniversalReportPrinting();
+    }
+</script>
 </body>
 </html>
