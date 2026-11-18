@@ -76,14 +76,14 @@ test('opening stock creates kardex entry and accounting voucher', () => {
 });
 
 // Invoice lifecycle with isolated in-memory state. No live database or user data is touched.
-function runInvoice(type) {
+function runInvoice(type, payMethod = 'credit', bankAccounts = []) {
   const product = { id: 'TX-101', name: 'کالای آزمایشی', stock: 100, buyPrice: 10, kardex: [] };
   const state = {
     fiscalYear: '1405', invoices: [], products: [product],
-    bankAccounts: [{ balance: 0 }, { balance: 0 }, { balance: 0 }],
+    bankAccounts,
     costingMethod: 'AVG'
   };
-  const values = { 'inv-party': 'P-TEST', 'inv-warehouse': 'WH1', 'inv-pay-method': 'credit', 'inv-vat-rate': '0', 'inv-commission-rate': '0', 'inv-due-date': '1405/09/01', 'inv-salesperson': 'آزمایشی' };
+  const values = { 'inv-party': 'P-TEST', 'inv-warehouse': 'WH1', 'inv-pay-method': payMethod, 'inv-vat-rate': '0', 'inv-commission-rate': '0', 'inv-due-date': '1405/09/01', 'inv-salesperson': 'آزمایشی' };
   const draft = { type, lines: [{ productId: 'TX-101', kg: 5, price: 20, total: 100, disc: 0 }] };
   const posted = [];
   let saves = 0;
@@ -132,6 +132,45 @@ test('purchase invoice increases stock and posts a source-linked accounting vouc
   assert.equal(r.posted.length, 1);
   assert.equal(r.posted[0][3].type, 'invoice');
   assert.equal(r.posted[0][3].id, 1001);
+});
+
+test('cash purchase credits cash and decreases the selected cash balance', () => {
+  const cash = { id: 'CASH-1', type: 'cash', name: 'صندوق آزمایشی', balance: 500 };
+  const r = runInvoice('purchase', 'cash', [cash]);
+  const lines = r.posted[0][1];
+  assert.equal(r.state.invoices[0].paidAmount, 100);
+  assert.equal(r.state.invoices[0].bankAccountId, 'CASH-1');
+  assert.equal(lines.find(line => line.code === '1101').credit, 100);
+  assert.equal(lines.some(line => line.code === '2101'), false);
+  assert.equal(cash.balance, 400);
+});
+
+test('bank purchase credits bank and decreases the selected bank balance', () => {
+  const bank = { id: 'BANK-1', type: 'bank', name: 'بانک آزمایشی', balance: 500 };
+  const r = runInvoice('purchase', 'bank', [bank]);
+  const lines = r.posted[0][1];
+  assert.equal(r.state.invoices[0].bankAccountId, 'BANK-1');
+  assert.equal(lines.find(line => line.code === '1102').credit, 100);
+  assert.equal(lines.some(line => line.code === '2101'), false);
+  assert.equal(bank.balance, 400);
+});
+
+test('credit purchase remains payable to supplier without changing cash or bank', () => {
+  const cash = { id: 'CASH-1', type: 'cash', name: 'صندوق آزمایشی', balance: 500 };
+  const bank = { id: 'BANK-1', type: 'bank', name: 'بانک آزمایشی', balance: 700 };
+  const r = runInvoice('purchase', 'credit', [cash, bank]);
+  const lines = r.posted[0][1];
+  assert.equal(lines.find(line => line.code === '2101').credit, 100);
+  assert.equal(cash.balance, 500);
+  assert.equal(bank.balance, 700);
+});
+
+test('paid invoice is rejected before mutation when matching settlement account is missing', () => {
+  const r = runInvoice('purchase', 'bank', []);
+  assert.equal(r.state.invoices.length, 0);
+  assert.equal(r.product.stock, 100);
+  assert.equal(r.posted.length, 0);
+  assert.equal(r.saves, 0);
 });
 
 // Unpaid invoice cancellation must reverse stock exactly once and post a reversal.
