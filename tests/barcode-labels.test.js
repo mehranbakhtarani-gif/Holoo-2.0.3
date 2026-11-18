@@ -35,3 +35,12 @@ const openStart = html.indexOf('    function openBarcodeLabelSettings(id) {');
 const openEnd = html.indexOf('    // Backward-compatible alias', openStart);
 assert.ok(openStart >= 0 && openEnd > openStart, 'dedicated barcode settings opener must exist');
 assert.doesNotMatch(html.slice(openStart, openEnd), /window\.print|print\(\)/, 'opening barcode settings must not invoke browser printing');
+
+assert.match(html, /id="kardex-from-date"/);
+assert.match(html, /id="kardex-to-date"/);
+assert.match(html, /function applyKardexDateFilter\(\)/);
+assert.match(html, /function clearKardexDateFilter\(\)/);
+assert.match(html, /const filteredMovements = movements\.filter/);
+assert.match(html, /key >= fromKey && key <= toKey/);
+assert.match(html, /تاریخ شروع و پایان شمسی معتبر/);
+console.log('PASS: product kardex supports validated Jalali date-range filtering and clearing the filter');
