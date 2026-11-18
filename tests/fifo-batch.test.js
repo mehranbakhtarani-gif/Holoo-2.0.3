@@ -8,7 +8,7 @@ const end = html.indexOf('    // ===============================================
 assert.notEqual(start, -1, 'batch helpers must exist');
 assert.notEqual(end, -1, 'batch helper section must have an end');
 const source = html.slice(start, end);
-const sandbox = { createStableId: (() => { let n = 0; return prefix => prefix + '-' + (++n); })(), currentJalaliOrdinal: () => 100, jalaliDateOrdinal: value => value === 'EXPIRED' ? 90 : 110 };
+const sandbox = { createStableId: (() => { let n = 0; return prefix => prefix + '-' + (++n); })(), getTodayJalaliDate: () => '1405/09/02', currentJalaliOrdinal: () => 100, jalaliDateOrdinal: value => value === 'EXPIRED' ? 90 : 110 };
 vm.createContext(sandbox);
 vm.runInContext(source + '; this.api = { ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations };', sandbox);
 const { ensureProductBatches, addStockBatch, consumeFifoStock, restoreFifoAllocations } = sandbox.api;
@@ -29,6 +29,13 @@ test('new purchases add a distinct lot without changing stock quantity themselve
   assert.equal(p.stock, 5);
   assert.equal(p.batches.length, 2);
   assert.equal(p.batches[1].lot, 'LOT-B');
+});
+
+test('new batches default to the Jalali operation date, not the ISO/Gregorian date', () => {
+  const p = { id: 'P-DATE', stock: 0, buyPrice: 75, batches: [] };
+  const batch = addStockBatch(p, { quantity: 2, unitCost: 75 });
+  assert.equal(batch.receivedDate, '1405/09/02');
+  assert.match(batch.receivedDate, /^\\d{4}\\/\\d{2}\\/\\d{2}$/);
 });
 
 test('legacy AVG stock with over-counted historical lots is reconciled without shipment attribution', () => {
