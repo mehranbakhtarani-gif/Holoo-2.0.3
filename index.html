@@ -2306,11 +2306,11 @@
           : String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
       if (!raw) return '';
       const separated = raw.replace(/-/g, '/').split('/');
-      if (finalize && separated.length === 3 && separated.every(part => /^\\d{1,4}$/.test(part))) {
+      if (finalize && separated.length === 3 && separated.every(part => /^\d{1,4}$/.test(part))) {
         const [year, month, day] = separated;
         return year.padStart(4, '0') + '/' + month.padStart(2, '0') + '/' + day.padStart(2, '0');
       }
-      const digits = raw.replace(/\\D/g, '').slice(0, 8);
+      const digits = raw.replace(/\D/g, '').slice(0, 8);
       if (digits.length <= 4) return digits;
       if (digits.length <= 6) return digits.slice(0, 4) + '/' + digits.slice(4);
       return digits.slice(0, 4) + '/' + digits.slice(4, 6) + '/' + digits.slice(6, 8);
@@ -2339,7 +2339,7 @@
         if (typeof input.setSelectionRange === 'function') {
           let nextCursor = 0, seen = 0;
           while (nextCursor < next.length && seen < digitsBeforeCursor) {
-            if (/\\d/.test(next[nextCursor])) seen++;
+            if (/\d/.test(next[nextCursor])) seen++;
             nextCursor++;
           }
           if (seen === digitsBeforeCursor && next[nextCursor] === '/') nextCursor++;
