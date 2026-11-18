@@ -224,7 +224,7 @@ const closeState = {
 const closeSandbox = {
   state:closeState, CHART_ACCOUNTS,
   addAudit(){}, saveState(){}, renderAccountingModule(){}, showToast(){},
-  getTodayJalaliDate(){ return this.testToday; },
+  getTodayJalaliDate:()=>closeSandbox.testToday,
   testToday:'1404/12/29'
 };
 vm.createContext(closeSandbox);
