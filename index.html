@@ -983,6 +983,16 @@
     </div>
   </div>
 
+  <div id="modal-party-credit-refund" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
+      <div class="flex justify-between items-center border-b pb-2"><h3 id="credit-refund-title" class="font-black text-sm">تسویه نقدی اعتبار طرف حساب</h3><button onclick="closeModal('modal-party-credit-refund')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <input type="hidden" id="credit-refund-id" />
+      <input type="number" id="credit-refund-amount" min="1" placeholder="مبلغ تسویه (ریال)" class="touch-btn w-full border rounded-xl px-3 py-2 tabular-nums" />
+      <select id="credit-refund-bank" class="touch-btn w-full border rounded-xl px-3 py-2"></select>
+      <button onclick="submitPartyCreditRefund()" class="touch-btn w-full bg-holoo-700 text-white font-extrabold rounded-xl py-2">ثبت تسویه و صدور سند</button>
+    </div>
+  </div>
+
   <!-- Quick Modals: Party, Order, FX Rates, Bank CSV, Employee, Asset, Approval, Kardex, Print, Share -->
   <div id="modal-new-party" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
@@ -3654,6 +3664,51 @@
       showToast('اعتبار به فاکتور اعمال و سند حسابداری صادر شد.');
     }
 
+    function openPartyCreditRefund(creditId) {
+      const credit = (state.treasuryTxs || []).find(tx => tx.kind === 'party_credit' && String(tx.id) === String(creditId));
+      if (!credit) return;
+      document.getElementById('credit-refund-id').value = credit.id;
+      document.getElementById('credit-refund-amount').value = '';
+      document.getElementById('credit-refund-amount').max = Number(credit.remainingAmount ?? credit.amount ?? 0);
+      document.getElementById('credit-refund-bank').innerHTML = (state.bankAccounts || []).map(account => `<option value="${account.id}">${account.name}</option>`).join('');
+      document.getElementById('credit-refund-title').textContent = credit.creditDirection === 'sale' ? 'استرداد وجه به مشتری' : 'دریافت وجه اعتبار از تأمین‌کننده';
+      openModal('modal-party-credit-refund');
+    }
+
+    function submitPartyCreditRefund() {
+      const creditId = document.getElementById('credit-refund-id').value;
+      const credit = (state.treasuryTxs || []).find(tx => tx.kind === 'party_credit' && String(tx.id) === String(creditId));
+      const amount = Number(document.getElementById('credit-refund-amount').value || 0);
+      const bankId = document.getElementById('credit-refund-bank').value;
+      const bank = (state.bankAccounts || []).find(account => String(account.id) === String(bankId));
+      if (!credit || !bank) { showToast('اعتبار یا حساب صندوق/بانک معتبر نیست.', 'error'); return; }
+      const remaining = Number(credit.remainingAmount ?? credit.amount ?? 0);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > remaining + 0.000001) {
+        showToast('مبلغ تسویه از اعتبار باقیمانده بیشتر است یا معتبر نیست.', 'error'); return;
+      }
+      const isCustomer = credit.creditDirection === 'sale';
+      const direction = isCustomer ? 'pay' : 'receive';
+      const accountCode = bank.type === 'cash' ? '1101' : '1102';
+      const lines = isCustomer
+        ? [{ code: '2101', partyId: credit.partyId, desc: 'تسویه نقدی اعتبار مشتری', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bank.name, debit: 0, credit: amount }]
+        : [{ code: accountCode, partyId: null, desc: bank.name, debit: amount, credit: 0 }, { code: '1103', partyId: credit.partyId, desc: 'دریافت وجه از تأمین‌کننده بابت اعتبار', debit: 0, credit: amount }];
+      const refundId = createStableId('credit_refund');
+      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId });
+      if (voucherId === null || voucherId === undefined || voucherId === false) { showToast('صدور سند تسویه ناموفق بود؛ مانده‌ها تغییر نکرد.', 'error'); return; }
+      bank.balance = Number(bank.balance || 0) + (direction === 'receive' ? amount : -amount);
+      credit.remainingAmount = Math.max(0, remaining - amount);
+      credit.refunds = [...(credit.refunds || []), { id: refundId, amount, bankAccountId: bank.id, voucherId, direction, createdAt: new Date().toISOString() }];
+      state.treasuryTxs.unshift({
+        id: refundId, kind: 'party_credit_refund', dir: direction, partyId: credit.partyId,
+        amount, method: bank.type === 'cash' ? 'صندوق نقدی' : 'حواله بانکی',
+        allocInv: '—', desc: isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده',
+        sourceCreditId: credit.id
+      });
+      addAudit(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', { mode: 'manual', sourceType: 'party_credit_refund' });
+      saveState(); closeModal('modal-party-credit-refund'); renderAll();
+      showToast('تسویه اعتبار ثبت و موجودی صندوق/بانک به‌روزرسانی شد.');
+    }
+
     function renderTreasuryModule() {
       document.getElementById('bank-accounts-grid').innerHTML = state.bankAccounts.map(b => `
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 flex justify-between items-center text-xs">
@@ -3701,7 +3756,8 @@
                   <input id="credit-amount-${t.id}" type="number" min="1" max="${t.remainingAmount ?? t.amount}" placeholder="مبلغ اعمال" class="w-full border rounded-lg px-2 py-1 text-[10px] tabular-nums" />
                 </div>
                 <button onclick="applyPartyCredit('${t.id}')" class="w-full rounded-lg bg-amber-700 text-white py-1.5 font-bold text-[10px]">اعمال اعتبار روی فاکتور</button>
-              ` : '<span class="text-[10px] text-slate-500">اعتبار قابل اعمال یا فاکتور باز سازگار وجود ندارد.</span>'}
+                <button onclick="openPartyCreditRefund('${t.id}')" class="w-full rounded-lg bg-slate-700 text-white py-1.5 font-bold text-[10px]">${invoiceType === 'sale' ? 'استرداد وجه به مشتری' : 'دریافت وجه از تأمین‌کننده'}</button>
+              ` : (Number(t.remainingAmount ?? t.amount) > 0 ? `<button onclick="openPartyCreditRefund('${t.id}')" class="w-full rounded-lg bg-slate-700 text-white py-1.5 font-bold text-[10px]">${invoiceType === 'sale' ? 'استرداد وجه به مشتری' : 'دریافت وجه از تأمین‌کننده'}</button><span class="text-[10px] text-slate-500">فاکتور باز سازگار وجود ندارد.</span>` : '<span class="text-[10px] text-slate-500">اعتبار تسویه شده است.</span>')}
             </div>`;
         }
         return `
