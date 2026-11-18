@@ -2307,7 +2307,11 @@
       if (!raw) return '';
       const separated = raw.replace(/-/g, '/').split('/');
       if (finalize && separated.length === 3 && separated.every(part => /^\d{1,4}$/.test(part))) {
-        const [day, month, year] = separated;
+        const [first, second, third] = separated;
+        const legacyYearFirst = first.length === 4 && Number(first) >= 1000;
+        const day = legacyYearFirst ? third : first;
+        const year = legacyYearFirst ? first : third;
+        const month = second;
         if (Number(day) >= 1 && Number(day) <= 31 && Number(month) >= 1 && Number(month) <= 12 && year.length === 4) {
           return day.padStart(2, '0') + '/' + month.padStart(2, '0') + '/' + year;
         }
