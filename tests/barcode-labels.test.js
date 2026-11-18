@@ -62,7 +62,7 @@ assert.match(html, /document\.addEventListener\('input', event => format\(event\
 assert.match(html, /document\.addEventListener\('focus', event => format\(event\.target, true\), true\)/);
 assert.match(html, /document\.addEventListener\('focusout', event => format\(event\.target, true\), true\)/);
 assert.match(html, /document\.querySelectorAll\('input'\)\.forEach\(input => \{ format\(input, true\); addJalaliCalendarButton\(input\); \}\)/);
-assert.match(html, /placeholder="۰۱\/۰۱\/۱۴۰۵"/);
+assert.match(html, /placeholder="۱۴۰۵\/۰۱\/۰۱"/);
 assert.match(html, /id === 'ast-dep-period'/);
 console.log('PASS: global date inputs normalize Persian/Arabic/English digits and separators to Jalali YYYY/MM/DD while preserving year-month period fields');
 
