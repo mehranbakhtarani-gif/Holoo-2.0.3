@@ -6469,7 +6469,10 @@
         }
       }
       if (failedModules.length) {
-        setCloudBadge('⚠️ محیط برنامه باز شد؛ نمایش بعضی بخش‌ها با خطا روبه‌رو شد', 'text-amber-300');
+        // نام ماژول‌های معیوب را در رابط نشان بده تا خطای رندر قابل تشخیص باشد.
+        // جزئیات کامل خطا همچنان در کنسول باقی می‌ماند.
+        const failedLabel = failedModules.join('، ');
+        setCloudBadge('⚠️ خطای نمایش در بخش: ' + failedLabel, 'text-amber-300');
       }
     }
 
