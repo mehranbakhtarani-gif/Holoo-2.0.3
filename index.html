@@ -3014,7 +3014,6 @@
           }
         });
         const debAcc = payMethod === 'credit' ? '1103' : settlementAccountCode;
-        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) + grandTotal;
         const lines = [
           { code: debAcc, partyId, desc: `فاکتور فروش #${id}`, debit: grandTotal, credit: 0 },
           { code: '4101', partyId, desc: `درآمد فروش #${id}`, debit: 0, credit: sub },
@@ -3027,6 +3026,7 @@
           lines.push({ code: '2101', partyId: null, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
         }
         postVoucher(`صدور فاکتور فروش #${id}`, lines, date, { type: 'invoice', id });
+        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) + grandTotal;
       } else {
         invDraft.lines.forEach(l => {
           const p = state.products.find(x => x.id === l.productId);
@@ -3039,7 +3039,6 @@
           }
         });
         const purchaseCreditCode = settlementAccountCode || '2101';
-        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) - grandTotal;
         postVoucher(`ثبت فاکتور خرید #${id}`, [
           { code: '1105', partyId: null, desc: `ورود کالا #${id}`, debit: sub, credit: 0 },
           { code: '1106', partyId: null, desc: `اعتبار ارزش افزوده #${id}`, debit: vatAmount, credit: 0 },
@@ -3047,6 +3046,7 @@
             desc: payMethod === 'credit' ? `بستانکار بابت خرید #${id}` : `پرداخت خرید از ${settlementAccount.name} #${id}`,
             debit: 0, credit: grandTotal }
         ], date, { type: 'invoice', id });
+        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) - grandTotal;
       }
 
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
