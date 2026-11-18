@@ -8,7 +8,7 @@ assert.match(html, /function renderImportsModule\(/);
 assert.match(html, /function receiveImportShipment\(/);
 assert.match(html, /postedToWh: false/);
 assert.match(html, /nextStatus === 'received'\) receiveImportShipment\(shipment\)/);
-assert.match(html, /warehouse_receipt/);
+assert.match(html, /Warehouse receipt changes physical quantities and lot traceability only/);
 assert.match(html, /code: '2106'.*credit: costing\.totalExpenseRial/);
 assert.match(html, /SUB-2106/);
 assert.match(html, /بستانکاران هزینه‌های واردات/);
@@ -47,11 +47,10 @@ assert.equal(sandbox.receive(shipment), true);
 assert.equal(product.stock, 110);
 assert.equal(product.batches.reduce((sum, batch) => sum + batch.remainingQty, 0), 110);
 assert.equal(shipment.postedToWh, true);
-assert.equal(vouchers.length, 1);
-assert.equal(vouchers[0][1][0].debit, vouchers[0][1][1].credit);
+assert.equal(vouchers.length, 0, 'warehouse receipt must not duplicate the import registration voucher');
 assert.equal(sandbox.receive(shipment), false);
 assert.equal(product.stock, 110);
-console.log('PASS: import stock is posted once, only on warehouse receipt');
+console.log('PASS: import registration accounting is not duplicated on warehouse receipt');
 
 
 const multiProducts = [
@@ -81,13 +80,11 @@ assert.equal(multiProducts[1].stock, 24);
 assert.equal(multiProducts[0].batches.find(batch => batch.sourceRef === 'IMP-MULTI').sourceItemId, 'IMP-MULTI-A');
 assert.equal(multiProducts[1].batches.find(batch => batch.sourceRef === 'IMP-MULTI').sourceItemId, 'IMP-MULTI-B');
 assert.equal(multiProducts[0].batches.find(batch => batch.sourceRef === 'IMP-MULTI').unitCost, 1000);
-assert.equal(multiVouchers.length, 1);
-assert.equal(multiVouchers[0][1][0].debit, 5000);
-assert.equal(multiVouchers[0][1][1].credit, 5000);
+assert.equal(multiVouchers.length, 0, 'multi-item receipt must not create a second accounting voucher');
 assert.equal(multiShipment.postedToWh, true);
 assert.equal(multiSandbox.receive(multiShipment), false);
 assert.equal(multiProducts[0].stock, 12);
-console.log('PASS: multi-item shipment receipt creates item-linked lots and one balanced voucher');
+console.log('PASS: multi-item receipt creates item-linked lots without a duplicate voucher');
 
 const rollbackProducts = [
   { id: 'P-ROLL-1', stock: 5, buyPrice: 10, batches: [], kardex: [] },
@@ -97,7 +94,7 @@ const rollbackShipment = {
   id: 'IMP-ROLLBACK', totalLandedRial: 300, postedToWh: false,
   items: [
     { id: 'R1', productId: 'P-ROLL-1', quantityKg: 2, landedCostRial: 100, unitCost: 50 },
-    { id: 'R2', productId: 'P-ROLL-2', quantityKg: 2, landedCostRial: 200, unitCost: 100 }
+    { id: 'R2', productId: 'P-ROLL-2', quantityKg: -2, landedCostRial: 200, unitCost: 100 }
   ]
 };
 const rollbackSandbox = {
@@ -105,11 +102,11 @@ const rollbackSandbox = {
   HolooImportDomain: require('../import-domain.js'), DEVICE_ID: 'DEVICE-ROLLBACK',
   createStableId: (() => { let n = 0; return p => p + '-' + (++n); })(),
   getTodayJalaliDate: () => '1405/09/02', addAudit() {},
-  postVoucher() { throw new Error('simulated voucher failure'); }
+  postVoucher() { throw new Error('receipt must not post a voucher'); }
 };
 vm.createContext(rollbackSandbox);
 vm.runInContext(html.slice(helperStart, helperEnd) + html.slice(receiptStart, receiptEnd) + '; this.receive = receiveImportShipment;', rollbackSandbox);
-assert.throws(() => rollbackSandbox.receive(rollbackShipment), /simulated voucher failure/);
+assert.throws(() => rollbackSandbox.receive(rollbackShipment), /وزن یا بهای تمام‌شده/);
 assert.deepEqual(rollbackProducts.map(product => product.stock), [5, 7]);
 assert.deepEqual(rollbackProducts.map(product => product.batches.length), [0, 0]);
 assert.equal(rollbackShipment.postedToWh, false);
