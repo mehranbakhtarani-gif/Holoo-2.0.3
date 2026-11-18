@@ -4440,6 +4440,145 @@
       renderAccountingModule();
     }
 
+    let pnlFromDate = null;
+    let pnlToDate = null;
+
+    function buildProfitLossReport(fromDate, toDate) {
+      const from = normalizeLedgerDate(fromDate);
+      const to = normalizeLedgerDate(toDate);
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
+        throw new Error('بازه تاریخ سود و زیان معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
+      }
+
+      const accounts = new Map();
+      const voucherDetails = [];
+      let periodDebit = 0, periodCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0;
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+
+      vouchers.forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) {
+          invalidDateVouchers++;
+          return;
+        }
+        if (dateKey < from || dateKey > to) return;
+
+        let voucherDebit = 0, voucherCredit = 0;
+        (voucher.lines || []).forEach(line => {
+          const debit = Number(line.debit || 0);
+          const credit = Number(line.credit || 0);
+          if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+            invalidAmountLines++;
+            return;
+          }
+          voucherDebit += debit;
+          voucherCredit += credit;
+          const code = String(line.code || '');
+          if (!/^[456]/.test(code)) return;
+
+          const normalAmount = code.startsWith('4') ? credit - debit : debit - credit;
+          if (!accounts.has(code)) {
+            const catalog = CHART_ACCOUNTS.find(a => String(a.code) === code) ||
+              (state.accountCatalog || []).find(a => String(a.code) === code);
+            accounts.set(code, {
+              code,
+              name: catalog?.name || code,
+              category: code.startsWith('4') ? 'revenue' : (code.startsWith('5') ? 'cogs' : 'expense'),
+              debit: 0,
+              credit: 0,
+              amount: 0,
+              vouchers: new Map()
+            });
+          }
+          const account = accounts.get(code);
+          account.debit += debit;
+          account.credit += credit;
+          account.amount += normalAmount;
+          const voucherKey = String(voucher.id);
+          if (!account.vouchers.has(voucherKey)) {
+            account.vouchers.set(voucherKey, {
+              voucherId: voucher.id,
+              date: rawDate,
+              desc: voucher.desc || '',
+              debit: 0,
+              credit: 0,
+              amount: 0
+            });
+          }
+          const detail = account.vouchers.get(voucherKey);
+          detail.debit += debit;
+          detail.credit += credit;
+          detail.amount += normalAmount;
+        });
+        periodDebit += voucherDebit;
+        periodCredit += voucherCredit;
+      });
+
+      const rows = Array.from(accounts.values()).map(account => ({
+        ...account,
+        vouchers: Array.from(account.vouchers.values()).sort((a, b) =>
+          String(a.date).localeCompare(String(b.date)) || Number(a.voucherId || 0) - Number(b.voucherId || 0))
+      })).sort((a, b) => a.code.localeCompare(b.code));
+
+      const revenue = rows.filter(r => r.category === 'revenue').reduce((sum, r) => sum + r.amount, 0);
+      const cogs = rows.filter(r => r.category === 'cogs').reduce((sum, r) => sum + r.amount, 0);
+      const expenses = rows.filter(r => r.category === 'expense').reduce((sum, r) => sum + r.amount, 0);
+      return {
+        fromDate, toDate, rows, revenue, cogs, grossProfit: revenue - cogs,
+        expenses, netProfit: revenue - cogs - expenses,
+        periodDebit, periodCredit, trialBalanceDifference: periodDebit - periodCredit,
+        invalidDateVouchers, invalidAmountLines
+      };
+    }
+
+    function renderProfitLossReport() {
+      const from = pnlFromDate || String(state.fiscalYear || '1405') + '/01/01';
+      const to = pnlToDate || getTodayJalaliDate();
+      let report;
+      try { report = buildProfitLossReport(from, to); }
+      catch (error) {
+        document.getElementById('accounting-panel-body').innerHTML =
+          '<div class="bg-white rounded-2xl p-4 border text-rose-700 font-bold">' + escapeLedgerText(error.message) + '</div>';
+        return;
+      }
+      const categoryLabels = { revenue: 'درآمدها', cogs: 'بهای تمام‌شده', expense: 'هزینه‌های عملیاتی و اداری' };
+      const rows = report.rows.map(account => {
+        const details = account.vouchers.map(v => '<div class="grid grid-cols-1 md:grid-cols-5 gap-1.5 p-2 rounded-lg bg-white border text-[11px]">' +
+          '<span>' + escapeLedgerText(faNum(v.date)) + '</span><span>سند #' + escapeLedgerText(faNum(v.voucherId)) + '</span>' +
+          '<span class="md:col-span-2">' + escapeLedgerText(v.desc) + '</span>' +
+          '<strong class="text-left">' + money(v.amount) + '</strong>' +
+          '<button onclick="openVoucherFromLedger(\'' + escapeLedgerText(v.voucherId) + '\')" class="text-holoo-700 underline font-bold">مشاهده سند</button></div>').join('');
+        return '<div class="rounded-xl border p-3 space-y-2">' +
+          '<div class="flex flex-wrap justify-between gap-2 font-bold"><span>' + escapeLedgerText(faNum(account.code) + ' - ' + account.name) +
+          '<small class="block text-slate-400 font-normal">' + categoryLabels[account.category] + '</small></span>' +
+          '<strong class="tabular-nums">' + money(account.amount) + '</strong></div>' +
+          '<div class="space-y-1">' + details + '</div></div>';
+      }).join('');
+      const warnings = [];
+      if (report.trialBalanceDifference !== 0) warnings.push('جمع بدهکار و بستانکار اسناد این دوره برابر نیست: ' + money(report.trialBalanceDifference));
+      if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند دارای تاریخ نامعتبر است و قابل تعیین در این دوره نیست.');
+      if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف سند با مبلغ نامعتبر از محاسبه کنار گذاشته شد.');
+      document.getElementById('accounting-panel-body').innerHTML =
+        '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
+        '<div class="flex flex-wrap justify-between items-center gap-2"><div class="font-black text-sm">صورت سود و زیان بر مبنای دفتر روزنامه</div>' +
+        '<span class="text-[10px] text-slate-500">مبالغ بر اساس اسناد ثبت‌شده در بازه انتخابی</span></div>' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
+        '<label class="font-bold">از تاریخ شمسی<input id="pnl-from" value="' + escapeLedgerText(from) + '" onchange="pnlFromDate=this.value; renderProfitLossReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
+        '<label class="font-bold">تا تاریخ شمسی<input id="pnl-to" value="' + escapeLedgerText(to) + '" onchange="pnlToDate=this.value; renderProfitLossReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>درآمد خالص</span><strong class="block">' + money(report.revenue) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>بهای تمام‌شده</span><strong class="block">' + money(report.cogs) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>سود ناخالص</span><strong class="block">' + money(report.grossProfit) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>هزینه‌ها</span><strong class="block">' + money(report.expenses) + '</strong></div></div>' +
+        '<div class="p-4 rounded-xl ' + (report.netProfit < 0 ? 'bg-rose-700' : 'bg-emerald-800') + ' text-white flex justify-between font-black"><span>سود (زیان) خالص دوره</span><strong>' + money(report.netProfit) + '</strong></div>' +
+        (warnings.length ? '<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1">' + warnings.map(w => '<p>' + escapeLedgerText(w) + '</p>').join('') + '</div>' :
+          '<div class="p-2 rounded-lg bg-emerald-50 text-emerald-800">کنترل توازن بدهکار و بستانکار اسناد دوره برقرار است.</div>') +
+        '<div class="font-black pt-2">جزئیات حساب‌ها و اسناد (برای پیگیری، «مشاهده سند» را بزنید)</div>' +
+        (rows || '<p class="text-center text-slate-400 p-4">در این بازه گردش درآمد یا هزینه ثبت نشده است.</p>') +
+        '</div>';
+    }
+
     function saveCustomAccount() {
       const parentId = document.getElementById('new-acc-parent')?.value;
       const code = document.getElementById('new-acc-code')?.value.trim();
@@ -4528,9 +4667,7 @@
         const rows = Object.values(bal).filter(b => b.debTurn > 0 || b.credTurn > 0).map(b => { sD += b.debBal; sC += b.credBal; return `<div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between"><span>${faNum(b.code)} - ${b.name}</span><strong class="tabular-nums">${b.debBal ? `${money(b.debBal)} بد` : `${money(b.credBal)} بس`}</strong></div>`; }).join('');
         box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-2"><div class="font-black text-sm">تراز آزمایشی ۴ ستونی</div>${rows}<div class="p-3 rounded-xl bg-holoo-950 text-amber-300 font-black flex justify-between tabular-nums"><span>جمع مانده (تراز):</span><span>${money(sD)} = ${money(sC)}</span></div></div>`;
       } else if (activeAccTab === 'pnl') {
-        const rev = (bal['4101']?.credBal || 0) + (bal['4104']?.credBal || 0) - (bal['4102']?.debBal || 0) - (bal['4103']?.debBal || 0);
-        const exp = (bal['5101']?.debBal || 0) + (bal['6101']?.debBal || 0) + (bal['6102']?.debBal || 0) + (bal['6103']?.debBal || 0) + (bal['6104']?.debBal || 0);
-        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-2"><div class="font-black text-sm">صورت سود و زیان جامع</div><div class="p-3 bg-slate-50 rounded-xl flex justify-between"><span>درآمدهای عملیاتی و تسعیر ارز:</span><strong class="tabular-nums">${money(rev)}</strong></div><div class="p-3 bg-slate-50 rounded-xl flex justify-between"><span>بهای تمام‌شده و هزینه‌ها:</span><strong class="tabular-nums">${money(exp)}</strong></div><div class="p-3.5 bg-emerald-700 text-white rounded-xl font-black flex justify-between tabular-nums"><span>سود (زیان) خالص دوره:</span><span>${money(rev - exp)}</span></div></div>`;
+        renderProfitLossReport();
       } else if (activeAccTab === 'bs') {
         const assets = Object.values(bal).filter(b => b.code.startsWith('1')).reduce((s, b) => s + b.debBal - b.credBal, 0);
         const liabCap = Object.values(bal).filter(b => b.code.startsWith('2') || b.code.startsWith('3')).reduce((s, b) => s + b.credBal - b.debBal, 0);
