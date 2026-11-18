@@ -5355,7 +5355,7 @@
       catch (error) { showToast(error.message, 'error'); return; }
       const cell = value => {
         let raw = String(value == null ? '' : value);
-        if (/^\\s*[=+@-]/.test(raw)) raw = "'" + raw;
+        if (/^\s*[=+@-]/.test(raw)) raw = "'" + raw;
         return '"' + raw.replace(/"/g, '""') + '"';
       };
       const data = [
@@ -5363,12 +5363,12 @@
         ...report.rows.map(row => [row.code,row.name,row.periodDebit,row.periodCredit,row.closingBalanceDebit,row.closingBalanceCredit]),
         ['جمع کل','',report.totals.periodDebit,report.totals.periodCredit,report.totals.closingBalanceDebit,report.totals.closingBalanceCredit]
       ];
-      const csv = '\\uFEFF' + [['تراز آزمایشی چهارستونی','از تاریخ',from,'تا تاریخ',to], ...data]
-        .map(row => row.map(cell).join(',')).join('\\r\\n');
+      const csv = '\uFEFF' + [['تراز آزمایشی چهارستونی','از تاریخ',from,'تا تاریخ',to], ...data]
+        .map(row => row.map(cell).join(',')).join('\r\n');
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url; link.download = 'Holoo_Trial_Balance_' + from.replace(/\\//g,'-') + '_' + to.replace(/\\//g,'-') + '.csv';
+      link.href = url; link.download = 'Holoo_Trial_Balance_' + from.replace(/\//g,'-') + '_' + to.replace(/\//g,'-') + '.csv';
       document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       showToast('خروجی تراز آزمایشی دانلود شد.');
