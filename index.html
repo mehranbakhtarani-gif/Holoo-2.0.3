@@ -4677,6 +4677,15 @@
             <span class="px-2 py-0.5 rounded bg-white border font-bold text-[10px]">${statusLabels[c.status] || c.status}</span>
           </div>
           <div class="text-[10px] text-slate-600 tabular-nums">صیادی: ${faNum(c.sayad)} | سررسید: ${faNum(c.dueDate)} | طرف: ${getPartyName(c.partyId)}</div>
+          ${!c.bankAccountId && ['in_progress', 'overdue'].includes(c.status) ? `
+            <div class="flex gap-1 items-center">
+              <select id="legacy-check-bank-${escapeBankReconcileText(c.id)}" class="min-w-0 flex-1 border rounded-lg px-2 py-1 text-[10px] bg-white">
+                <option value="">تعیین حساب بانکی چک قدیمی</option>
+                ${(state.bankAccounts || []).filter(account => account.type === 'bank').map(account => `<option value="${escapeBankReconcileText(account.id)}">${escapeBankReconcileText(account.name)}</option>`).join('')}
+              </select>
+              <button onclick="assignLegacyCheckBankAccount('${escapeBankReconcileText(c.id)}')" class="bg-sky-700 text-white px-2 py-1 rounded font-bold text-[10px]">ذخیره بانک</button>
+            </div>
+          ` : (c.bankAccountId ? `<div class="text-[10px] text-slate-500">حساب بانکی: ${escapeBankReconcileText((state.bankAccounts || []).find(account => String(account.id) === String(c.bankAccountId))?.name || 'حساب ثبت‌شده')}</div>` : '')}
           <div class="flex flex-wrap justify-between items-center pt-1 border-t gap-1">
             <strong class="tabular-nums">${money(c.amount)}</strong>
             <div class="flex gap-1">
@@ -4805,6 +4814,22 @@
       record.status = status; record.statusUpdatedAt = new Date().toISOString(); record.statusUpdatedBy = state.activeRole || 'mehran';
       addAudit('تغییر وضعیت تعهد پرداختنی ' + record.title + ' به ' + (COMMITMENT_STATUS_LABELS[status] || status), { sourceType: 'payable_commitment' });
       saveState(); renderAll(); showToast(status === 'fulfilled' ? 'تعهد انجام‌شده علامت خورد؛ پرداخت باید جداگانه در خزانه ثبت شده باشد.' : 'تعهد لغو شد.');
+    }
+
+    function assignLegacyCheckBankAccount(checkId) {
+      const check = (state.checks || []).find(item => String(item.id) === String(checkId));
+      if (!check || !['in_progress', 'overdue'].includes(check.status) || check.bankAccountId) {
+        showToast('فقط چک قدیمیِ تعیین‌تکلیف‌نشده و فاقد حساب بانکی قابل اصلاح است.', 'error'); return;
+      }
+      const selectedId = document.getElementById('legacy-check-bank-' + checkId)?.value || '';
+      const bank = (state.bankAccounts || []).find(account => account.type === 'bank' && String(account.id) === String(selectedId));
+      if (!bank) { showToast('یک حساب بانکی معتبر برای این چک انتخاب کنید.', 'error'); return; }
+      check.bankAccountId = bank.id;
+      check.bankAccountAssignedAt = new Date().toISOString();
+      check.bankAccountAssignedBy = state.activeRole || 'mehran';
+      addAudit('تخصیص حساب بانکی به چک قدیمی ' + (check.sayad || check.id), { sourceType: 'legacy_check_bank_assignment' });
+      saveState(); renderAll();
+      showToast('حساب بانکی چک مشخص شد؛ هنوز هیچ سند یا گردش بانکی ثبت نشده است.');
     }
 
     function updateCheckStatus(id, st) {
