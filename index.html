@@ -3291,10 +3291,35 @@
         });
         const movements = Array.isArray(product?.kardex) ? product.kardex : [];
         checkedMovements += movements.length;
+        const currentStock = Number(product?.stock);
+        if (!movements.length && Number.isFinite(currentStock) && Math.abs(currentStock) > 0.000001) {
+          issues.push({ type: 'kardex-missing', productId, productName, message: 'کالا موجودی دارد اما هیچ ردیف کاردکسی برای آن ثبت نشده است.', detail: `موجودی فعلی: ${product?.stock}` });
+        }
         if (movements.length) {
+          let previousBalance = null;
+          movements.forEach((movement, index) => {
+            const incoming = Number(movement?.inQty ?? 0);
+            const outgoing = Number(movement?.outQty ?? 0);
+            const balance = Number(movement?.bal);
+            const validRow = Number.isFinite(incoming) && incoming >= 0 &&
+              Number.isFinite(outgoing) && outgoing >= 0 &&
+              Number.isFinite(balance) && balance >= 0;
+            if (!validRow) {
+              issues.push({ type: 'kardex-row', productId, productName, message: 'مقدار ورود، خروج یا مانده یک ردیف کاردکس نامعتبر است.', detail: `ردیف: ${index + 1} | ورود: ${movement?.inQty ?? '—'} | خروج: ${movement?.outQty ?? '—'} | مانده: ${movement?.bal ?? '—'}` });
+              previousBalance = null;
+              return;
+            }
+            if (previousBalance !== null) {
+              const expectedBalance = previousBalance + incoming - outgoing;
+              if (Math.abs(expectedBalance - balance) > 0.000001) {
+                issues.push({ type: 'kardex-sequence', productId, productName, message: 'مانده این ردیف با مانده ردیف قبل به‌علاوه ورود و کسر خروج سازگار نیست.', detail: `ردیف: ${index + 1} | مانده مورد انتظار: ${expectedBalance} | مانده ثبت‌شده: ${balance}` });
+              }
+            }
+            previousBalance = balance;
+          });
           const last = movements[movements.length - 1];
-          const lastBalance = Number(last?.bal), stock = Number(product?.stock);
-          if (!Number.isFinite(lastBalance) || !Number.isFinite(stock) || Math.abs(lastBalance - stock) > 0.000001) {
+          const lastBalance = Number(last?.bal);
+          if (!Number.isFinite(lastBalance) || !Number.isFinite(currentStock) || Math.abs(lastBalance - currentStock) > 0.000001) {
             issues.push({ type: 'kardex-balance', productId, productName, message: 'مانده آخرین ردیف کاردکس با موجودی فعلی کالا برابر نیست.', detail: `مانده کاردکس: ${last?.bal ?? 'نامعتبر'} | موجودی فعلی: ${product?.stock ?? 'نامعتبر'}` });
           }
         }
