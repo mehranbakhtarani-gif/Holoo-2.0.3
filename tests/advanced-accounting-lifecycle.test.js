@@ -265,5 +265,63 @@ test('cancelling an invoice after partial returns reverses only its remaining va
   assert.equal(saves,1);
 });
 
+
+test('return on a fully settled sales invoice creates customer credit instead of negative receivable', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'AVG', treasuryTxs:[],
+    invoices:[{id:3201,type:'sale',partyId:'P1',grandTotal:100,paidAmount:100,items:[{productId:'X1',kg:10,returnedKg:0,price:10}]}],
+    products:[{id:'X1',stock:0,kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, document:doc({'partial-ret-inv-id':'3201','pret-qty-0':'2'}),
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
+    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+  });
+  submit();
+  assert.equal(state.treasuryTxs.length,1);
+  assert.equal(state.treasuryTxs[0].kind,'party_credit');
+  assert.equal(state.treasuryTxs[0].creditDirection,'sale');
+  assert.equal(state.treasuryTxs[0].remainingAmount,20);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),20);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),20);
+  assert.equal(posted[0][1].find(line=>line.code==='1103').credit,0);
+  assert.equal(posted[0][1].find(line=>line.code==='2101').credit,20);
+  assert.equal(saves,1);
+});
+
+test('return below the unpaid invoice balance does not create excess party credit', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'AVG', treasuryTxs:[],
+    invoices:[{id:3202,type:'purchase',partyId:'P2',grandTotal:100,paidAmount:20,items:[{productId:'X2',kg:10,returnedKg:0,price:10}]}],
+    products:[{id:'X2',stock:10,kardex:[]}]
+  };
+  const posted=[];
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, document:doc({'partial-ret-inv-id':'3202','pret-qty-0':'2'}),
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
+    postVoucher(...a){posted.push(a);}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+  });
+  submit();
+  assert.equal(state.treasuryTxs.length,0);
+  assert.equal(posted[0][1].find(line=>line.code==='2101').debit,20);
+  assert.equal(posted[0][1].some(line=>line.code==='1103' && line.debit>0),false);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.debit,0),20);
+  assert.equal(posted[0][1].reduce((n,line)=>n+line.credit,0),20);
+});
+
+test('party credit balances are separated by party and customer/supplier direction', () => {
+  const state={treasuryTxs:[
+    {kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:100,remainingAmount:70},
+    {kind:'party_credit',partyId:'P1',creditDirection:'purchase',amount:50,remainingAmount:50},
+    {kind:'party_credit',partyId:'P2',creditDirection:'sale',amount:30,remainingAmount:30}
+  ]};
+  const balance=load(section('function getPartyCreditBalance(partyId, direction)', 'function agingBucket(daysPastDue)'), 'getPartyCreditBalance', {state});
+  assert.equal(balance('P1','sale'),70);
+  assert.equal(balance('P1','purchase'),50);
+  assert.equal(balance('P1'),120);
+  assert.equal(balance('P2','sale'),30);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
