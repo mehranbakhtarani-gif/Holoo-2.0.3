@@ -90,6 +90,23 @@ function runInvoice(type) {
   const submit = load(extractFunction('submitInvoice', 'function renderInvoicesModule()'), 'submitInvoice', {
     state, invDraft: draft, document: fakeDocument(values),
     addStockBatch(product, details) { product.batches = product.batches || []; product.batches.push({ ...details, id: 'TEST-BATCH-' + product.batches.length, remainingQty: details.quantity }); },
+    consumeFifoStock(product, quantity) {
+      product.batches = product.batches || [];
+      if (!product.batches.length) product.batches.push({ id: 'TEST-OPENING', lot: 'TEST', remainingQty: product.stock, unitCost: product.buyPrice });
+      let remaining = quantity;
+      const allocations = [];
+      for (const batch of product.batches) {
+        const take = Math.min(remaining, Number(batch.remainingQty || 0));
+        if (take > 0) {
+          batch.remainingQty -= take;
+          allocations.push({ batchId: batch.id, lot: batch.lot, quantity: take, unitCost: batch.unitCost });
+          remaining -= take;
+        }
+        if (remaining <= 0) break;
+      }
+      if (remaining > 0) throw new Error('insufficient test batch stock');
+      return { totalCost: Math.round(allocations.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)), allocations };
+    },
     postVoucher(...args) { posted.push(args); }, saveState() { saves++; }, renderAll() {}, showToast() {}, faNum: String
   });
   submit();
