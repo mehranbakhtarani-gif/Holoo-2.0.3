@@ -44,7 +44,7 @@ These cannot be proven by static CI alone and must be checked on the actual Andr
 - Physical Android download, printer, scanner, and PDF flows have not been tested by CI.
 - The application currently uses external CDN resources (Tailwind, Chart.js, and Vazirmatn fonts). The service worker can cache these after a successful online fetch, but a fresh installation on a device that has never loaded online is not guaranteed to run fully offline.
 - The SVG manifest icons are present, but install behavior must be confirmed in Chrome on the target Android version.
-- Database migrations `202611180002_payroll_fixed_asset_sync_collections.sql` and `202611180003_guarantees_payable_commitments.sql` remain source files only and have not been applied to live Supabase. Do not assume those new collections sync to cloud until the migrations are reviewed and explicitly approved.
+- Live Supabase migration history was checked on 2026-11-18 and confirms that `payroll_fixed_asset_sync_collections`, `guarantees_payable_commitments`, and `same_device_sequential_merge` are applied. The `holoo_apply_state_operation` RPC is present as `SECURITY INVOKER`. This confirms schema/RPC deployment only; the three-physical-device acceptance test below is still required.
 
 ## Data safety
 
