@@ -2298,6 +2298,59 @@
       return `${get('year')}/${String(get('month')).padStart(2, '0')}/${String(get('day')).padStart(2, '0')}`;
     }
 
+    // Normalize every date entry to the app-wide Jalali YYYY/MM/DD format.
+    function normalizeJalaliDateInputValue(value, finalize = false) {
+      const raw = String(value == null ? '' : value).trim()
+        .replace(/[۰-۹٠-٩]/g, ch => '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch) >= 0
+          ? String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch))
+          : String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
+      if (!raw) return '';
+      const separated = raw.replace(/-/g, '/').split('/');
+      if (finalize && separated.length === 3 && separated.every(part => /^\d{1,4}$/.test(part))) {
+        const [year, month, day] = separated;
+        return year.padStart(4, '0') + '/' + month.padStart(2, '0') + '/' + day.padStart(2, '0');
+      }
+      const digits = raw.replace(/\D/g, '').slice(0, 8);
+      if (digits.length <= 4) return digits;
+      if (digits.length <= 6) return digits.slice(0, 4) + '/' + digits.slice(4);
+      return digits.slice(0, 4) + '/' + digits.slice(4, 6) + '/' + digits.slice(6, 8);
+    }
+
+    function isJalaliDateInput(input) {
+      if (!input || input.tagName !== 'INPUT' || input.type === 'date') return false;
+      const id = String(input.id || '').toLowerCase();
+      if (id === 'ast-dep-period' || /period|csv|search|barcode/.test(id)) return false;
+      const hints = [id, input.name, input.placeholder, input.getAttribute('aria-label'), input.title]
+        .filter(Boolean).join(' ');
+      if (/date|تاریخ/i.test(hints)) return true;
+      const label = input.closest('label');
+      return !!(label && /تاریخ/.test(label.textContent || ''));
+    }
+
+    function bindGlobalJalaliDateFormatting() {
+      const format = (input, finalize = false) => {
+        if (!isJalaliDateInput(input)) return;
+        const before = input.value;
+        const cursor = typeof input.selectionStart === 'number' ? input.selectionStart : before.length;
+        const digitsBeforeCursor = before.slice(0, cursor).replace(/[^0-9۰-۹٠-٩]/g, '').length;
+        const next = normalizeJalaliDateInputValue(before, finalize);
+        if (next === before) return;
+        input.value = next;
+        if (typeof input.setSelectionRange === 'function') {
+          let nextCursor = 0, seen = 0;
+          while (nextCursor < next.length && seen < digitsBeforeCursor) {
+            if (/\d/.test(next[nextCursor])) seen++;
+            nextCursor++;
+          }
+          if (seen === digitsBeforeCursor && next[nextCursor] === '/') nextCursor++;
+          try { input.setSelectionRange(nextCursor, nextCursor); } catch (_) {}
+        }
+      };
+      document.addEventListener('input', event => format(event.target, false), true);
+      document.addEventListener('change', event => format(event.target, true), true);
+      document.addEventListener('focusout', event => format(event.target, true), true);
+    }
+
     function addAudit(action, metadata = {}) {
       const roles = USER_ROLE_LABELS;
       const now = new Date();
@@ -6825,6 +6878,7 @@
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
+      bindGlobalJalaliDateFormatting();
       // وضعیت را پیش از هر عملیات async عوض کن تا نشانگر پیش‌فرض برای همیشه باقی نماند.
       setCloudBadge('⏳ در حال آماده‌سازی حافظه محلی...', 'text-sky-300');
 
