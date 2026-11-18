@@ -2840,6 +2840,8 @@
       if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
         throw new Error('بازه تاریخ گردش طرف حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       }
+      const party = (state.parties || []).find(item => String(item.id) === String(partyId));
+      const controlCodes = new Set([String(party?.ledgerAccountCode || '1103'), '1103', '2101', '1107']);
       const entries = [];
       let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
       let invalidDateVouchers = 0, invalidAmountLines = 0;
@@ -2850,7 +2852,7 @@
         const invalidLines = countInvalidReportVoucherLines(voucher);
         if (invalidLines) { invalidAmountLines += invalidLines; return; }
         (voucher.lines || []).forEach(line => {
-          if (line.partyId == null || String(line.partyId) !== String(partyId)) return;
+          if (line.partyId == null || String(line.partyId) !== String(partyId) || !controlCodes.has(String(line.code || ''))) return;
           const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
           if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) return;
           const entry = {
