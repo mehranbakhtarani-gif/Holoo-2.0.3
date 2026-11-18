@@ -19,10 +19,10 @@ function load(source, name, context) {
   vm.runInContext(source + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
-function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyValue = '', failPosting = false }) {
+function fixture({ amount, selectedIds = [], invoices, dir = 'receive', method = 'cash', accountType = 'cash', accountId = 'B1', legacyValue = '', failPosting = false }) {
   const values = {
-    'tr-dir': dir, 'tr-party': 'P1', 'tr-method': 'cash', 'tr-amount': String(amount),
-    'tr-bank-acc': 'B1', 'tr-desc': 'آزمون تخصیص', 'tr-alloc-inv': legacyValue
+    'tr-dir': dir, 'tr-party': 'P1', 'tr-method': method, 'tr-amount': String(amount),
+    'tr-bank-acc': accountId, 'tr-desc': 'آزمون تخصیص', 'tr-alloc-inv': legacyValue
   };
   const selectedOptions = selectedIds.map(value => ({ value: String(value) }));
   const document = {
@@ -34,7 +34,7 @@ function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyVa
   const state = {
     fiscalYear: '1405', parties: [{ id: 'P1' }],
     invoices: structuredClone(invoices),
-    checks: [], bankAccounts: [{ id: 'B1', type: 'cash', name: 'صندوق', balance: 1000 }],
+    checks: [], bankAccounts: [{ id: 'B1', type: accountType, name: accountType === 'cash' ? 'صندوق' : 'بانک آزمایشی', balance: 1000 }],
     treasuryTxs: []
   };
   const posted = [];
@@ -132,6 +132,43 @@ test('payments allocate only to supplier purchase invoices', () => {
   r.run();
   assert.equal(r.state.invoices[0].paidAmount, 150);
   assert.equal(r.posted.length, 1);
+});
+
+
+test('bank transfer rejects a selected cash account instead of silently posting to it', () => {
+  const r = fixture({ amount: 100, method: 'bank', accountType: 'cash', invoices: [] });
+  r.run();
+  assert.equal(r.posted.length, 0);
+  assert.equal(r.state.bankAccounts[0].balance, 1000);
+  assert.equal(r.state.treasuryTxs.length, 0);
+  assert.equal(r.saves, 0);
+});
+
+test('cash receipt rejects a selected bank account instead of silently posting to it', () => {
+  const r = fixture({ amount: 100, method: 'cash', accountType: 'bank', invoices: [] });
+  r.run();
+  assert.equal(r.posted.length, 0);
+  assert.equal(r.state.bankAccounts[0].balance, 1000);
+  assert.equal(r.state.treasuryTxs.length, 0);
+  assert.equal(r.saves, 0);
+});
+
+test('missing selected treasury account is rejected without fallback to the first account', () => {
+  const r = fixture({ amount: 100, method: 'bank', accountType: 'bank', accountId: '', invoices: [] });
+  r.run();
+  assert.equal(r.posted.length, 0);
+  assert.equal(r.state.bankAccounts[0].balance, 1000);
+  assert.equal(r.state.treasuryTxs.length, 0);
+  assert.equal(r.saves, 0);
+});
+
+test('valid bank transfer posts to the explicitly selected bank account', () => {
+  const r = fixture({ amount: 100, method: 'bank', accountType: 'bank', invoices: [] });
+  r.run();
+  assert.equal(r.posted.length, 1);
+  assert.equal(r.state.bankAccounts[0].balance, 1100);
+  assert.equal(r.state.treasuryTxs.length, 1);
+  assert.equal(r.saves, 1);
 });
 
 console.log(`PASS: ${passed.length} treasury allocation tests`);

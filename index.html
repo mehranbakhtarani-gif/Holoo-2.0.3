@@ -4511,13 +4511,20 @@
       }
       if (selectedInvoices.length && amountLeft > 0.000001) { showToast('تقسیم مبلغ بین فاکتورها کامل نشد؛ تراکنش ثبت نشد.', 'error'); return; }
 
+      const selectedAccountId = document.getElementById('tr-bank-acc').value;
+      const selectedAccount = method === 'check' ? null
+        : state.bankAccounts.find(account => String(account.id) === String(selectedAccountId));
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
         if (!sayad || state.checks.some(c => String(c.sayad) === sayad)) { showToast('شناسه صیادی الزامی است و نباید تکراری باشد.', 'error'); return; }
       } else {
-        const selectedBankId = document.getElementById('tr-bank-acc').value;
-        const bAcc = state.bankAccounts.find(b => b.id === selectedBankId) || state.bankAccounts.find(b => b.type === 'cash') || state.bankAccounts[0];
-        if (!bAcc) { showToast('ابتدا یک حساب صندوق یا بانک تعریف کنید.', 'error'); return; }
+        const expectedAccountType = method === 'cash' ? 'cash' : (method === 'bank' ? 'bank' : null);
+        if (!selectedAccount || !expectedAccountType || selectedAccount.type !== expectedAccountType) {
+          showToast(method === 'cash'
+            ? 'برای دریافت یا پرداخت نقدی، یک حساب صندوق معتبر انتخاب کنید.'
+            : 'برای حواله بانکی، یک حساب بانکی معتبر انتخاب کنید.', 'error');
+          return;
+        }
       }
 
       const txId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
@@ -4537,7 +4544,7 @@
         check.voucherRefs = { issued: voucherId };
         state.checks.unshift(check);
       } else {
-        const bAcc = state.bankAccounts.find(b => b.id === document.getElementById('tr-bank-acc').value) || state.bankAccounts.find(b => b.type === 'cash') || state.bankAccounts[0];
+        const bAcc = selectedAccount;
         const accountCode = bAcc.type === 'cash' ? '1101' : '1102';
         const lines = dir === 'receive' ? [{ code: accountCode, partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bAcc.name, debit: 0, credit: amount }];
         try {
