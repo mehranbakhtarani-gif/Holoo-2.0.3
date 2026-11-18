@@ -4226,6 +4226,7 @@
             <strong class="tabular-nums">${money(t.amount)}</strong>
           </div>`;
       }).join('');
+      renderGuaranteesAndCommitments();
     }
 
     const GUARANTEE_KIND_LABELS = { bank: 'ضمانت‌نامه بانکی', cheque: 'چک تضمین', promissory: 'سفته', other: 'سایر وثایق' };
@@ -4312,9 +4313,6 @@
       record.status = status; record.statusUpdatedAt = new Date().toISOString(); record.statusUpdatedBy = state.activeRole || 'mehran';
       addAudit('تغییر وضعیت تعهد پرداختنی ' + record.title + ' به ' + (COMMITMENT_STATUS_LABELS[status] || status), { sourceType: 'payable_commitment' });
       saveState(); renderAll(); showToast(status === 'fulfilled' ? 'تعهد انجام‌شده علامت خورد؛ پرداخت باید جداگانه در خزانه ثبت شده باشد.' : 'تعهد لغو شد.');
-    }
-
-      renderGuaranteesAndCommitments();
     }
 
     function updateCheckStatus(id, st) {
