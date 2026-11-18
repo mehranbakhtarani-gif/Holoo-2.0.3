@@ -209,6 +209,52 @@ assert.equal(imbalanceCf.voucherDebitCreditDifference,15);
 assert.equal(api.buildAccountLedger('1101','1405/01/01','1405/01/30').closingNet,1240);
 assert.equal(api.buildAccountLedger('1102','1405/01/01','1405/01/30').closingNet,805);
 
+
+const closeState = {
+  fiscalYear:'1404', activeRole:'mehran', checks:[], invoices:[],
+  vouchers:[
+    voucher(1,'1404/01/05','فروش سال مالی',[
+      {code:'1103',debit:1000,credit:0},{code:'4101',debit:0,credit:1000}
+    ]),
+    voucher(2,'1404/02/05','هزینه سال مالی',[
+      {code:'6101',debit:600,credit:0},{code:'1101',debit:0,credit:600}
+    ])
+  ]
+};
+const closeSandbox = {
+  state:closeState, CHART_ACCOUNTS,
+  addAudit(){}, saveState(){}, renderAccountingModule(){}, showToast(){},
+  getTodayJalaliDate(){ return this.testToday; },
+  testToday:'1404/12/29'
+};
+vm.createContext(closeSandbox);
+vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()'), closeSandbox);
+vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function countInvalidReportVoucherLines('), closeSandbox);
+vm.runInContext(sliceBetween('    function inspectTrialBalanceVoucher(', '    function buildTrialBalanceReport('), closeSandbox);
+vm.runInContext(sliceBetween('    function getFiscalYearEndDate(', '    function renderFiscalYearCloseModule('), closeSandbox);
+vm.runInContext(sliceBetween('    function postVoucher(', '    // ========================================================================='), closeSandbox);
+closeSandbox.testToday = closeSandbox.getFiscalYearEndDate('1404');
+const closePreview = closeSandbox.buildFiscalYearClosePreview('1404');
+assert.equal(closePreview.blocked,false);
+assert.equal(closePreview.profit,400);
+assert.equal(closePreview.rows.find(row=>row.code==='4101').net,-1000);
+assert.equal(closePreview.rows.find(row=>row.code==='6101').net,600);
+closeSandbox.closeFiscalYear();
+const closingVoucher = closeState.vouchers.find(v=>v.sourceType==='fiscal_year_close');
+assert.ok(closingVoucher,'closing voucher must be posted');
+assert.equal(closingVoucher.sourceId,'1404');
+assert.equal(closingVoucher.locked,true,'closing voucher must be locked');
+assert.equal(closingVoucher.lines.reduce((sum,line)=>sum+line.debit,0),1000);
+assert.equal(closingVoucher.lines.reduce((sum,line)=>sum+line.credit,0),1000);
+assert.equal(closingVoucher.lines.find(line=>line.code==='3102').credit,400);
+assert.equal(closeSandbox.buildFiscalYearClosePreview('1404').alreadyClosed,true);
+assert.throws(()=>closeSandbox.postVoucher('ثبت با تاریخ سال بسته',[
+  {code:'1101',debit:10,credit:0},{code:'4101',debit:0,credit:10}
+],'1404/06/01'),/سال مالی 1404 بسته شده است/);
+assert.doesNotThrow(()=>closeSandbox.postVoucher('ثبت در سال قبل',[
+  {code:'1101',debit:10,credit:0},{code:'4101',debit:0,credit:10}
+],'1403/06/01'),'closing one fiscal year must not block earlier historical years');
+
 console.log('PASS: seven-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
 console.log('PASS: invalid voucher is excluded consistently from ledger, trial balance, P&L, balance sheet and cash flow');
 console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow');
