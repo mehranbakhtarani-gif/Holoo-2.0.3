@@ -117,6 +117,36 @@ assert.equal(cashLedger.closingNet + bankLedger.closingNet,cf.closingCash,
   'cash and bank account ledgers must reconcile to cash flow closing cash');
 assert.equal(bs.assets,bs.liabilities+bs.equity+pnl.netProfit,
   'balance sheet equity plus P&L result must reconcile');
+
+vm.runInContext(sliceBetween('    function getAccountBalances()', '    function getPartyNetBalance(') +
+  '; this.getAccountBalances = getAccountBalances;', sandbox);
+const savedVouchers = sandbox.state.vouchers;
+sandbox.state.vouchers = [
+  ...savedVouchers,
+  voucher(7,'1405/01/07','سند نامتوازن',[{code:'1101',debit:50,credit:0}]),
+  voucher(8,'1405/13/01','سند با تاریخ نامعتبر',[{code:'1101',debit:77,credit:0}])
+];
+const accountBalances = sandbox.getAccountBalances();
+assert.equal(accountBalances['1102'].debTurn,1000,'invalid amount vouchers must be excluded from trial balance');
+assert.equal(accountBalances['1102'].credTurn,200);
+assert.equal(accountBalances['1101'].debTurn,1350,'valid unbalanced vouchers remain visible while invalid-date vouchers are excluded');
+
+let trialBalanceHtml = '';
+sandbox.money = value => String(value);
+sandbox.faNum = String;
+sandbox.escapeLedgerText = value => String(value);
+sandbox.document = { getElementById() { return { set innerHTML(value) { trialBalanceHtml = value; }, get innerHTML() { return trialBalanceHtml; } }; } };
+vm.runInContext("activeAccTab = 'trial';", sandbox);
+vm.runInContext(sliceBetween('    function renderAccountingModule()', '    function saveManualVoucher()') +
+  '; this.renderAccountingModule = renderAccountingModule;', sandbox);
+sandbox.renderAccountingModule();
+for (const heading of ['گردش بدهکار','گردش بستانکار','مانده بدهکار','مانده بستانکار']) {
+  assert.ok(trialBalanceHtml.includes(heading), 'four-column trial balance must render ' + heading);
+}
+assert.ok(trialBalanceHtml.includes('گردش بدهکار و بستانکار برابر نیست'),
+  'unbalanced valid vouchers must remain visible as a trial-balance warning');
+sandbox.state.vouchers = savedVouchers;
+
 console.log('PASS: six-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
 console.log('PASS: invalid voucher is excluded consistently from ledger, P&L, balance sheet and cash flow');
 console.log('PASS: bank transaction matching is exact and one voucher cannot be matched twice');

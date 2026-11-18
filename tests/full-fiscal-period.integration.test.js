@@ -47,7 +47,7 @@ let saves=0;
 const post=load('postVoucher',{
   state, getTodayJalaliDate(){return '1405/09/02';}, addAudit(message){state.auditLogs.push(message);}, saveState(){saves++;}
 });
-const balances=load('getAccountBalances',{state,CHART_ACCOUNTS});
+const balances=load('getAccountBalances',{state,CHART_ACCOUNTS,normalizeLedgerDate(value){return value ? String(value).replaceAll('/','') : null;},jalaliDateOrdinal(value){return value ? 1 : null;},countInvalidReportVoucherLines(v){return (v.lines||[]).filter(line=>{const d=Number(line.debit||0),c=Number(line.credit||0);return !Number.isFinite(d)||!Number.isFinite(c)||d<0||c<0||(d>0&&c>0);}).length;}});
 const partyBalance=load('getPartyNetBalance',{state});
 const updateCheck=load('updateCheckStatus',{
   state, getTodayJalaliDate(){return '1405/09/02';}, postVoucher:post, addAudit(message){state.auditLogs.push(message);},

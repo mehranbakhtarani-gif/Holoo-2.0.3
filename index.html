@@ -2231,11 +2231,16 @@
     function getAccountBalances() {
       const map = {};
       CHART_ACCOUNTS.forEach(a => map[a.code] = { ...a, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0 });
-      state.vouchers.forEach(v => v.lines.forEach(l => {
-        if (!map[l.code]) map[l.code] = { code: l.code, name: l.code, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0 };
-        map[l.code].debTurn += Number(l.debit || 0);
-        map[l.code].credTurn += Number(l.credit || 0);
-      }));
+      (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(v => {
+        const rawDate = v.date || v.operationDate;
+        if (!normalizeLedgerDate(rawDate) || jalaliDateOrdinal(rawDate) === null || countInvalidReportVoucherLines(v)) return;
+        (v.lines || []).forEach(l => {
+          const code = String(l.code || '');
+          if (!map[code]) map[code] = { code, name: code, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0 };
+          map[code].debTurn += Number(l.debit || 0);
+          map[code].credTurn += Number(l.credit || 0);
+        });
+      });
       Object.values(map).forEach(b => {
         const diff = b.debTurn - b.credTurn;
         if (diff > 0) b.debBal = diff; else if (diff < 0) b.credBal = Math.abs(diff);
@@ -5229,9 +5234,50 @@
           </div>`;
         }
       } else if (activeAccTab === 'trial') {
-        let sD = 0, sC = 0;
-        const rows = Object.values(bal).filter(b => b.debTurn > 0 || b.credTurn > 0).map(b => { sD += b.debBal; sC += b.credBal; return `<div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between"><span>${faNum(b.code)} - ${b.name}</span><strong class="tabular-nums">${b.debBal ? `${money(b.debBal)} بد` : `${money(b.credBal)} بس`}</strong></div>`; }).join('');
-        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-2"><div class="font-black text-sm">تراز آزمایشی ۴ ستونی</div>${rows}<div class="p-3 rounded-xl bg-holoo-950 text-amber-300 font-black flex justify-between tabular-nums"><span>جمع مانده (تراز):</span><span>${money(sD)} = ${money(sC)}</span></div></div>`;
+        const accounts = Object.values(bal).filter(account => account.debTurn > 0 || account.credTurn > 0)
+          .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+        const totals = accounts.reduce((sum, account) => ({
+          debitTurn: sum.debitTurn + account.debTurn,
+          creditTurn: sum.creditTurn + account.credTurn,
+          debitBalance: sum.debitBalance + account.debBal,
+          creditBalance: sum.creditBalance + account.credBal
+        }), { debitTurn: 0, creditTurn: 0, debitBalance: 0, creditBalance: 0 });
+        const rows = accounts.map(account => `<tr class="border-b">
+          <td class="p-2 text-right">${faNum(account.code)} - ${escapeLedgerText(account.name)}</td>
+          <td class="p-2 text-left tabular-nums">${money(account.debTurn)}</td>
+          <td class="p-2 text-left tabular-nums">${money(account.credTurn)}</td>
+          <td class="p-2 text-left tabular-nums">${money(account.debBal)}</td>
+          <td class="p-2 text-left tabular-nums">${money(account.credBal)}</td>
+        </tr>`).join('');
+        const turnoverBalanced = Math.abs(totals.debitTurn - totals.creditTurn) < 0.000001;
+        const balanceBalanced = Math.abs(totals.debitBalance - totals.creditBalance) < 0.000001;
+        const warnings = [];
+        if (!turnoverBalanced) warnings.push('گردش بدهکار و بستانکار برابر نیست؛ اسناد نامتوازن را بررسی کنید.');
+        if (!balanceBalanced) warnings.push('مانده بدهکار و بستانکار برابر نیست؛ اختلاف تراز وجود دارد.');
+        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3">
+          <div class="font-black text-sm">تراز آزمایشی چهارستونی</div>
+          <p class="text-xs text-slate-500">گردش و مانده حساب‌ها بر پایه اسناد دارای تاریخ و مبالغ معتبر؛ اسناد نامتوازن حذف نمی‌شوند تا اختلاف آن‌ها مشخص بماند.</p>
+          <div class="overflow-x-auto">
+            <table class="min-w-[760px] w-full text-xs border-collapse">
+              <thead><tr class="bg-slate-100 border-b">
+                <th class="p-2 text-right">کد و نام حساب</th>
+                <th class="p-2 text-left">گردش بدهکار</th>
+                <th class="p-2 text-left">گردش بستانکار</th>
+                <th class="p-2 text-left">مانده بدهکار</th>
+                <th class="p-2 text-left">مانده بستانکار</th>
+              </tr></thead>
+              <tbody>${rows || '<tr><td colspan="5" class="p-4 text-center text-slate-400">گردشی ثبت نشده است.</td></tr>'}</tbody>
+              <tfoot><tr class="bg-slate-100 font-black border-t-2">
+                <td class="p-2">جمع کل</td>
+                <td class="p-2 text-left tabular-nums">${money(totals.debitTurn)}</td>
+                <td class="p-2 text-left tabular-nums">${money(totals.creditTurn)}</td>
+                <td class="p-2 text-left tabular-nums">${money(totals.debitBalance)}</td>
+                <td class="p-2 text-left tabular-nums">${money(totals.creditBalance)}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+          ${warnings.length ? '<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">' + warnings.map(escapeLedgerText).map(message => '<p>' + message + '</p>').join('') + '</div>' : '<div class="p-2 rounded-lg bg-emerald-50 text-emerald-800 text-xs">گردش و مانده بدهکار و بستانکار برابر است.</div>'}
+        </div>`;
       } else if (activeAccTab === 'pnl') {
         renderProfitLossReport();
       } else if (activeAccTab === 'bs') {
