@@ -14,7 +14,7 @@ assert.match(html, /تأخیر در ETA/);
 assert.match(html, /id="imp-eta"/);
 assert.match(html, /id="imp-bl"/);
 assert.match(html, /id="imp-port"/);
-assert.match(html, /Object\.values\(expenses\)\.some\(v => !Number\.isFinite\(v\) \|\| v < 0\)/);
+assert.match(html, /HolooImportDomain\.calculateLandedCost\(items, fxRate, expenses, expenseAllocationBasis\)/);
 console.log('PASS: 13 import dashboard and shipment tracking checks');
 
 const vm = require('node:vm');
