@@ -389,7 +389,7 @@ test('customer credit refund decreases the selected bank balance and customer cr
     bankAccounts:[{id:'B1',type:'bank',balance:500}]
   };
   const posted=[]; let saves=0;
-  const refund=load(section('function submitPartyCreditRefund()', 'function applyPartyCredit(creditId)'), 'submitPartyCreditRefund', {
+  const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'CREDIT-R1','credit-refund-amount':'40','credit-refund-bank':'B1'}),
     createStableId(){return 'REFUND-1';}, postVoucher(...a){posted.push(a);return 77;}, addAudit(){}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
@@ -409,7 +409,7 @@ test('supplier credit refund records an incoming bank receipt and increases bank
     bankAccounts:[{id:'B2',type:'cash',balance:100}]
   };
   const posted=[];
-  const refund=load(section('function submitPartyCreditRefund()', 'function applyPartyCredit(creditId)'), 'submitPartyCreditRefund', {
+  const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'CREDIT-R2','credit-refund-amount':'30','credit-refund-bank':'B2'}),
     createStableId(){return 'REFUND-2';}, postVoucher(...a){posted.push(a);return 78;}, addAudit(){}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}
   });
@@ -424,7 +424,7 @@ test('supplier credit refund records an incoming bank receipt and increases bank
 test('party credit refund rejects an amount above the remaining credit', () => {
   const state={treasuryTxs:[{id:'CREDIT-R3',kind:'party_credit',creditDirection:'sale',partyId:'P1',amount:100,remainingAmount:20}],bankAccounts:[{id:'B1',type:'bank',balance:500}]};
   const posted=[]; let saves=0;
-  const refund=load(section('function submitPartyCreditRefund()', 'function applyPartyCredit(creditId)'), 'submitPartyCreditRefund', {
+  const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'CREDIT-R3','credit-refund-amount':'30','credit-refund-bank':'B1'}),
     createStableId(){return 'REFUND-3';}, postVoucher(...a){posted.push(a);return 79;}, addAudit(){}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
