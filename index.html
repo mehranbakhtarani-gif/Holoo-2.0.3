@@ -3330,29 +3330,46 @@
     }
 
     function restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
-      if (!product || Number(quantityToRestore || 0) <= 0) return [];
+      const qty = Number(quantityToRestore), safeFallbackCost = Number(fallbackCost);
+      if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار برگشتی برای بازیابی بچ معتبر نیست.');
+      if (!Number.isFinite(safeFallbackCost) || safeFallbackCost < 0) throw new Error('بهای جایگزین بچ برگشتی معتبر نیست.');
       const batches = Array.isArray(product.batches) ? product.batches : (product.batches = []);
       const restored = [];
       if (Array.isArray(allocations) && allocations.length) {
-        let remaining = Number(quantityToRestore);
+        const seenBatchIds = new Set();
+        let remaining = qty;
         for (const allocation of allocations) {
-          if (remaining <= 0.000001) break;
-          const prior = (alreadyRestored || []).filter(x => x.batchId === allocation.batchId).reduce((sum, x) => sum + Number(x.quantity || 0), 0);
-          const available = Math.max(0, Number(allocation.quantity || 0) - prior);
-          const take = Math.min(remaining, available);
+          const batchId = String(allocation?.batchId ?? '');
+          const allocatedQty = Number(allocation?.quantity), unitCost = Number(allocation?.unitCost);
+          if (!batchId || seenBatchIds.has(batchId) || !Number.isFinite(allocatedQty) ||
+              allocatedQty <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+            throw new Error('اطلاعات تخصیص بچ برای برگشت نامعتبر است.');
+          }
+          seenBatchIds.add(batchId);
+          if (remaining <= 0.000001) continue;
+          const prior = (alreadyRestored || []).filter(x => String(x.batchId) === batchId).reduce((sum, x) => {
+            const value = Number(x.quantity);
+            if (!Number.isFinite(value) || value < 0) throw new Error('سابقه مقدار برگشتی بچ نامعتبر است.');
+            return sum + value;
+          }, 0);
+          if (prior > allocatedQty + 0.000001) throw new Error('مقدار برگشتی قبلی از تخصیص بچ بیشتر است.');
+          const take = Math.min(remaining, Math.max(0, allocatedQty - prior));
           if (take <= 0) continue;
-          const batch = batches.find(b => b.id === allocation.batchId);
-          if (batch) batch.remainingQty = Number(batch.remainingQty || 0) + take;
-          else batches.push({ id: allocation.batchId, lot: allocation.lot, receivedDate: '', productionDate: '', expiryDate: allocation.expiryDate || '', quantity: take, remainingQty: take, unitCost: Number(allocation.unitCost || fallbackCost || 0), sourceType: 'sales_return', sourceRef });
+          const batch = batches.find(b => String(b.id) === batchId);
+          if (batch) {
+            const currentRemaining = Number(batch.remainingQty ?? 0);
+            if (!Number.isFinite(currentRemaining) || currentRemaining < 0) throw new Error('موجودی باقی‌مانده بچ نامعتبر است.');
+            batch.remainingQty = currentRemaining + take;
+          } else batches.push({ id: allocation.batchId, lot: allocation.lot, receivedDate: '', productionDate: '', expiryDate: allocation.expiryDate || '', quantity: take, remainingQty: take, unitCost, sourceType: 'sales_return', sourceRef });
           restored.push({ batchId: allocation.batchId, quantity: take });
           remaining -= take;
         }
-        if (remaining > 0.000001) throw new Error('مقدار برگشتی از تخصیص بچ فاکتور بیشتر است.');
+        if (remaining > 0.000001) throw new Error('مقدار برگشتی با تخصیص بچ فاکتور سازگار نیست.');
         return restored;
       }
-      const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: getTodayJalaliDate(), productionDate: '', expiryDate: '', quantity: quantityToRestore, remainingQty: quantityToRestore, unitCost: Number(fallbackCost || 0), sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
+      const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: getTodayJalaliDate(), productionDate: '', expiryDate: '', quantity: qty, remainingQty: qty, unitCost: safeFallbackCost, sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
       batches.push(fallbackBatch);
-      return [{ batchId: fallbackBatch.id, quantity: quantityToRestore }];
+      return [{ batchId: fallbackBatch.id, quantity: qty }];
     }
 
     // =========================================================================
@@ -4194,31 +4211,41 @@
     }
 
     function getReturnCostOfGoods(item, quantity, fallbackUnitCost = 0) {
-      const qty = Number(quantity || 0);
-      if (!Number.isFinite(qty) || qty <= 0) return 0;
-      const itemQty = Number(item?.kg || 0);
+      const qty = Number(quantity);
+      if (!Number.isFinite(qty) || qty <= 0) throw new Error('مقدار برگشتی برای محاسبه بهای تمام‌شده معتبر نیست.');
+      const itemQty = Number(item?.kg);
       const recordedCost = Number(item?.costOfGoodsSold);
       const fallbackCost = Number.isFinite(recordedCost) && itemQty > 0
-        ? recordedCost / itemQty
-        : Number(fallbackUnitCost || 0);
+        ? recordedCost / itemQty : Number(fallbackUnitCost);
+      if (!Number.isFinite(fallbackCost) || fallbackCost < 0) throw new Error('بهای واحد جایگزین برای برگشت معتبر نیست.');
       const allocations = Array.isArray(item?.fifoAllocations) ? item.fifoAllocations : [];
       const useFifo = item?.costingMethod === 'FIFO' || (!item?.costingMethod && allocations.length > 0);
-      if (!useFifo || !allocations.length) return Math.round(qty * fallbackCost);
-      let remaining = qty;
-      let totalCost = 0;
-      for (const allocation of allocations) {
-        if (remaining <= 0.000001) break;
-        const prior = (item.fifoReturnedAllocations || [])
-          .filter(entry => String(entry.batchId) === String(allocation.batchId))
-          .reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
-        const available = Math.max(0, Number(allocation.quantity || 0) - prior);
-        const take = Math.min(remaining, available);
-        if (take <= 0) continue;
-        const unitCost = Number(allocation.unitCost);
-        totalCost += take * (Number.isFinite(unitCost) ? unitCost : fallbackCost);
-        remaining -= take;
+      if (!useFifo || !allocations.length) {
+        const cost = Math.round(qty * fallbackCost);
+        if (!Number.isFinite(cost)) throw new Error('بهای تمام‌شده برگشتی معتبر نیست.');
+        return cost;
       }
-      if (remaining > 0.000001) throw new Error('مقدار برگشتی از تخصیص بهای تمام‌شده فاکتور بیشتر است.');
+      const seenBatchIds = new Set();
+      let remaining = qty, totalCost = 0;
+      for (const allocation of allocations) {
+        const batchId = String(allocation?.batchId ?? '');
+        const allocatedQty = Number(allocation?.quantity), unitCost = Number(allocation?.unitCost);
+        if (!batchId || seenBatchIds.has(batchId) || !Number.isFinite(allocatedQty) ||
+            allocatedQty <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+          throw new Error('اطلاعات تخصیص بچ یا بهای آن نامعتبر است؛ برگشت متوقف شد.');
+        }
+        seenBatchIds.add(batchId);
+        if (remaining <= 0.000001) continue;
+        const prior = (item.fifoReturnedAllocations || []).filter(entry => String(entry.batchId) === batchId).reduce((sum, entry) => {
+          const value = Number(entry.quantity);
+          if (!Number.isFinite(value) || value < 0) throw new Error('سابقه مقدار برگشتی از بچ نامعتبر است.');
+          return sum + value;
+        }, 0);
+        if (prior > allocatedQty + 0.000001) throw new Error('مقدار برگشتی قبلی از تخصیص بچ بیشتر است.');
+        const take = Math.min(remaining, Math.max(0, allocatedQty - prior));
+        if (take > 0) { totalCost += take * unitCost; remaining -= take; }
+      }
+      if (remaining > 0.000001 || !Number.isFinite(totalCost)) throw new Error('مقدار برگشتی با تخصیص بهای تمام‌شده فاکتور سازگار نیست.');
       return Math.round(totalCost);
     }
 
@@ -4284,15 +4311,19 @@
       if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
       const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       // Simulate FIFO changes on clones before posting anything; this catches insufficient stock or invalid batch returns.
-      {
+      try {
         const simulatedProducts = new Map();
         for (const entry of returnPlan) {
           if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
           const simulated = simulatedProducts.get(entry.product);
           if (inv.type === 'sale') {
             restoreFifoAllocations(simulated, entry.item.fifoAllocations || [], entry.qty, entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice, returnId, entry.item.fifoReturnedAllocations || []);
+            getReturnCostOfGoods(entry.item, entry.qty, entry.product.buyPrice);
           } else consumeFifoStock(simulated, entry.qty);
         }
+      } catch (error) {
+        showToast('کنترل تخصیص بچ و بهای تمام‌شده برگشتی ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
+        return;
       }
       const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
       const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
