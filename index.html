@@ -2628,7 +2628,7 @@
             <div class="flex gap-1.5">
               <button onclick="openProductModal(this.dataset.productId)" data-product-id="${String(p.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" class="bg-amber-100 text-amber-900 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">✏️ ویرایش</button>
               <button onclick="openKardexModal(this.dataset.productId)" data-product-id="${String(p.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" class="bg-indigo-100 text-indigo-900 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">📊 گردش کالا</button>
-              <button onclick="printBarcodeLabel('${p.id}')" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">🏷️ چاپ لیبل بارکد</button>
+              <button type="button" onclick="openBarcodeLabelSettings('${p.id}')" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">🏷️ چاپ لیبل بارکد</button>
             </div>
           </div>
         </div>
@@ -2758,15 +2758,30 @@
       return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
     }
 
-    function printBarcodeLabel(id) {
+    function openBarcodeLabelSettings(id) {
       const p = state.products.find(x => String(x.id) === String(id));
       if (!p) { showToast('کالای موردنظر پیدا نشد.', 'error'); return; }
+      const modal = document.getElementById('modal-barcode-settings');
+      const caption = document.getElementById('barcode-product-caption');
+      const barcodeInput = document.getElementById('barcode-edit-value');
+      const countInput = document.getElementById('barcode-label-count');
+      const sizeInput = document.getElementById('barcode-label-size');
+      if (!modal || !caption || !barcodeInput || !countInput || !sizeInput) {
+        showToast('پنجره تنظیم لیبل در این نسخه بارگذاری نشده است؛ صفحه را تازه‌سازی کنید.', 'error');
+        return;
+      }
       barcodeLabelProductId = p.id;
-      document.getElementById('barcode-product-caption').textContent = p.name + ' · ' + p.id;
-      document.getElementById('barcode-edit-value').value = p.barcode || '';
-      document.getElementById('barcode-label-count').value = '1';
-      document.getElementById('barcode-label-size').value = '50x30';
-      openModal('modal-barcode-settings');
+      caption.textContent = p.name + ' · ' + p.id;
+      barcodeInput.value = p.barcode || '';
+      countInput.value = '1';
+      sizeInput.value = '50x30';
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+
+    // Backward-compatible alias for older product cards or integrations.
+    function printBarcodeLabel(id) {
+      return openBarcodeLabelSettings(id);
     }
 
     function saveBarcodeLabelSettings() {
