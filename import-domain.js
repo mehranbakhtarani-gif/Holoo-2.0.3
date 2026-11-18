@@ -151,6 +151,8 @@
         if (remainingTotal <= 0) continue;
         const revenue = Number(line.total ?? (Number(line.kg) * Number(line.price || 0))) * (netQty / Number(line.kg));
         const cogs = Number(line.costOfGoodsSold || 0) * (netQty / Number(line.kg));
+        const fifoCostFromAllocations = remainingAllocations.reduce((sum, allocation) => sum + allocation.quantity * Number(allocation.unitCost || 0), 0);
+        const inferredFifo = line.costingMethod === 'FIFO' || (!line.costingMethod && Math.abs(fifoCostFromAllocations - cogs) < 1);
         for (const allocation of remainingAllocations) {
           const batchInfo = productByBatch.get(String(allocation.batchId));
           if (!batchInfo) { untraceableSales += allocation.quantity; continue; }
@@ -163,7 +165,7 @@
           target.soldKg += allocation.quantity;
           target.returnedKg += allocation.returnedQuantity;
           target.revenue += revenue * share;
-          target.cogs += cogs * share;
+          target.cogs += inferredFifo ? allocation.quantity * Number(allocation.unitCost || 0) : cogs * share;
         }
       }
     }
