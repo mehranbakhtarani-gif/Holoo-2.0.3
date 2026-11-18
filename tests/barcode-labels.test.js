@@ -26,3 +26,12 @@ assert.match(save, /saveState\(\)/);
 assert.doesNotMatch(save, /postVoucher|\.stock\s*=|\.kardex\s*=/, 'barcode editing must not alter inventory or accounting documents');
 assert.match(html, /Array\.from\(\{ length: count \}/);
 console.log('PASS: barcode editing validates uniqueness, persists through saveState, and prints configurable label batches without stock or voucher changes');
+
+assert.match(html, /onclick="openBarcodeLabelSettings\('\$\{p\.id\}'\)"/);
+assert.match(html, /function openBarcodeLabelSettings\(id\)/);
+assert.match(html, /modal\.classList\.remove\('hidden'\)/);
+assert.match(html, /function printBarcodeLabel\(id\)\s*\{\s*return openBarcodeLabelSettings\(id\);/);
+const openStart = html.indexOf('    function openBarcodeLabelSettings(id) {');
+const openEnd = html.indexOf('    // Backward-compatible alias', openStart);
+assert.ok(openStart >= 0 && openEnd > openStart, 'dedicated barcode settings opener must exist');
+assert.doesNotMatch(html.slice(openStart, openEnd), /window\.print|print\(\)/, 'opening barcode settings must not invoke browser printing');
