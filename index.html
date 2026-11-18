@@ -5423,8 +5423,8 @@
       if (report.closingDifference !== 0) warnings.push('مانده‌های بدهکار و بستانکار برابر نیستند: ' + money(report.closingDifference));
       if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر شناسایی شد؛ در گزارش تاریخ‌دار محاسبه نشده است.');
       if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف دارای کد حساب یا مبلغ نامعتبر وجود داشت؛ کل سند مربوط از محاسبه کنار گذاشته شد.');
-      if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند با کمتر از دو ردیف معتبر از محاسبه کنار گذاشته شد.');
-      if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن شناسایی شد؛ کل سند از تراز آزمایشی کنار گذاشته شد.');
+      if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند ساختار ناقص (کمتر از دو ردیف معتبر) دارد؛ ردیف‌های معتبر آن در گزارش باقی مانده‌اند و اختلاف آن‌ها نمایش داده می‌شود.');
+      if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن شناسایی شد؛ ردیف‌های معتبر این اسناد در تراز باقی مانده‌اند و اختلاف بدهکار/بستانکار پنهان نشده است.');
       document.getElementById('accounting-panel-body').innerHTML =
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
