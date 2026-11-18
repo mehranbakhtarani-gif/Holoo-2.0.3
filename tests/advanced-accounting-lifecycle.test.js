@@ -749,5 +749,61 @@ test('FIFO supplier purchase return consumes the original batches and posts bala
   assert.equal(saves,1);
 });
 
+
+// Partial sales returns must reverse line discounts and the proportional output VAT.
+test('partial sales return allocates discounted net revenue and output VAT separately', () => {
+  const state={
+    fiscalYear:'1405',costingMethod:'AVG',treasuryTxs:[],
+    invoices:[{id:3601,type:'sale',partyId:'C-VAT',grandTotal:275,subtotal:300,netSubtotal:250,vatRate:10,vatAmount:25,paidAmount:0,
+      items:[{productId:'VAT-SALE',kg:10,returnedKg:0,price:30,disc:50,total:250,costingMethod:'AVG',costOfGoodsSold:100}]}],
+    products:[{id:'VAT-SALE',stock:0,buyPrice:10,kardex:[]}]
+  };
+  const posted=[];let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('),'submitPartialReturn',{
+    state,document:doc({'partial-ret-inv-id':'3601','pret-qty-0':'2'}),
+    getTodayJalaliDate(){return '1405/09/02';},
+    getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0);},
+    postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+  });
+  submit();
+  const lines=posted[0][1];
+  assert.equal(state.invoices[0].returnRefs[0].items[0].baseAmount,50);
+  assert.equal(state.invoices[0].returnRefs[0].items[0].vatAmount,5);
+  assert.equal(state.invoices[0].returnRefs[0].amount,55);
+  assert.equal(lines.find(line=>line.code==='4103')?.debit,50);
+  assert.equal(lines.find(line=>line.code==='2103')?.debit,5);
+  assert.equal(lines.find(line=>line.code==='1103')?.credit,55);
+  assert.equal(lines.reduce((n,line)=>n+line.debit,0),lines.reduce((n,line)=>n+line.credit,0));
+  assert.equal(saves,1);
+});
+
+// Partial purchase returns must reverse discounted inventory cost and recoverable input VAT separately.
+test('partial purchase return allocates discounted inventory value and input VAT separately', () => {
+  const state={
+    fiscalYear:'1405',costingMethod:'AVG',treasuryTxs:[],
+    invoices:[{id:3602,type:'purchase',partyId:'SUP-VAT',grandTotal:165,subtotal:200,netSubtotal:150,vatRate:10,vatAmount:15,paidAmount:0,
+      items:[{productId:'VAT-PUR',kg:10,returnedKg:0,price:20,disc:50,total:150}]}],
+    products:[{id:'VAT-PUR',stock:10,buyPrice:15,batches:[{id:'VAT-PUR-B1',quantity:10,remainingQty:10,unitCost:15}],kardex:[]}]
+  };
+  const posted=[];let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('),'submitPartialReturn',{
+    state,document:doc({'partial-ret-inv-id':'3602','pret-qty-0':'2'}),
+    getTodayJalaliDate(){return '1405/09/02';},
+    getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0);},
+    postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+  });
+  submit();
+  const lines=posted[0][1];
+  assert.equal(state.invoices[0].returnRefs[0].items[0].baseAmount,30);
+  assert.equal(state.invoices[0].returnRefs[0].items[0].vatAmount,3);
+  assert.equal(state.invoices[0].returnRefs[0].amount,33);
+  assert.equal(lines.find(line=>line.code==='2101')?.debit,33);
+  assert.equal(lines.find(line=>line.code==='1105')?.credit,30);
+  assert.equal(lines.find(line=>line.code==='1106')?.credit,3);
+  assert.equal(lines.reduce((n,line)=>n+line.debit,0),lines.reduce((n,line)=>n+line.credit,0));
+  assert.equal(state.products[0].stock,8);
+  assert.equal(saves,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
