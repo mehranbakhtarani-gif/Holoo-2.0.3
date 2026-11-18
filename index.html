@@ -3228,28 +3228,39 @@
     // =========================================================================
     // 7A. BATCH / LOT TRACKING AND FIFO COST LAYER
     // =========================================================================
+    function inspectProductBatchReconciliation(product) {
+      if (!product) return { valid: false, stock: 0, tracked: 0, difference: 0, issue: 'محصول پیدا نشد.' };
+      const stock = Number(product.stock || 0);
+      const batches = Array.isArray(product.batches) ? product.batches : [];
+      const tracked = batches.reduce((sum, batch) => {
+        const qty = Number(batch?.remainingQty ?? batch?.quantity ?? 0);
+        return sum + (Number.isFinite(qty) && qty > 0 ? qty : 0);
+      }, 0);
+      const difference = stock - tracked;
+      const valid = Number.isFinite(stock) && stock >= 0 && batches.every(batch => {
+        const qty = Number(batch?.remainingQty ?? batch?.quantity ?? 0);
+        const cost = Number(batch?.unitCost ?? 0);
+        return Number.isFinite(qty) && qty >= 0 && Number.isFinite(cost) && cost >= 0;
+      }) && Math.abs(difference) <= 0.000001;
+      return {
+        valid, stock, tracked, difference,
+        issue: !Number.isFinite(stock) || stock < 0 ? 'موجودی کل نامعتبر است.'
+          : !batches.every(batch => Number.isFinite(Number(batch?.remainingQty ?? batch?.quantity ?? 0)) &&
+              Number(batch?.remainingQty ?? batch?.quantity ?? 0) >= 0 &&
+              Number.isFinite(Number(batch?.unitCost ?? 0)) && Number(batch?.unitCost ?? 0) >= 0)
+            ? 'مقدار یا بهای یکی از بچ‌ها نامعتبر است.'
+            : Math.abs(difference) > 0.000001 ? 'جمع موجودی بچ‌ها با موجودی کل کالا مغایرت دارد.' : ''
+      };
+    }
+
     function ensureProductBatches(product) {
       if (!product) return [];
       if (!Array.isArray(product.batches)) product.batches = [];
       const tracked = product.batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.remainingQty ?? batch.quantity ?? 0)), 0);
       const currentStock = Math.max(0, Number(product.stock || 0));
       if (tracked > currentStock + 0.000001) {
-        // Older AVG-cost sales did not consume batch quantities. Reclassify the unexplained balance
-        // into one non-import opening lot so future sales are not falsely attributed to old shipments.
-        const weightedCost = tracked > 0
-          ? product.batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.remainingQty ?? batch.quantity ?? 0)) * Number(batch.unitCost || 0), 0) / tracked
-          : Number(product.buyPrice || 0);
-        product.batches.forEach(batch => { batch.remainingQty = 0; });
-        if (currentStock > 0.000001) {
-          let openingId = 'LEGACY-RECONCILED-' + String(product.id);
-          if (product.batches.some(batch => String(batch.id) === openingId)) openingId += '-BALANCE';
-          product.batches.push({
-            id: openingId, lot: 'LEGACY-RECONCILED', receivedDate: '0000/00/00',
-            productionDate: '', expiryDate: '', quantity: currentStock, remainingQty: currentStock,
-            unitCost: Math.round(weightedCost || Number(product.buyPrice || 0)),
-            sourceType: 'legacy_balance_reconciled', sourceRef: 'legacy-balance-reconciliation'
-          });
-        }
+        // Keep the original batch ledger intact. A mismatch is a reconciliation exception,
+        // not permission to rewrite historical lots during a read/render operation.
         return product.batches;
       }
       const untracked = Math.max(0, currentStock - tracked);
@@ -3300,6 +3311,10 @@
     function consumeFifoStock(product, quantity) {
       const qty = Number(quantity || 0);
       if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار خروج موجودی معتبر نیست.');
+      const reconciliation = inspectProductBatchReconciliation(product);
+      if (Number.isFinite(Number(product.stock)) && reconciliation.tracked > Number(product.stock) + 0.000001) {
+        throw new Error('جمع بچ‌ها از موجودی کل بیشتر است؛ ابتدا مغایرت‌گیری بچ و کاردکس انجام شود.');
+      }
       const batches = ensureProductBatches(product);
       const todayOrdinal = typeof currentJalaliOrdinal === 'function' ? currentJalaliOrdinal() : null;
       const eligible = batches.filter(batch => {
