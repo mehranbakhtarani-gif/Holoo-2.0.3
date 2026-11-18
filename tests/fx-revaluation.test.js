@@ -125,7 +125,7 @@ const openingVouchers = [];
 const save = load(saveSource, 'saveFxCommitment', {
   state: saveState, DEVICE_ID: 'DEVICE-NEW-FX',
   document: fakeDocument({
-    'fxc-party': 'SUP-9', 'fxc-counterparty': '', 'fxc-currency': 'USD',
+    'fxc-party': 'SUP-9', 'fxc-counterparty': 'تأمین‌کننده آزمایشی', 'fxc-currency': 'USD',
     'fxc-amount': '20', 'fxc-rate': '1000', 'fxc-offset-account': '1105',
     'fxc-reference': 'CON-1', 'fxc-due-date': '1405/09/30',
     'fxc-purpose': 'خرید مواد اولیه', 'fxc-notes': 'تست افتتاحیه'
