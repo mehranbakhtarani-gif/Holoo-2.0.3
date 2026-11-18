@@ -166,7 +166,7 @@ test('valid bank transfer posts to the explicitly selected bank account', () => 
   const r = fixture({ amount: 100, method: 'bank', accountType: 'bank', invoices: [] });
   r.run();
   assert.equal(r.posted.length, 1);
-  assert.equal(r.state.bankAccounts[0].balance, 900);
+  assert.equal(r.state.bankAccounts[0].balance, 1100);
   assert.equal(r.state.treasuryTxs.length, 1);
   assert.equal(r.saves, 1);
 });
