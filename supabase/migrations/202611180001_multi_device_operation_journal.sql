@@ -286,7 +286,7 @@ begin
          or v_entity_type not in (
         'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
         'fxCommitments', 'accountCatalog', 'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
-        'employees', 'fixedAssets', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
+        'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
       ) then
         raise exception 'unsupported entity collection: %', v_entity_type;
       end if;
