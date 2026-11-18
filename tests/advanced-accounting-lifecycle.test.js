@@ -235,6 +235,7 @@ test('partial return stores return value so the invoice outstanding is reduced',
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, document:doc({'partial-ret-inv-id':'3102','pret-qty-0':'2'}),
+    getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
     postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
