@@ -2278,7 +2278,7 @@
       const results = [];
       const add = (name, ok, detail) => results.push({ name, ok: !!ok, detail: String(detail || '') });
       const isArray = (v) => Array.isArray(v);
-      const requiredArrays = ['products','warehouses','parties','invoices','vouchers','orders','imports','bankAccounts','checks','treasuryTxs','employees','fixedAssets','approvals','auditLogs'];
+      const requiredArrays = ['products','warehouses','parties','invoices','vouchers','orders','imports','bankAccounts','checks','treasuryTxs','employees','payrollRuns','fixedAssets','depreciationEntries','approvals','auditLogs'];
       const missingArrays = requiredArrays.filter(k => !isArray(state[k]));
       add('ساختار داده‌های اصلی', missingArrays.length === 0, missingArrays.length ? 'فیلدهای نامعتبر: ' + missingArrays.join(', ') : requiredArrays.length + ' مجموعه داده معتبر');
 
@@ -5035,6 +5035,13 @@
       if (!/^\d{4}\/(0[1-9]|1[0-2])$/.test(String(period || '').trim())) return null;
       return jalaliDateOrdinal(String(period).trim() + '/01');
     }
+    function calculateAssetMonthlyDepreciation(asset) {
+      const cost = Number(asset?.cost || 0), residual = Number(asset?.residualValue || 0), accumulated = Number(asset?.accDep || 0);
+      const lifeMonths = Number(asset?.lifeYears || 0) * 12;
+      if (![cost,residual,accumulated,lifeMonths].every(Number.isFinite) || cost <= 0 || residual < 0 || residual > cost || accumulated < 0 || lifeMonths <= 0) return 0;
+      const remaining = Math.max(0, cost - residual - accumulated);
+      return remaining > 0 ? Math.min(remaining, Math.round((cost - residual) / lifeMonths)) : 0;
+    }
     function renderAssetsModule() {
       const assetDateInput = document.getElementById('ast-date');
       if (!assetDateInput.value) assetDateInput.value = typeof getTodayJalaliDate === 'function' ? getTodayJalaliDate() : String(state.fiscalYear) + '/01/01';
@@ -5043,7 +5050,7 @@
       document.getElementById('assets-grid').innerHTML = (state.fixedAssets || []).map(a => {
         const cost = Number(a.cost || 0), residual = Number(a.residualValue || 0), accumulated = Number(a.accDep || 0);
         const bookValue = Math.max(0, cost - accumulated), depreciable = Math.max(0, cost - residual);
-        const monthly = Number(a.lifeYears) > 0 ? Math.min(Math.max(0, depreciable - accumulated), Math.round(depreciable / (Number(a.lifeYears) * 12))) : 0;
+        const monthly = calculateAssetMonthlyDepreciation(a);
         const acquisitionStatus = a.acquisitionVoucherId ? 'سند تحصیل #' + a.acquisitionVoucherId : 'دارایی قدیمی؛ سند تحصیل ثبت نشده';
         return '<div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs tabular-nums"><div class="font-black text-sm text-slate-900">' + escapeBankReconciliationText(a.name || '') + '</div><div class="text-[11px] text-slate-500">محل: ' + escapeBankReconciliationText(a.location || '—') + ' · عمر مفید: ' + faNum(a.lifeYears || 0) + ' سال</div><div class="text-[10px] text-slate-500">' + acquisitionStatus + ' · تاریخ بهره‌برداری: ' + escapeBankReconciliationText(a.date || '—') + '</div><div class="flex justify-between"><span>بهای تمام‌شده:</span><strong>' + money(cost) + '</strong></div><div class="flex justify-between"><span>ارزش باقیمانده:</span><strong>' + money(residual) + '</strong></div><div class="flex justify-between"><span>استهلاک انباشته:</span><strong>' + money(accumulated) + '</strong></div><div class="flex justify-between font-black text-emerald-800 border-t pt-1"><span>ارزش دفتری:</span><span>' + money(bookValue) + '</span></div><div class="text-[10px] text-slate-600">استهلاک ماهانه پیشنهادی: ' + money(monthly) + '</div><button onclick="recordDep(\'' + escapeBankReconciliationText(a.id) + '\')" class="touch-btn w-full bg-orange-600 text-white font-bold rounded-xl" ' + (monthly <= 0 ? 'disabled' : '') + '>ثبت استهلاک دوره انتخابی</button></div>';
       }).join('') || '<p class="text-slate-500 bg-white rounded-xl p-3">هنوز دارایی ثابتی ثبت نشده است.</p>';
@@ -5079,10 +5086,8 @@
       const acquisitionDate = a.date || '', acquisitionOrdinal = jalaliDateOrdinal(acquisitionDate);
       if (acquisitionOrdinal !== null && periodOrdinal < jalaliDateOrdinal(String(acquisitionDate).slice(0,7) + '/01')) { showToast('دوره استهلاک قبل از تاریخ آماده بهره‌برداری دارایی است.', 'error'); return; }
       if ((state.depreciationEntries || []).some(entry => String(entry.assetId) === String(a.id) && entry.period === period)) { showToast('استهلاک این دارایی برای این دوره قبلاً ثبت شده است.', 'error'); return; }
-      const cost = Number(a.cost || 0), residual = Number(a.residualValue || 0), accumulated = Number(a.accDep || 0);
-      const remaining = Math.max(0, cost - residual - accumulated), lifeMonths = Number(a.lifeYears || 0) * 12;
-      if (!Number.isFinite(remaining) || lifeMonths <= 0 || remaining <= 0) { showToast('دارایی به پایان استهلاک رسیده یا اطلاعات آن نامعتبر است.', 'error'); return; }
-      const amount = Math.min(remaining, Math.round((cost - residual) / lifeMonths));
+      const accumulated = Number(a.accDep || 0), amount = calculateAssetMonthlyDepreciation(a);
+      if (amount <= 0) { showToast('دارایی به پایان استهلاک رسیده یا اطلاعات آن نامعتبر است.', 'error'); return; }
       if (!Number.isSafeInteger(amount) || amount <= 0) { showToast('مبلغ استهلاک قابل ثبت نیست.', 'error'); return; }
       const sourceId = String(a.id) + '-' + period.replace('/', '-');
       if ((state.vouchers || []).some(v => v.sourceType === 'asset_depreciation' && String(v.sourceId) === sourceId)) { showToast('سند استهلاک این دارایی و دوره قبلاً صادر شده است.', 'error'); return; }
