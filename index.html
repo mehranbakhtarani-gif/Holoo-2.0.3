@@ -2823,8 +2823,116 @@
     // =========================================================================
     // 8. MODULE 4: CUSTOMERS & SUPPLIERS
     // =========================================================================
+    let selectedPartyLedgerId = null;
+    let partyLedgerFromDate = null;
+    let partyLedgerToDate = null;
+
+    function buildPartyLedger(partyId, fromDate, toDate) {
+      const from = normalizeLedgerDate(fromDate);
+      const to = normalizeLedgerDate(toDate);
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
+        throw new Error('بازه تاریخ گردش طرف حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
+      }
+      const entries = [];
+      let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
+      let invalidDateVouchers = 0, invalidAmountLines = 0;
+      (state.vouchers || []).forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
+        const invalidLines = countInvalidReportVoucherLines(voucher);
+        if (invalidLines) { invalidAmountLines += invalidLines; return; }
+        (voucher.lines || []).forEach(line => {
+          if (line.partyId == null || String(line.partyId) !== String(partyId)) return;
+          const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+          if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) return;
+          const entry = {
+            dateKey, date: rawDate, voucherId: voucher.id, voucherDesc: voucher.desc || '',
+            code: String(line.code || ''), desc: line.desc || voucher.desc || '', debit, credit
+          };
+          if (dateKey < from) { openingDebit += debit; openingCredit += credit; }
+          else if (dateKey <= to) {
+            periodDebit += debit; periodCredit += credit; entries.push(entry);
+          }
+        });
+      });
+      entries.sort((a,b) => a.dateKey.localeCompare(b.dateKey) || Number(a.voucherId || 0) - Number(b.voucherId || 0));
+      let running = openingDebit - openingCredit;
+      entries.forEach(entry => { running += entry.debit - entry.credit; entry.balance = running; });
+      return {
+        rows: entries, openingDebit, openingCredit, openingNet: openingDebit - openingCredit,
+        periodDebit, periodCredit, closingNet: openingDebit - openingCredit + periodDebit - periodCredit,
+        invalidDateVouchers, invalidAmountLines
+      };
+    }
+
+    function openPartyLedger(partyId) {
+      selectedPartyLedgerId = String(partyId);
+      partyLedgerFromDate = partyLedgerFromDate || String(state.fiscalYear || '1405') + '/01/01';
+      partyLedgerToDate = partyLedgerToDate || getTodayJalaliDate();
+      renderPartiesModule();
+    }
+
+    function closePartyLedger() {
+      selectedPartyLedgerId = null;
+      renderPartiesModule();
+    }
+
+    function exportPartyLedgerCSV(partyId, fromDate, toDate) {
+      let ledger;
+      try { ledger = buildPartyLedger(partyId, fromDate, toDate); }
+      catch (error) { showToast(error.message, 'error'); return; }
+      const party = (state.parties || []).find(p => String(p.id) === String(partyId));
+      const cell = value => {
+        let raw = String(value == null ? '' : value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw;
+        return '"' + raw.replace(/"/g, '""') + '"';
+      };
+      const rows = [
+        ['تاریخ','شماره سند','کد حساب','شرح سند','شرح ردیف','بدهکار','بستانکار','مانده خالص'],
+        ...ledger.rows.map(row => [row.date,row.voucherId,row.code,row.voucherDesc,row.desc,row.debit,row.credit,row.balance])
+      ];
+      const csv = '\uFEFF' + [
+        ['طرف حساب', party?.name || partyId], ['از تاریخ',fromDate,'تا تاریخ',toDate],
+        ['مانده اول دوره',ledger.openingNet,'گردش بدهکار',ledger.periodDebit,'گردش بستانکار',ledger.periodCredit,'مانده پایان دوره',ledger.closingNet],
+        ...rows
+      ].map(row => row.map(cell).join(',')).join('\r\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'Holoo_Party_Ledger_' + String(partyId).replace(/[^a-zA-Z0-9_-]/g,'_') + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('خروجی گردش طرف حساب دانلود شد.');
+    }
+
     function renderPartiesModule() {
-      document.getElementById('parties-grid').innerHTML = state.parties.map(p => {
+      const grid = document.getElementById('parties-grid');
+      if (selectedPartyLedgerId !== null) {
+        const party = (state.parties || []).find(p => String(p.id) === String(selectedPartyLedgerId));
+        if (!party) { selectedPartyLedgerId = null; return renderPartiesModule(); }
+        const from = partyLedgerFromDate || String(state.fiscalYear || '1405') + '/01/01';
+        const to = partyLedgerToDate || getTodayJalaliDate();
+        let ledger;
+        try { ledger = buildPartyLedger(selectedPartyLedgerId, from, to); }
+        catch (error) {
+          grid.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3"><button onclick="closePartyLedger()" class="bg-slate-200 px-3 py-2 rounded-lg font-bold">بازگشت به اشخاص</button><p class="text-rose-700 font-bold">' + escapeLedgerText(error.message) + '</p></div>';
+          return;
+        }
+        const balanceLabel = value => value > 0 ? money(value) + ' بدهکار' : value < 0 ? money(Math.abs(value)) + ' بستانکار' : 'صفر';
+        const rows = ledger.rows.map(row => '<div class="grid grid-cols-1 md:grid-cols-8 gap-1.5 p-2.5 rounded-xl bg-slate-50 border text-xs"><span>' + escapeLedgerText(faNum(row.date)) + '</span><span>سند #' + escapeLedgerText(faNum(row.voucherId)) + '</span><span>' + escapeLedgerText(faNum(row.code)) + '</span><span>' + escapeLedgerText(row.voucherDesc) + '</span><span>' + escapeLedgerText(row.desc) + '</span><strong class="text-emerald-700">' + (row.debit ? money(row.debit) : '—') + '</strong><strong class="text-rose-700">' + (row.credit ? money(row.credit) : '—') + '</strong><strong>' + balanceLabel(row.balance) + '</strong></div>').join('');
+        const warnings = [];
+        if (ledger.invalidDateVouchers) warnings.push(faNum(ledger.invalidDateVouchers) + ' سند با تاریخ نامعتبر از گزارش کنار گذاشته شد.');
+        if (ledger.invalidAmountLines) warnings.push(faNum(ledger.invalidAmountLines) + ' ردیف مبلغ نامعتبر باعث کنارگذاشتن سند مربوط شد.');
+        grid.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
+          '<div class="flex flex-wrap justify-between items-center gap-2"><div><strong class="text-base">' + escapeLedgerText(party.name) + '</strong><div class="text-xs text-slate-500">گردش تفصیلی بر اساس شناسه طرف حساب در ردیف‌های اسناد</div></div><button onclick="closePartyLedger()" class="bg-slate-200 px-3 py-2 rounded-lg font-bold">بازگشت به اشخاص</button></div>' +
+          '<div class="grid grid-cols-1 md:grid-cols-3 gap-2"><label class="text-xs font-bold">از تاریخ (شمسی)<input id="party-ledger-from" value="' + escapeLedgerText(from) + '" onchange="partyLedgerFromDate=this.value; renderPartiesModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label><label class="text-xs font-bold">تا تاریخ (شمسی)<input id="party-ledger-to" value="' + escapeLedgerText(to) + '" onchange="partyLedgerToDate=this.value; renderPartiesModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label><div class="flex items-end"><button onclick="exportPartyLedgerCSV(\'' + escapeLedgerText(selectedPartyLedgerId) + '\',\'' + escapeLedgerText(from) + '\',\'' + escapeLedgerText(to) + '\')" class="touch-btn w-full bg-emerald-700 text-white rounded-lg px-3 py-2 font-bold">دانلود CSV گردش</button></div></div>' +
+          '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs"><div class="p-2 bg-slate-50 rounded-lg">مانده اول دوره<strong class="block">' + balanceLabel(ledger.openingNet) + '</strong></div><div class="p-2 bg-slate-50 rounded-lg">گردش بدهکار<strong class="block">' + money(ledger.periodDebit) + '</strong></div><div class="p-2 bg-slate-50 rounded-lg">گردش بستانکار<strong class="block">' + money(ledger.periodCredit) + '</strong></div><div class="p-2 bg-slate-50 rounded-lg">مانده پایان دوره<strong class="block">' + balanceLabel(ledger.closingNet) + '</strong></div></div>' +
+          (warnings.length ? '<div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">' + warnings.map(escapeLedgerText).join(' ') + '</div>' : '') +
+          '<div class="grid grid-cols-1 md:grid-cols-8 gap-1.5 text-[10px] font-black text-slate-500 px-2"><span>تاریخ</span><span>شماره سند</span><span>کد حساب</span><span>شرح سند</span><span>شرح ردیف</span><span>بدهکار</span><span>بستانکار</span><span>مانده</span></div>' +
+          (rows || '<p class="text-center text-slate-400 p-4">برای این طرف حساب در بازه انتخابی گردش ثبت نشده است.</p>') + '</div>';
+        return;
+      }
+      grid.innerHTML = state.parties.map(p => {
         const bal = getPartyNetBalance(p.id);
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
@@ -2840,10 +2948,12 @@
               <strong class="${bal >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(bal))} (${bal >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
             </div>
             <div class="text-[10px] text-slate-500 tabular-nums">سقف اعتبار مصوب: ${money(p.creditLimit)}</div>
+            <button onclick="openPartyLedger('${escapeLedgerText(p.id)}')" class="touch-btn w-full mt-1 bg-holoo-700 text-white rounded-lg px-3 py-2 font-bold">مشاهده گردش حساب و ریز اسناد</button>
           </div>
         `;
       }).join('');
     }
+
 
     function saveParty() {
       const name = document.getElementById('np-name').value.trim();
