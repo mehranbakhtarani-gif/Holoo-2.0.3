@@ -2821,12 +2821,10 @@
       return { balances: map, quality };
     }
 
-    function getPartyNetBalance(partyId) {
-      const party = state.parties.find(p => String(p.id) === String(partyId));
-      const ledgerCode = party?.ledgerAccountCode || '1103';
+    function getPartyAccountNetBalance(partyId, accountCode) {
       let net = 0;
-      state.vouchers.forEach(v => v.lines.forEach(l => {
-        if (String(l.partyId) === String(partyId) && (l.code === ledgerCode || l.code === '1103' || l.code === '2101' || l.code === '1107')) {
+      (state.vouchers || []).forEach(v => (v.lines || []).forEach(l => {
+        if (String(l.partyId) === String(partyId) && String(l.code || '') === String(accountCode)) {
           net += Number(l.debit || 0) - Number(l.credit || 0);
         }
       }));
@@ -4124,7 +4122,10 @@
         return;
       }
       grid.innerHTML = state.parties.map(p => {
-        const bal = getPartyNetBalance(p.id);
+        const accountCodes = [...new Set([String(p.ledgerAccountCode || '1103'), '1103', '2101', '1107'])];
+        const accountBalances = accountCodes
+          .map(code => ({ code, balance: getPartyAccountNetBalance(p.id, code) }))
+          .filter(item => item.code === String(p.ledgerAccountCode || '1103') || Math.abs(item.balance) > 0.000001);
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between items-center">
@@ -4134,9 +4135,13 @@
             <div class="font-black text-sm text-slate-900">${p.name}</div>
             <div class="text-[11px] text-slate-500">کد اقتصادی: ${faNum(p.ecoCode)} | تفصیلی: ${p.subledgerId || p.id} ← ${faNum(p.ledgerAccountCode || '1103')}</div>
             <div class="text-[10px] text-slate-500">شرایط: ${p.terms}</div>
-            <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center tabular-nums">
-              <span>مانده حساب:</span>
-              <strong class="${bal >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(bal))} (${bal >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
+            <div class="space-y-1.5">
+              ${accountBalances.map(item => `
+                <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center tabular-nums">
+                  <span>مانده حساب ${faNum(item.code)}:</span>
+                  <strong class="${item.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(item.balance))} (${item.balance >= 0 ? 'بدهکار' : 'بستانکار'})</strong>
+                </div>
+              `).join('')}
             </div>
             <div class="text-[10px] text-slate-500 tabular-nums">سقف اعتبار مصوب: ${money(p.creditLimit)}</div>
             <button onclick="openPartyModal('${escapeLedgerText(p.id)}')" class="touch-btn w-full mt-1 bg-amber-100 text-amber-900 rounded-lg px-3 py-2 font-bold">✏️ ویرایش مشخصات</button>
@@ -4239,7 +4244,8 @@
       const p = state.parties.find(x => x.id === document.getElementById('inv-party').value);
       const b = document.getElementById('inv-credit-banner');
       if (!p || invDraft.type !== 'sale') { b.classList.add('hidden'); return; }
-      const rem = p.creditLimit - Math.max(0, getPartyNetBalance(p.id));
+      const receivableBalance = getPartyAccountNetBalance(p.id, '1103');
+      const rem = p.creditLimit - Math.max(0, receivableBalance);
       b.classList.remove('hidden');
       b.className = rem <= 0 ? 'p-2 rounded-xl text-[11px] font-bold bg-rose-100 text-rose-900' : 'p-2 rounded-xl text-[11px] font-bold bg-emerald-50 text-emerald-800';
       b.textContent = rem <= 0 ? `⚠️ هشدار: مشتری از سقف اعتبار ${money(p.creditLimit)} عبور کرده است!` : `✔ اعتبار باقیمانده مشتری: ${money(rem)}`;
