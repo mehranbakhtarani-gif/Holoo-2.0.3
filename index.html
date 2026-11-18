@@ -506,6 +506,36 @@
               <div id="treasury-tx-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
             </div>
           </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
+              <div><h3 class="font-black text-sm">📄 ضمانت‌نامه‌ها و وثایق</h3><p class="text-[10px] text-amber-700 mt-1">ثبت کنترلی و خارج از دفاتر؛ ثبت این فرم به‌تنهایی سند حسابداری یا بدهی ایجاد نمی‌کند.</p></div>
+              <div class="grid grid-cols-2 gap-2">
+                <select id="guarantee-kind" class="border rounded-lg p-2 text-xs"><option value="bank">ضمانت‌نامه بانکی</option><option value="cheque">چک تضمین</option><option value="promissory">سفته</option><option value="other">سایر وثایق</option></select>
+                <select id="guarantee-direction" class="border rounded-lg p-2 text-xs"><option value="received">دریافت‌شده</option><option value="issued">صادرشده</option></select>
+                <select id="guarantee-party" class="border rounded-lg p-2 text-xs col-span-2"></select>
+                <input id="guarantee-ref" class="border rounded-lg p-2 text-xs col-span-2" placeholder="شماره ضمانت‌نامه / مرجع *" maxlength="80" />
+                <input id="guarantee-amount" type="number" min="0.01" step="0.01" class="border rounded-lg p-2 text-xs" placeholder="مبلغ ریالی *" />
+                <input id="guarantee-issue-date" class="border rounded-lg p-2 text-xs" placeholder="تاریخ صدور ۱۴۰۵/۰۱/۰۱" />
+                <input id="guarantee-expiry-date" class="border rounded-lg p-2 text-xs col-span-2" placeholder="تاریخ انقضا ۱۴۰۵/۱۲/۲۹ *" />
+                <input id="guarantee-desc" class="border rounded-lg p-2 text-xs col-span-2" placeholder="شرح / موضوع ضمانت" maxlength="240" />
+              </div>
+              <button onclick="saveGuaranteeRecord()" class="w-full bg-indigo-700 text-white rounded-lg py-2 text-xs font-bold">ثبت ضمانت‌نامه</button>
+              <div id="guarantees-list-container" class="space-y-2 max-h-80 overflow-y-auto"></div>
+            </div>
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
+              <div><h3 class="font-black text-sm">🗓 تعهدات پرداختنی</h3><p class="text-[10px] text-amber-700 mt-1">دفتر یادآوری تعهدات آتی؛ مبلغ آن به بدهی دفترکل اضافه نمی‌شود. پرداخت واقعی را جداگانه از خزانه ثبت کنید.</p></div>
+              <div class="grid grid-cols-2 gap-2">
+                <select id="commitment-party" class="border rounded-lg p-2 text-xs col-span-2"></select>
+                <input id="commitment-title" class="border rounded-lg p-2 text-xs col-span-2" placeholder="شرح تعهد / قرارداد *" maxlength="160" />
+                <input id="commitment-ref" class="border rounded-lg p-2 text-xs" placeholder="شماره مرجع" maxlength="80" />
+                <input id="commitment-amount" type="number" min="0.01" step="0.01" class="border rounded-lg p-2 text-xs" placeholder="مبلغ ریالی *" />
+                <input id="commitment-due-date" class="border rounded-lg p-2 text-xs col-span-2" placeholder="سررسید شمسی ۱۴۰۵/۰۱/۰۱ *" />
+              </div>
+              <button onclick="savePayableCommitment()" class="w-full bg-amber-700 text-white rounded-lg py-2 text-xs font-bold">ثبت تعهد پرداختنی</button>
+              <div id="payable-commitments-list" class="space-y-2 max-h-80 overflow-y-auto"></div>
+            </div>
+          </div>
         </section>
 
         <!-- ==================== MODULE 10: ACCOUNTING, 4-LEVEL REVIEW & REPORTS ==================== -->
@@ -1660,6 +1690,8 @@
         fxCommitments: [],
         bankAccounts: [],
         checks: [],
+        guarantees: [],
+        payableCommitments: [],
         treasuryTxs: [],
         bankReconcileItems: [],
         employees: [],
@@ -1871,6 +1903,10 @@
       } catch (e) { return defaultState(); }
     })();
 
+    if (!Array.isArray(state.checks)) state.checks = [];
+    if (!Array.isArray(state.guarantees)) state.guarantees = [];
+    if (!Array.isArray(state.payableCommitments)) state.payableCommitments = [];
+    if (!Array.isArray(state.treasuryTxs)) state.treasuryTxs = [];
     if (!Array.isArray(state.accountCatalog) || !state.accountCatalog.length) state.accountCatalog = buildAccountCatalog();
     state.accountCatalog.filter(a => a.level === 'subsidiary').forEach(a => { if (!CHART_ACCOUNTS.some(existing => existing.code === a.code)) CHART_ACCOUNTS.push({ code: a.code, name: a.name }); });
     // Add the supplier-advance account to existing installations without replacing their custom chart.
@@ -1915,7 +1951,7 @@
 
     const SYNC_ENTITY_COLLECTIONS = [
       'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports', 'fxCommitments',
-      'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
+      'bankAccounts', 'checks', 'guarantees', 'payableCommitments', 'treasuryTxs', 'bankReconcileItems',
       'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits'
     ];
     let lastSavedState = JSON.parse(JSON.stringify(state));
@@ -4190,6 +4226,93 @@
             <strong class="tabular-nums">${money(t.amount)}</strong>
           </div>`;
       }).join('');
+      renderGuaranteesAndCommitments();
+    }
+
+    const GUARANTEE_KIND_LABELS = { bank: 'ضمانت‌نامه بانکی', cheque: 'چک تضمین', promissory: 'سفته', other: 'سایر وثایق' };
+    const GUARANTEE_DIRECTION_LABELS = { received: 'دریافت‌شده', issued: 'صادرشده' };
+    const GUARANTEE_STATUS_LABELS = { active: 'فعال', released: 'آزادشده', claimed: 'مطالبه‌شده' };
+    const COMMITMENT_STATUS_LABELS = { open: 'باز', fulfilled: 'انجام‌شده', cancelled: 'لغوشده' };
+
+    function jalaliDateLooksValid(value) {
+      return !!normalizeLedgerDate(String(value || '').trim());
+    }
+
+    function renderGuaranteesAndCommitments() {
+      const partyOptions = (state.parties || []).map(p => `<option value="${escapeBankReconcileText(p.id)}">${escapeBankReconcileText(p.name)}</option>`).join('');
+      ['guarantee-party', 'commitment-party'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) { const current = select.value; select.innerHTML = partyOptions || '<option value="">ابتدا طرف‌حساب تعریف کنید</option>'; if (current) select.value = current; }
+      });
+      const guaranteeBox = document.getElementById('guarantees-list-container');
+      if (guaranteeBox) guaranteeBox.innerHTML = (state.guarantees || []).length ? state.guarantees.map(g => {
+        const party = (state.parties || []).find(p => String(p.id) === String(g.partyId));
+        return `<div class="p-2.5 rounded-xl border bg-slate-50 space-y-1">
+          <div class="flex justify-between gap-2"><strong>${escapeBankReconcileText(GUARANTEE_KIND_LABELS[g.kind] || g.kind)} • ${escapeBankReconcileText(GUARANTEE_DIRECTION_LABELS[g.direction] || g.direction)}</strong><span class="text-[10px] font-bold">${escapeBankReconcileText(GUARANTEE_STATUS_LABELS[g.status] || g.status)}</span></div>
+          <div class="text-[10px] text-slate-600">${escapeBankReconcileText(g.reference)} • ${escapeBankReconcileText(party?.name || 'طرف‌حساب حذف‌شده')}</div>
+          <div class="flex justify-between text-xs"><b>${money(g.amount)}</b><span>انقضا: ${escapeBankReconcileText(g.expiryDate)}</span></div>
+          ${g.description ? `<div class="text-[10px] text-slate-500">${escapeBankReconcileText(g.description)}</div>` : ''}
+          ${g.status === 'active' ? `<div class="flex gap-1"><button onclick="changeGuaranteeStatus('${escapeBankReconcileText(g.id)}','released')" class="bg-emerald-700 text-white rounded px-2 py-1 text-[10px]">آزادسازی</button><button onclick="changeGuaranteeStatus('${escapeBankReconcileText(g.id)}','claimed')" class="bg-rose-700 text-white rounded px-2 py-1 text-[10px]">مطالبه</button></div>` : ''}
+        </div>`;
+      }).join('') : '<p class="text-[10px] text-slate-400">هنوز ضمانت‌نامه‌ای ثبت نشده است.</p>';
+      const commitmentBox = document.getElementById('payable-commitments-list');
+      if (commitmentBox) commitmentBox.innerHTML = (state.payableCommitments || []).length ? state.payableCommitments.map(c => {
+        const party = (state.parties || []).find(p => String(p.id) === String(c.partyId));
+        return `<div class="p-2.5 rounded-xl border bg-slate-50 space-y-1">
+          <div class="flex justify-between gap-2"><strong>${escapeBankReconcileText(c.title)}</strong><span class="text-[10px] font-bold">${escapeBankReconcileText(COMMITMENT_STATUS_LABELS[c.status] || c.status)}</span></div>
+          <div class="text-[10px] text-slate-600">${escapeBankReconcileText(party?.name || 'طرف‌حساب حذف‌شده')} • ${escapeBankReconcileText(c.reference || 'بدون مرجع')}</div>
+          <div class="flex justify-between text-xs"><b>${money(c.amount)}</b><span>سررسید: ${escapeBankReconcileText(c.dueDate)}</span></div>
+          ${c.status === 'open' ? `<div class="flex gap-1"><button onclick="changePayableCommitmentStatus('${escapeBankReconcileText(c.id)}','fulfilled')" class="bg-emerald-700 text-white rounded px-2 py-1 text-[10px]">انجام شد</button><button onclick="changePayableCommitmentStatus('${escapeBankReconcileText(c.id)}','cancelled')" class="bg-slate-600 text-white rounded px-2 py-1 text-[10px]">لغو تعهد</button></div>` : ''}
+        </div>`;
+      }).join('') : '<p class="text-[10px] text-slate-400">هنوز تعهد پرداختنی ثبت نشده است.</p>';
+    }
+
+    function saveGuaranteeRecord() {
+      const partyId = document.getElementById('guarantee-party').value;
+      const reference = document.getElementById('guarantee-ref').value.trim();
+      const amount = Number(document.getElementById('guarantee-amount').value);
+      const issueDate = document.getElementById('guarantee-issue-date').value.trim();
+      const expiryDate = document.getElementById('guarantee-expiry-date').value.trim();
+      const kind = document.getElementById('guarantee-kind').value;
+      if (!(state.parties || []).some(p => String(p.id) === String(partyId))) { showToast('طرف‌حساب ضمانت‌نامه را انتخاب کنید.', 'error'); return; }
+      if (!reference || (state.guarantees || []).some(g => String(g.reference).toLowerCase() === reference.toLowerCase() && g.kind === kind)) { showToast('شماره مرجع الزامی است و برای همین نوع نباید تکراری باشد.', 'error'); return; }
+      if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ ضمانت‌نامه باید بیشتر از صفر باشد.', 'error'); return; }
+      if (!jalaliDateLooksValid(expiryDate) || (issueDate && !jalaliDateLooksValid(issueDate))) { showToast('تاریخ شمسی صدور یا انقضا معتبر نیست.', 'error'); return; }
+      state.guarantees.unshift({ id: createStableId('guarantee'), kind, direction: document.getElementById('guarantee-direction').value, partyId, reference, amount, issueDate, expiryDate, description: document.getElementById('guarantee-desc').value.trim(), status: 'active', createdAt: new Date().toISOString(), createdBy: state.activeRole || 'mehran' });
+      addAudit('ثبت ضمانت‌نامه ' + reference, { sourceType: 'guarantee_register' });
+      saveState(); renderAll(); showToast('ضمانت‌نامه در دفتر کنترلی ثبت شد؛ سند حسابداری صادر نشد.');
+      ['guarantee-ref','guarantee-amount','guarantee-issue-date','guarantee-expiry-date','guarantee-desc'].forEach(id => { document.getElementById(id).value = ''; });
+    }
+
+    function changeGuaranteeStatus(id, status) {
+      const record = (state.guarantees || []).find(g => String(g.id) === String(id));
+      if (!record || record.status !== 'active' || !['released','claimed'].includes(status)) { showToast('تغییر وضعیت ضمانت‌نامه مجاز نیست.', 'error'); return; }
+      record.status = status; record.statusUpdatedAt = new Date().toISOString(); record.statusUpdatedBy = state.activeRole || 'mehran';
+      addAudit('تغییر وضعیت ضمانت‌نامه ' + record.reference + ' به ' + (GUARANTEE_STATUS_LABELS[status] || status), { sourceType: 'guarantee_register' });
+      saveState(); renderAll(); showToast('وضعیت ضمانت‌نامه به‌روزرسانی شد؛ ثبت حسابداری انجام نشد.');
+    }
+
+    function savePayableCommitment() {
+      const partyId = document.getElementById('commitment-party').value;
+      const title = document.getElementById('commitment-title').value.trim();
+      const reference = document.getElementById('commitment-ref').value.trim();
+      const amount = Number(document.getElementById('commitment-amount').value);
+      const dueDate = document.getElementById('commitment-due-date').value.trim();
+      if (!(state.parties || []).some(p => String(p.id) === String(partyId))) { showToast('طرف‌حساب تعهد را انتخاب کنید.', 'error'); return; }
+      if (!title || !jalaliDateLooksValid(dueDate)) { showToast('شرح و تاریخ سررسید معتبر الزامی است.', 'error'); return; }
+      if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ تعهد باید بیشتر از صفر باشد.', 'error'); return; }
+      state.payableCommitments.unshift({ id: createStableId('payable'), partyId, title, reference, amount, dueDate, status: 'open', createdAt: new Date().toISOString(), createdBy: state.activeRole || 'mehran' });
+      addAudit('ثبت تعهد پرداختنی ' + title, { sourceType: 'payable_commitment' });
+      saveState(); renderAll(); showToast('تعهد در دفتر یادآوری ثبت شد؛ بدهی دفترکل تغییر نکرد.');
+      ['commitment-title','commitment-ref','commitment-amount','commitment-due-date'].forEach(id => { document.getElementById(id).value = ''; });
+    }
+
+    function changePayableCommitmentStatus(id, status) {
+      const record = (state.payableCommitments || []).find(c => String(c.id) === String(id));
+      if (!record || record.status !== 'open' || !['fulfilled','cancelled'].includes(status)) { showToast('تغییر وضعیت تعهد مجاز نیست.', 'error'); return; }
+      record.status = status; record.statusUpdatedAt = new Date().toISOString(); record.statusUpdatedBy = state.activeRole || 'mehran';
+      addAudit('تغییر وضعیت تعهد پرداختنی ' + record.title + ' به ' + (COMMITMENT_STATUS_LABELS[status] || status), { sourceType: 'payable_commitment' });
+      saveState(); renderAll(); showToast(status === 'fulfilled' ? 'تعهد انجام‌شده علامت خورد؛ پرداخت باید جداگانه در خزانه ثبت شده باشد.' : 'تعهد لغو شد.');
     }
 
     function updateCheckStatus(id, st) {
