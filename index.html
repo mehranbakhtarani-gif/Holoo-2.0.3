@@ -2251,7 +2251,7 @@
       return net;
     }
 
-    function postVoucher(desc, lines, date = (typeof getTodayJalaliDate === 'function' ? getTodayJalaliDate() : `${state.fiscalYear}/08/27`), source = null) {
+    function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
       const d = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
       const c = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
       if (!Array.isArray(lines) || lines.length < 2 || !Number.isFinite(d) || !Number.isFinite(c) || Math.round(d) !== Math.round(c) || d <= 0 || c <= 0) throw new Error('سند نامعتبر است: حداقل دو ردیف و توازن کامل لازم است.');
@@ -2508,7 +2508,7 @@
         lastMoveDays: 0,
         buyPrice,
         prices,
-        kardex: stock > 0 ? [{ date: `${state.fiscalYear}/08/27`, doc: 'موجودی اولیه', inQty: stock, outQty: 0, bal: stock, price: buyPrice }] : []
+        kardex: stock > 0 ? [{ date: getTodayJalaliDate(), doc: 'موجودی اولیه', inQty: stock, outQty: 0, bal: stock, price: buyPrice }] : []
       };
       state.products.unshift(newProd);
       if (stock > 0) newProd.batches.push({ id: 'OPEN-' + newProd.id, lot: newProd.lot || ('OPEN-' + newProd.id), receivedDate: '0000/00/00', productionDate: '', expiryDate: '', quantity: stock, remainingQty: stock, unitCost: buyPrice, sourceType: 'opening', sourceRef: newProd.id, warehouseId: newProd.warehouseId });
@@ -2667,7 +2667,7 @@
         if (remaining > 0.000001) throw new Error('مقدار برگشتی از تخصیص بچ فاکتور بیشتر است.');
         return restored;
       }
-      const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: `${state.fiscalYear}/08/27`, productionDate: '', expiryDate: '', quantity: quantityToRestore, remainingQty: quantityToRestore, unitCost: Number(fallbackCost || 0), sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
+      const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: getTodayJalaliDate(), productionDate: '', expiryDate: '', quantity: quantityToRestore, remainingQty: quantityToRestore, unitCost: Number(fallbackCost || 0), sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
       batches.push(fallbackBatch);
       return [{ batchId: fallbackBatch.id, quantity: quantityToRestore }];
     }
@@ -2755,7 +2755,7 @@
         showToast('انبار مبدأ و مقصد نمی‌توانند یکسان باشند.', 'error'); return;
       }
 
-      const date = `${state.fiscalYear}/08/27`;
+      const date = getTodayJalaliDate();
       const rootProductId = p.baseProductId || p.id;
       const destId = `${rootProductId}::${destWh}`;
       let destination = state.products.find(x =>
@@ -2800,12 +2800,12 @@
         const real = Number(document.getElementById(`st-real-${p.id}`).value);
         if (real !== p.stock) {
           const diff = real - p.stock;
-          if (diff > 0 && state.costingMethod === 'FIFO') addStockBatch(p, { lot: 'ADJ-' + Date.now() + '-' + p.id, quantity: diff, unitCost: p.buyPrice, receivedDate: `${state.fiscalYear}/08/27`, sourceType: 'stocktake', sourceRef: p.id });
+          if (diff > 0 && state.costingMethod === 'FIFO') addStockBatch(p, { lot: 'ADJ-' + Date.now() + '-' + p.id, quantity: diff, unitCost: p.buyPrice, receivedDate: getTodayJalaliDate(), sourceType: 'stocktake', sourceRef: p.id });
           if (diff < 0 && state.costingMethod === 'FIFO') consumeFifoStock(p, Math.abs(diff));
           p.stock = real;
           changes++;
           const val = Math.abs(diff) * p.buyPrice;
-          p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: 'اصلاحیه انبارگردانی', inQty: diff > 0 ? diff : 0, outQty: diff < 0 ? Math.abs(diff) : 0, bal: real, price: p.buyPrice });
+          p.kardex.push({ date: getTodayJalaliDate(), doc: 'اصلاحیه انبارگردانی', inQty: diff > 0 ? diff : 0, outQty: diff < 0 ? Math.abs(diff) : 0, bal: real, price: p.buyPrice });
           postVoucher(`سند مغایرت انبارگردانی: ${p.name}`, diff < 0
             ? [{ code: '6104', partyId: null, desc: `کسری انبارگردانی ${p.name}`, debit: val, credit: 0 }, { code: '1105', partyId: null, desc: p.name, debit: 0, credit: val }]
             : [{ code: '1105', partyId: null, desc: `اضافه انبارگردانی ${p.name}`, debit: val, credit: 0 }, { code: '3102', partyId: null, desc: p.name, debit: 0, credit: val }]
@@ -2988,7 +2988,7 @@
       const commAmount = Math.round(sub * (commRate / 100));
       const grandTotal = sub + vatAmount;
       const id = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
-      const date = `${state.fiscalYear}/08/27`;
+      const date = getTodayJalaliDate();
 
       state.invoices.unshift({
         id, type, date, dueDate: document.getElementById('inv-due-date').value, partyId, warehouseId,
@@ -3164,7 +3164,7 @@
           consumeFifoStock(p, q);
           p.stock -= q;
         }
-        p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
+        p.kardex.push({ date: getTodayJalaliDate(), doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
       }
 
       inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, items: returnPlan.map(x => ({ productId: x.item.productId, qty: x.qty, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
@@ -3274,7 +3274,7 @@
     }
     function saveOrder() {
       state.orders.unshift({
-        id: 'ORD-' + (501 + state.orders.length), date: `${state.fiscalYear}/08/27`,
+        id: 'ORD-' + (501 + state.orders.length), date: getTodayJalaliDate(),
         partyId: document.getElementById('ord-party').value, productId: document.getElementById('ord-prod').value,
         kg: Number(document.getElementById('ord-qty').value || 1000), price: Number(document.getElementById('ord-price').value || 1650000),
         terms: document.getElementById('ord-terms').value, status: 'باز (در انتظار تبدیل)'
@@ -4124,7 +4124,7 @@
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-        state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: `${state.fiscalYear}/08/27`, dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) });
+        state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) });
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
         postVoucher('ثبت چک صیادی ' + sayad, lines, undefined, { type: 'check', id: checkId, event: 'issued' });
       } else {
@@ -4141,7 +4141,7 @@
       }
       const singleAllocation = allocations.length === 1 ? allocations[0] : null;
       state.treasuryTxs.unshift({
-        id: txId, date: `${state.fiscalYear}/08/27`, dir, partyId,
+        id: txId, date: getTodayJalaliDate(), dir, partyId,
         method: method === 'check' ? 'چک صیادی' : (method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی'),
         amount, allocInv: singleAllocation ? `#${faNum(singleAllocation.invoiceId)}` : (allocations.length ? `${faNum(allocations.length)} فاکتور` : '—'),
         allocInvId: singleAllocation ? singleAllocation.invoiceId : null,
@@ -5468,7 +5468,7 @@
         const list = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]');
         if (!Array.isArray(list)) throw new Error('ساختار فهرست پشتیبان معتبر نیست.');
         const now = new Date();
-        const ts = `${state.fiscalYear}/08/27 - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        const ts = `${getTodayJalaliDate(now)} - ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         list.unshift({ id: 'SNAP-' + Date.now(), ts, reason, payload: JSON.stringify(state) });
         if (list.length > 6) list.length = 6;
         localStorage.setItem(SNAP_KEY, JSON.stringify(list));
