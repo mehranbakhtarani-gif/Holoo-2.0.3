@@ -2775,6 +2775,52 @@
       return map;
     }
 
+    function buildDashboardAccountBalances() {
+      const map = {};
+      CHART_ACCOUNTS.forEach(account => {
+        map[account.code] = { ...account, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0 };
+      });
+      const quality = { invalidDateVouchers: 0, invalidAmountVouchers: 0, invalidStructureVouchers: 0, unbalancedVouchers: 0 };
+      (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(voucher => {
+        const rawDate = voucher?.date || voucher?.operationDate;
+        if (!rawDate || jalaliDateOrdinal(rawDate) === null) {
+          quality.invalidDateVouchers++;
+          return;
+        }
+        const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+        if (lines.length < 2) quality.invalidStructureVouchers++;
+        if (!lines.length) return;
+        let debitTotal = 0, creditTotal = 0;
+        const normalizedLines = [];
+        for (const line of lines) {
+          const code = String(line?.code || '').trim();
+          const debit = Number(line?.debit || 0), credit = Number(line?.credit || 0);
+          if (!code || !Number.isFinite(debit) || !Number.isFinite(credit) ||
+              debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+            quality.invalidAmountVouchers++;
+            return;
+          }
+          debitTotal += debit;
+          creditTotal += credit;
+          normalizedLines.push({ code, debit, credit, name: line.accountName || line.name || code });
+        }
+        if (Math.abs(debitTotal - creditTotal) > 0.000001) quality.unbalancedVouchers++;
+        normalizedLines.forEach(line => {
+          if (!map[line.code]) map[line.code] = {
+            code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0
+          };
+          map[line.code].debTurn += line.debit;
+          map[line.code].credTurn += line.credit;
+        });
+      });
+      Object.values(map).forEach(account => {
+        const difference = account.debTurn - account.credTurn;
+        if (difference > 0) account.debBal = difference;
+        else if (difference < 0) account.credBal = Math.abs(difference);
+      });
+      return { balances: map, quality };
+    }
+
     function getPartyNetBalance(partyId) {
       const party = state.parties.find(p => String(p.id) === String(partyId));
       const ledgerCode = party?.ledgerAccountCode || '1103';
@@ -2828,7 +2874,8 @@
     // =========================================================================
     let dashChartInst = null;
     function renderDashboard() {
-      const bal = getAccountBalances();
+      const balanceAudit = buildDashboardAccountBalances();
+      const bal = balanceAudit.balances;
       const liquidity = (bal['1101']?.debBal || 0) + (bal['1102']?.debBal || 0);
       const sales = (bal['4101']?.credBal || 0) - (bal['4102']?.debBal || 0) - (bal['4103']?.debBal || 0);
       const purchases = state.invoices.filter(i => i.type === 'purchase').reduce((s, i) => s + i.grandTotal, 0) + state.imports.reduce((s, m) => s + m.totalLandedRial, 0);
@@ -2872,6 +2919,11 @@
       `;
 
       const alerts = [];
+      const balanceQuality = balanceAudit.quality;
+      if (balanceQuality.invalidDateVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidDateVouchers) + ' سند با تاریخ نامعتبر از محاسبه شاخص‌های داشبورد کنار گذاشته شد.</div>');
+      if (balanceQuality.invalidAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidAmountVouchers) + ' سند دارای ردیف حساب/مبلغ نامعتبر از محاسبه شاخص‌های داشبورد کنار گذاشته شد.</div>');
+      if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند با ساختار ناقص در محاسبه شاخص‌ها لحاظ شده است.</div>');
+      if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن در محاسبه شاخص‌ها لحاظ شده است؛ اختلاف پنهان نشده است.</div>');
       state.checks.filter(c => c.status === 'overdue' || c.status === 'in_progress').forEach(c => {
         alerts.push(`<div class="p-2.5 rounded-xl ${c.status === 'overdue' ? 'bg-rose-50 border-rose-300 text-rose-950' : 'bg-amber-50 border-amber-200 text-amber-950'} border flex justify-between items-center">
           <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(c.sayad.slice(-6))} (${faNum(c.dueDate)})</span>
@@ -6293,7 +6345,7 @@
 
     let cfChartInst = null;
     function renderCashflowModule() {
-      const bal = getAccountBalances();
+      const bal = buildDashboardAccountBalances().balances;
       const baseCash = (bal['1101']?.debBal || 0) + (bal['1102']?.debBal || 0);
       const rec = (bal['1103']?.debBal || 0) + (bal['1104']?.debBal || 0);
       const pay = (bal['2101']?.credBal || 0) + (bal['2102']?.credBal || 0) + (bal['2105']?.credBal || 0);
