@@ -35,8 +35,8 @@ assert.match(html, /async function fetchWithTimeout\(/);
 assert.match(html, /مهلت پاسخ Supabase تمام شد/);
 assert.match(html, /در حال آماده‌سازی حافظه محلی/);
 assert.match(html, /new Promise\(resolve => setTimeout\(\(\) => resolve\(false\), 15000\)\)/);
-assert.match(html, /آماده‌سازی حافظه محلی طول کشید؛ همگام‌سازی خودکار متوقف شد/);
-assert.match(html, /بررسی وضعیت محلی کامل نشد؛ همگام‌سازی خودکار متوقف شد/);
+assert.match(html, /محیط محلی باز شد؛ آماده‌سازی حافظه کامل نشد و همگام‌سازی خودکار متوقف شد/);
+assert.match(html, /محیط حسابداری باز است؛ بررسی صف کامل نشد و همگام‌سازی خودکار متوقف شد/);
 assert.match(html, /اتصال خودکار ناموفق؛ نسخه محلی حفظ شد/);
 assert.match(html, /else await pullFromSupabase\(false\)/);
 const releaseGuide = fs.readFileSync('docs/ANDROID_PWA_RELEASE_READINESS.md', 'utf8');
@@ -45,3 +45,11 @@ assert.match(releaseGuide, /three-device acceptance test/i);
 assert.match(releaseGuide, /actor names and device labels are not verified identities/i);
 
 console.log('PASS: Android PWA installation, cache safety, and release-readiness checks');
+
+// Startup must reveal the accounting UI before waiting for cloud queue inspection.
+const startupIndex = html.indexOf("window.addEventListener('DOMContentLoaded'");
+const startup = html.slice(startupIndex);
+assert.ok(startup.indexOf("navigateTo('dashboard')") < startup.indexOf("renderCloudSyncStatus()"), 'dashboard must open before cloud status inspection');
+assert.match(html, /const failedModules = \[\]/);
+assert.match(html, /Holoo module rendering failed/);
+assert.match(html, /محیط حسابداری باز است؛ بررسی صف کامل نشد/);

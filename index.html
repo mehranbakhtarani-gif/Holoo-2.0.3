@@ -5524,30 +5524,54 @@
     // 13. MASTER RENDER & STARTUP CLOUD SYNC
     // =========================================================================
     function renderAll() {
-      document.getElementById('currency-badge').textContent = state.currency === 'IRR' ? 'ریال' : 'تومان';
-      document.getElementById('header-company-name').textContent = state.settings.companyName;
-      if (state.settings.logoUrl) {
-        document.getElementById('header-logo-box').innerHTML = `<img src="${state.settings.logoUrl}" class="w-full h-full object-cover" />`;
-        document.getElementById('cfg-logo-preview').innerHTML = `<img src="${state.settings.logoUrl}" class="w-full h-full object-cover" />`;
+      // خطای یک ماژول نباید مانع نمایش سایر بخش‌ها یا بازشدن محیط اصلی شود.
+      try {
+        const currencyBadge = document.getElementById('currency-badge');
+        if (currencyBadge) currencyBadge.textContent = state.currency === 'IRR' ? 'ریال' : 'تومان';
+        const companyName = document.getElementById('header-company-name');
+        if (companyName) companyName.textContent = state.settings?.companyName || 'شرکت';
+        if (state.settings?.logoUrl) {
+          const logoHtml = `<img src="${state.settings.logoUrl}" class="w-full h-full object-cover" />`;
+          const headerLogo = document.getElementById('header-logo-box');
+          const previewLogo = document.getElementById('cfg-logo-preview');
+          if (headerLogo) headerLogo.innerHTML = logoHtml;
+          if (previewLogo) previewLogo.innerHTML = logoHtml;
+        }
+      } catch (error) {
+        console.error('Holoo header rendering failed:', error);
       }
-      renderDashboard();
-      renderProductsModule();
-      renderInventoryModule();
-      renderPartiesModule();
-      renderInvoicesModule();
-      renderOrdersModule();
-      renderImportsModule();
-      renderTreasuryModule();
-      renderReconcileModule();
-      renderFxModule();
-      renderCashflowModule();
-      renderAgingModule();
-      renderCapitalPlanner();
-      renderAccountingModule();
-      renderHrModule();
-      renderAssetsModule();
-      renderApprovalsModule();
-      renderSettingsModule();
+
+      const renderers = [
+        ['داشبورد', renderDashboard],
+        ['کالاها', renderProductsModule],
+        ['انبار', renderInventoryModule],
+        ['طرف حساب‌ها', renderPartiesModule],
+        ['فاکتورها', renderInvoicesModule],
+        ['سفارش‌ها', renderOrdersModule],
+        ['واردات', renderImportsModule],
+        ['خزانه‌داری', renderTreasuryModule],
+        ['مغایرت‌گیری', renderReconcileModule],
+        ['ارز', renderFxModule],
+        ['جریان نقدی', renderCashflowModule],
+        ['مطالبات و بدهی‌ها', renderAgingModule],
+        ['برنامه سرمایه', renderCapitalPlanner],
+        ['حسابداری', renderAccountingModule],
+        ['حقوق و دستمزد', renderHrModule],
+        ['دارایی‌ها', renderAssetsModule],
+        ['تأییدها', renderApprovalsModule],
+        ['تنظیمات', renderSettingsModule]
+      ];
+      const failedModules = [];
+      for (const [name, renderer] of renderers) {
+        try { renderer(); }
+        catch (error) {
+          failedModules.push(name);
+          console.error('Holoo module rendering failed (' + name + '):', error);
+        }
+      }
+      if (failedModules.length) {
+        setCloudBadge('⚠️ محیط برنامه باز شد؛ نمایش بعضی بخش‌ها با خطا روبه‌رو شد', 'text-amber-300');
+      }
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -5569,6 +5593,27 @@
       const roleSelect = document.getElementById('role-select');
       if (roleSelect) roleSelect.value = state.activeRole;
 
+      // ابتدا محیط حسابداری را نمایش بده؛ بررسی صف و وضعیت ابر فقط پس‌زمینه است.
+      if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
+      setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
+      const launchAction = new URLSearchParams(window.location.search).get('action');
+      try {
+        if (launchAction === 'sale') { navigateTo('invoices'); openInvoiceForm('sale'); }
+        else if (launchAction === 'imports') navigateTo('imports');
+        else if (launchAction === 'treasury') navigateTo('treasury');
+        else navigateTo('dashboard');
+      } catch (error) {
+        console.error('Holoo initial screen rendering failed:', error);
+        try { navigateTo('dashboard'); } catch (fallbackError) {
+          console.error('Holoo dashboard fallback failed:', fallbackError);
+        }
+      }
+
+      if (!localReady) {
+        setCloudBadge('⚠️ محیط محلی باز شد؛ آماده‌سازی حافظه کامل نشد و همگام‌سازی خودکار متوقف شد', 'text-amber-300');
+        return;
+      }
+
       setCloudBadge('⏳ در حال بررسی حافظه و صف همگام‌سازی...', 'text-sky-300');
       const statusReady = await Promise.race([
         renderCloudSyncStatus().then(() => true).catch(error => {
@@ -5577,21 +5622,8 @@
         }),
         new Promise(resolve => setTimeout(() => resolve(false), 8000))
       ]);
-
-      if (!localStorage.getItem(SNAP_KEY)) createSnapshot('نقطه بازیابی اولیه سیستم', false);
-      setInterval(() => createSnapshot('بکاپ دوره‌ای خودکار', false), 5 * 60 * 1000);
-      const launchAction = new URLSearchParams(window.location.search).get('action');
-      if (launchAction === 'sale') { navigateTo('invoices'); openInvoiceForm('sale'); }
-      else if (launchAction === 'imports') navigateTo('imports');
-      else if (launchAction === 'treasury') navigateTo('treasury');
-      else navigateTo('dashboard');
-
-      if (!localReady) {
-        setCloudBadge('⚠️ آماده‌سازی حافظه محلی طول کشید؛ همگام‌سازی خودکار متوقف شد', 'text-amber-300');
-        return;
-      }
       if (!statusReady) {
-        setCloudBadge('⚠️ بررسی وضعیت محلی کامل نشد؛ همگام‌سازی خودکار متوقف شد', 'text-amber-300');
+        setCloudBadge('⚠️ محیط حسابداری باز است؛ بررسی صف کامل نشد و همگام‌سازی خودکار متوقف شد', 'text-amber-300');
         return;
       }
 
