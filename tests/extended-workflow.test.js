@@ -65,7 +65,7 @@ test('opening stock creates kardex entry and accounting voucher', () => {
   for (let i = 0; i < 10; i++) values[`p-lvl-${i}`] = String(25000 + i * 100);
   const vouchers = [];
   const save = load(extractFunction('saveProduct', 'function renderInventoryModule()'), 'saveProduct', {
-    state, document: fakeDocument(values), postVoucher(...args) { vouchers.push(args); }, saveState() {}, closeModal() {}, renderAll() {}, showToast() {}
+    state, document: fakeDocument(values), getTodayJalaliDate() { return '1405/09/02'; }, postVoucher(...args) { vouchers.push(args); }, saveState() {}, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
   assert.equal(state.products.length, 1);
@@ -88,7 +88,7 @@ function runInvoice(type, payMethod = 'credit', bankAccounts = []) {
   const posted = [];
   let saves = 0;
   const submit = load(extractFunction('submitInvoice', 'function renderInvoicesModule()'), 'submitInvoice', {
-    state, invDraft: draft, document: fakeDocument(values),
+    state, invDraft: draft, document: fakeDocument(values), getTodayJalaliDate() { return '1405/09/02'; },
     addStockBatch(product, details) { product.batches = product.batches || []; product.batches.push({ ...details, id: 'TEST-BATCH-' + product.batches.length, remainingQty: details.quantity }); },
     consumeFifoStock(product, quantity) {
       product.batches = product.batches || [];
