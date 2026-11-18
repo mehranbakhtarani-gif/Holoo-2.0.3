@@ -3450,11 +3450,12 @@
               <div><span class="text-slate-400 block">بهای تمام‌شده هر کیلوگرم:</span><strong class="text-holoo-900 font-black">${money(m.landedCostPerKg)}</strong></div>
               <div><span class="text-slate-400 block">سود ناخالص فروش تحقق‌یافته:</span><strong class="text-emerald-700 font-black">${money(shipmentProfit.grossProfit)}</strong></div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-100 tabular-nums">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-100 tabular-nums">
               <div>فروش خالص قابل ردیابی: <strong>${money(shipmentProfit.revenue)}</strong></div>
               <div>بهای تمام‌شده فروش: <strong>${money(shipmentProfit.cogs)}</strong></div>
               <div>تسعیر تحقق‌یافته: <strong>${money(shipmentProfit.realizedFx)}</strong></div>
-              <div>برآورد تسعیر تحقق‌نیافته (بدون سند پایان‌دوره): <strong>${money(shipmentProfit.unrealizedFx)}</strong></div>
+              <div>تسعیر پایان‌دوره ثبت‌شده: <strong>${money(shipmentProfit.postedRevaluationFx)}</strong></div>
+              <div>برآورد تسعیر باز تا امروز: <strong>${money(shipmentProfit.unrealizedFx)}</strong></div>
             </div>
             ${shipmentProfit.untraceableSalesKg > 0 ? '<div class="text-amber-700 text-[10px]">فروش ' + faNum(shipmentProfit.untraceableSalesKg) + ' کیلو از سوابق قدیمی قابل ردیابی نیست.</div>' : ''}
           </div>
@@ -3479,6 +3480,7 @@
         const curRate = state.fxRates[m.currency] || m.fxRate;
         const carryingRate = Number(m.carryingRate || m.fxRate || 0);
         const unrealizedDiff = (carryingRate - curRate) * remFx;
+        const postedRevaluation = (m.revaluationHistory || []).reduce((sum, entry) => sum + Number(entry.difference || 0), 0);
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between font-black"><span>تعهد ارزی محموله ${m.id} — ${m.supplier}</span><span class="tabular-nums">${faNum(m.fxTotal)} ${m.currency}</span></div>
@@ -3486,7 +3488,8 @@
               <div>پرداخت‌شده: <strong>${faNum(m.fxPaid)} ${m.currency}</strong></div>
               <div>مانده بدهی ارزی: <strong class="text-rose-700">${faNum(remFx)} ${m.currency}</strong></div>
               <div>نرخ دفتری فعلی: <strong>${money(carryingRate, false)}</strong></div>
-              <div>سود/زیان تسعیر تحقق‌نیافته: <strong class="${unrealizedDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(unrealizedDiff))} (${unrealizedDiff >= 0 ? 'سود' : 'زیان'})</strong></div>
+              <div>تسعیر پایان‌دوره ثبت‌شده: <strong>${money(postedRevaluation)}</strong></div>
+              <div>سود/زیان تسعیر باز: <strong class="${unrealizedDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(unrealizedDiff))} (${unrealizedDiff >= 0 ? 'سود' : 'زیان'})</strong></div>
             </div>
             ${remFx > 0 ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-2"><input type="number" id="fx-import-pay-${m.id}" min="0.01" max="${remFx}" step="any" value="${Math.min(5000, remFx)}" class="touch-btn border rounded-lg px-2 tabular-nums" aria-label="مبلغ پرداخت ارزی محموله" /><select id="fx-import-bank-${m.id}" class="touch-btn border rounded-lg px-2"><option value="">بدون تخصیص بانک</option>${(state.bankAccounts || []).map(b => `<option value="${b.id}">${b.name}</option>`).join('')}</select><button onclick="payFxStage('${m.id}')" class="touch-btn bg-indigo-700 text-white px-4 rounded-xl font-bold">💸 ثبت پرداخت مرحله‌ای</button></div>` : '<span class="text-emerald-700 font-bold">تسویه کامل ارزی ✔</span>'}
           </div>
@@ -3496,6 +3499,7 @@
         const curRate = Number(state.fxRates[c.currency] || c.initialRate || 0);
         const carryingRate = Number(c.carryingRate || c.initialRate || 0);
         const unrealizedDiff = (carryingRate - curRate) * remFx;
+        const postedRevaluation = (c.revaluationHistory || []).reduce((sum, entry) => sum + Number(entry.difference || 0), 0);
         const dueOrdinal = jalaliDateOrdinal(c.dueDate);
         const todayOrdinal = currentJalaliOrdinal();
         const overdue = remFx > 0 && dueOrdinal !== null && todayOrdinal !== null && todayOrdinal > dueOrdinal;
@@ -3507,7 +3511,9 @@
               <div>پرداخت‌شده: <strong>${faNum(c.paidAmount || 0)} ${c.currency}</strong></div>
               <div>مانده: <strong class="text-rose-700">${faNum(remFx)} ${c.currency}</strong></div>
               <div>سررسید: <strong>${faNum(c.dueDate || '—')}</strong></div>
+              <div>تسعیر پایان‌دوره ثبت‌شده: <strong>${money(postedRevaluation)}</strong></div>
               <div>تسعیر باز: <strong class="${unrealizedDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(unrealizedDiff))}</strong></div>
+              <div>وضعیت سند افتتاحیه: <strong>${c.ledgerPosted === true ? 'ثبت شده' : 'قدیمی؛ بدون سند افتتاحیه'}</strong></div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
               <input type="number" id="fx-pay-amount-${c.id}" min="0.01" max="${remFx}" step="any" value="${remFx}" class="touch-btn border rounded-lg px-2 tabular-nums" aria-label="مبلغ پرداخت ارزی" />
