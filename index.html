@@ -3437,8 +3437,21 @@
         }
         cancelBaseAmount += remainingBase;
       }
-      const cancelVatAmount = Math.max(0, invoiceVatAmount - returnedVatAmount);
-      const cancelAmount = cancelBaseAmount + cancelVatAmount;
+      let cancelVatAmount = Math.max(0, invoiceVatAmount - returnedVatAmount);
+      let cancelAmount = cancelBaseAmount + cancelVatAmount;
+      const hasExplicitTaxBreakdown = (inv.netSubtotal !== undefined && inv.netSubtotal !== null) ||
+        (inv.vatAmount !== undefined && inv.vatAmount !== null) || Number(inv.vatRate || 0) > 0;
+      // Legacy invoices/returns did not persist net and VAT components separately.
+      // Preserve their recorded return amounts rather than recomputing them from rounded quantities.
+      if (!hasExplicitTaxBreakdown && Array.isArray(inv.returnRefs) && inv.returnRefs.length) {
+        const legacyReturnedAmount = inv.returnRefs.reduce((sum, ref) => {
+          const amount = Number(ref.amount || 0);
+          return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+        }, 0);
+        cancelBaseAmount = Math.max(0, Number(inv.grandTotal || 0) - legacyReturnedAmount);
+        cancelVatAmount = 0;
+        cancelAmount = cancelBaseAmount;
+      }
       if (!Number.isFinite(cancelAmount) || !Number.isFinite(cancelBaseAmount) || !Number.isFinite(cancelVatAmount)) {
         showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
       }
