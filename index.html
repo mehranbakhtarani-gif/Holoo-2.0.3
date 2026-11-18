@@ -2885,18 +2885,18 @@
       const party = (state.parties || []).find(p => String(p.id) === String(partyId));
       const cell = value => {
         let raw = String(value == null ? '' : value);
-        if (typeof value === 'string' && /^\\s*[=+@-]/.test(raw)) raw = "'" + raw;
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw;
         return '"' + raw.replace(/"/g, '""') + '"';
       };
       const rows = [
         ['تاریخ','شماره سند','کد حساب','شرح سند','شرح ردیف','بدهکار','بستانکار','مانده خالص'],
         ...ledger.rows.map(row => [row.date,row.voucherId,row.code,row.voucherDesc,row.desc,row.debit,row.credit,row.balance])
       ];
-      const csv = '\\uFEFF' + [
+      const csv = '\uFEFF' + [
         ['طرف حساب', party?.name || partyId], ['از تاریخ',fromDate,'تا تاریخ',toDate],
         ['مانده اول دوره',ledger.openingNet,'گردش بدهکار',ledger.periodDebit,'گردش بستانکار',ledger.periodCredit,'مانده پایان دوره',ledger.closingNet],
         ...rows
-      ].map(row => row.map(cell).join(',')).join('\\r\\n');
+      ].map(row => row.map(cell).join(',')).join('\r\n');
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
