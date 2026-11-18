@@ -140,5 +140,61 @@ test('bounced received check posts once and repeated status change has no side e
   assert.equal(saves,1);
 });
 
+
+test('bounced cheque releases its original invoice allocations exactly once', () => {
+  const state = {
+    invoices: [{ id: 3001, type:'sale', partyId:'P1', grandTotal:1000, paidAmount:600 }],
+    checks: [{ id:'CHK-ALLOC', sayad:'123456789012345678901234', status:'in_progress', dir:'receive', amount:400, partyId:'P1', allocations:[{invoiceId:3001,amount:400}] }],
+    bankAccounts:[]
+  };
+  const posted=[]; let saves=0;
+  const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
+    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+  });
+  update('CHK-ALLOC','bounced');
+  update('CHK-ALLOC','bounced');
+  assert.equal(state.invoices[0].paidAmount,200);
+  assert.equal(state.checks[0].status,'bounced');
+  assert.equal(state.checks[0].allocationsReleasedAt !== undefined,true);
+  assert.equal(posted.length,1);
+  assert.equal(posted[0][3].event,'bounced');
+  assert.equal(saves,1);
+});
+
+test('voided supplier cheque releases purchase invoice allocation', () => {
+  const state = {
+    invoices: [{ id: 3002, type:'purchase', partyId:'P1', grandTotal:900, paidAmount:350 }],
+    checks: [{ id:'CHK-VOID', sayad:'223456789012345678901234', status:'in_progress', dir:'pay', amount:350, partyId:'P1', allocations:[{invoiceId:3002,amount:350}] }],
+    bankAccounts:[]
+  };
+  const posted=[]; let saves=0;
+  const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
+    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+  });
+  update('CHK-VOID','voided');
+  assert.equal(state.invoices[0].paidAmount,0);
+  assert.equal(state.checks[0].status,'voided');
+  assert.equal(posted.length,1);
+  assert.equal(posted[0][3].event,'voided');
+  assert.equal(saves,1);
+});
+
+test('cheque allocation reversal is rejected if invoice balance no longer contains the allocation', () => {
+  const state = {
+    invoices: [{ id: 3003, type:'sale', partyId:'P1', grandTotal:1000, paidAmount:100 }],
+    checks: [{ id:'CHK-STALE', sayad:'323456789012345678901234', status:'in_progress', dir:'receive', amount:400, partyId:'P1', allocations:[{invoiceId:3003,amount:400}] }],
+    bankAccounts:[]
+  };
+  const posted=[]; let saves=0;
+  const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
+    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+  });
+  update('CHK-STALE','bounced');
+  assert.equal(state.invoices[0].paidAmount,100);
+  assert.equal(state.checks[0].status,'in_progress');
+  assert.equal(posted.length,0);
+  assert.equal(saves,0);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
