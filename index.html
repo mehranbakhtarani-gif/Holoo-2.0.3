@@ -3623,6 +3623,37 @@
       saveState(); closeModal('modal-treasury-form'); renderAll(); showToast('تراکنش خزانه ثبت و مبلغ بین فاکتورهای انتخاب‌شده تخصیص یافت.');
     }
 
+    function applyPartyCredit(creditId) {
+      const credit = (state.treasuryTxs || []).find(tx => tx.kind === 'party_credit' && String(tx.id) === String(creditId));
+      if (!credit) { showToast('اعتبار انتخاب‌شده پیدا نشد.', 'error'); return; }
+      const invoiceId = document.getElementById('credit-invoice-' + creditId)?.value;
+      const amount = Number(document.getElementById('credit-amount-' + creditId)?.value || 0);
+      const invoice = state.invoices.find(inv => String(inv.id) === String(invoiceId));
+      const expectedType = credit.creditDirection;
+      const remainingCredit = Number(credit.remainingAmount ?? credit.amount ?? 0);
+      if (!invoice || invoice.status !== 'active' || String(invoice.partyId) !== String(credit.partyId) || invoice.type !== expectedType) {
+        showToast('فاکتور انتخاب‌شده متعلق به همین طرف حساب یا نوع اعتبار نیست.', 'error'); return;
+      }
+      const invoiceOutstanding = getInvoiceOutstanding(invoice);
+      if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(remainingCredit) || amount > remainingCredit + 0.000001 || amount > invoiceOutstanding + 0.000001) {
+        showToast('مبلغ اعمال اعتبار از اعتبار موجود یا مانده فاکتور بیشتر است.', 'error'); return;
+      }
+      const applyId = createStableId('credit_apply');
+      const isCustomer = expectedType === 'sale';
+      const lines = [
+        { code: '2101', partyId: credit.partyId, desc: isCustomer ? 'مصرف اعتبار بستانکاری مشتری' : 'تسویه بدهی با اعتبار تأمین‌کننده', debit: amount, credit: 0 },
+        { code: '1103', partyId: credit.partyId, desc: isCustomer ? 'کاهش مطالبات مشتری با اعتبار' : 'مصرف پیش‌پرداخت/اعتبار تأمین‌کننده', debit: 0, credit: amount }
+      ];
+      const voucherId = postVoucher(isCustomer ? 'اعمال اعتبار مشتری' : 'اعمال اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_apply', id: credit.id, event: applyId });
+      if (voucherId === null || voucherId === undefined || voucherId === false) { showToast('صدور سند اعمال اعتبار ناموفق بود؛ مانده‌ها تغییر نکرد.', 'error'); return; }
+      invoice.paidAmount = Number(invoice.paidAmount || 0) + amount;
+      credit.remainingAmount = Math.max(0, remainingCredit - amount);
+      credit.applications = [...(credit.applications || []), { id: applyId, invoiceId: invoice.id, amount, voucherId, createdAt: new Date().toISOString() }];
+      addAudit('اعمال اعتبار طرف حساب', { mode: 'manual', sourceType: 'party_credit_apply' });
+      saveState(); renderAll();
+      showToast('اعتبار به فاکتور اعمال و سند حسابداری صادر شد.');
+    }
+
     function renderTreasuryModule() {
       document.getElementById('bank-accounts-grid').innerHTML = state.bankAccounts.map(b => `
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 flex justify-between items-center text-xs">
@@ -3656,12 +3687,29 @@
       const customerCredits = (state.parties || []).reduce((sum, p) => sum + getPartyCreditBalance(p.id, 'sale'), 0);
       const supplierCredits = (state.parties || []).reduce((sum, p) => sum + getPartyCreditBalance(p.id, 'purchase'), 0);
       const creditSummary = `<div class="p-2.5 rounded-xl border bg-amber-50 text-[10px] space-y-1"><div class="font-black">اعتبار دفتری طرف‌حساب‌ها (جدا از موجودی نقد و بانک)</div><div>اعتبار مشتریان: <b>${money(customerCredits)}</b></div><div>اعتبار تأمین‌کنندگان: <b>${money(supplierCredits)}</b></div></div>`;
-      document.getElementById('treasury-tx-list').innerHTML = creditSummary + state.treasuryTxs.map(t => `
-        <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
-          <div><strong class="${t.kind === 'party_credit' ? 'text-amber-700' : (t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700')}">${t.kind === 'party_credit' ? (t.creditDirection === 'sale' ? 'اعتبار مشتری' : 'اعتبار تأمین‌کننده') : (t.dir === 'receive' ? 'دریافت' : 'پرداخت')}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">${t.kind === 'party_credit' ? 'مانده اعتبار: ' + money(t.remainingAmount ?? t.amount) + ' | ' : 'تخصیص فاکتور: ' + (t.allocInv || '—') + ' | '}${t.desc}</span></div>
-          <strong class="tabular-nums">${money(t.amount)}</strong>
-        </div>
-      `).join('');
+      document.getElementById('treasury-tx-list').innerHTML = creditSummary + state.treasuryTxs.map(t => {
+        if (t.kind === 'party_credit') {
+          const invoiceType = t.creditDirection;
+          const eligible = (state.invoices || []).filter(inv => inv.status === 'active' && String(inv.partyId) === String(t.partyId) && inv.type === invoiceType && getInvoiceOutstanding(inv) > 0);
+          const options = eligible.map(inv => `<option value="${inv.id}">فاکتور #${faNum(inv.id)} • مانده ${money(getInvoiceOutstanding(inv))}</option>`).join('');
+          return `
+            <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+              <div class="flex justify-between items-center"><div><strong class="text-amber-800">${invoiceType === 'sale' ? 'اعتبار مشتری' : 'اعتبار تأمین‌کننده'}</strong> • ${getPartyName(t.partyId)}<span class="block text-[10px] text-slate-600">${t.desc}</span></div><strong class="tabular-nums">${money(t.remainingAmount ?? t.amount)}</strong></div>
+              ${Number(t.remainingAmount ?? t.amount) > 0 && eligible.length ? `
+                <div class="grid grid-cols-[1fr_110px] gap-1.5">
+                  <select id="credit-invoice-${t.id}" class="min-w-0 border rounded-lg px-2 py-1 bg-white text-[10px]">${options}</select>
+                  <input id="credit-amount-${t.id}" type="number" min="1" max="${t.remainingAmount ?? t.amount}" placeholder="مبلغ اعمال" class="w-full border rounded-lg px-2 py-1 text-[10px] tabular-nums" />
+                </div>
+                <button onclick="applyPartyCredit('${t.id}')" class="w-full rounded-lg bg-amber-700 text-white py-1.5 font-bold text-[10px]">اعمال اعتبار روی فاکتور</button>
+              ` : '<span class="text-[10px] text-slate-500">اعتبار قابل اعمال یا فاکتور باز سازگار وجود ندارد.</span>'}
+            </div>`;
+        }
+        return `
+          <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
+            <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span></div>
+            <strong class="tabular-nums">${money(t.amount)}</strong>
+          </div>`;
+      }).join('');
     }
 
     function updateCheckStatus(id, st) {
