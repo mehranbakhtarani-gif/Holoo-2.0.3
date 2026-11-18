@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
+for (const [i, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new vm.Script(match[1], { filename: `index.html:inline-${i}` });
 }
 function sliceBetween(startText, endText) {
@@ -76,8 +76,8 @@ assert.deepEqual(Array.from(report.rows, row => row.code), ['100', '200']);
 assert.equal(JSON.stringify(state), before, 'report must not mutate accounting data');
 assert.throws(() => sandbox.buildTrialBalanceReport('1405/02/01', '1405/01/31'), /بازه تاریخ/);
 assert.throws(() => sandbox.buildTrialBalanceReport('1405/13/01', '1405/13/30'), /بازه تاریخ/);
-assert.match(html, /activeAccTab === 'trial'[\\s\\S]{0,100}renderTrialBalanceReport\\(\\)/);
-assert.match(html, /function exportTrialBalanceCSV\\(\\)/);
+assert.match(html, /activeAccTab === 'trial'[\s\S]{0,100}renderTrialBalanceReport\(\)/);
+assert.match(html, /function exportTrialBalanceCSV\(\)/);
 console.log('PASS: four-column trial balance turnover, closing balances and inclusive date range');
 console.log('PASS: rejects unbalanced, malformed and structurally incomplete vouchers');
 console.log('PASS: reports invalid dates and leaves source accounting data unchanged');
