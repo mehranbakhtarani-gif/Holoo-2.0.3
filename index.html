@@ -4513,6 +4513,7 @@
             <span class="text-[11px] text-slate-400 tabular-nums">صدور: ${faNum(inv.date)} | سررسید: ${faNum(inv.dueDate)}</span>
           </div>
           <div class="font-bold text-slate-800">${getPartyName(inv.partyId)} <span class="text-[10px] text-slate-400">(بازاریاب: ${inv.salesperson})</span></div>
+          ${Number(inv.commAmount || 0) > 0 ? `<div class="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">پورسانت بازاریاب (${faNum(inv.commRate || 0)}٪): ${money(inv.commAmount)}</div>` : ''}
           <div class="space-y-1 bg-slate-50 p-2 rounded-xl border">
             ${inv.items.map(it => `<div class="flex justify-between text-[11px]"><span>${it.name} (${faNum(it.kg)} KG${it.returnedKg ? ` | برگشتی: ${faNum(it.returnedKg)} KG` : ''})</span><strong class="tabular-nums">${money(it.total)}</strong></div>`).join('')}
           </div>
