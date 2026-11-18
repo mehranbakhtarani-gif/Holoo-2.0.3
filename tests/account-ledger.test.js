@@ -6,7 +6,7 @@ const html = fs.readFileSync('index.html', 'utf8');
 for (const [i, m] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (m[1].trim()) new vm.Script(m[1], { filename: `index.html:inline-${i}` });
 }
-const start = html.indexOf('function normalizeLedgerDate(');
+const start = html.indexOf('function jalaliDateOrdinal(');
 const end = html.indexOf('function setAccTab(', start);
 assert.notEqual(start, -1, 'ledger helpers must exist');
 assert.notEqual(end, -1, 'ledger helper section must terminate');
