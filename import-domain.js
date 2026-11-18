@@ -54,7 +54,8 @@
         weights = result.map(item => number(allocation[item.id] || 0, 'تخصیص دستی ' + key));
         const sum = weights.reduce((a, b) => a + b, 0);
         if (Math.abs(sum - amount) > 0.01) throw new Error('جمع تخصیص دستی هزینه ' + key + ' باید دقیقاً برابر مبلغ هزینه باشد.');
-        result.forEach((item, index) => { item.allocatedExpenses[key] = Math.round(weights[index]); });
+        // Manual shares are explicit amounts, not weights; preserve them exactly so rounding cannot change the entered total.
+        result.forEach((item, index) => { item.allocatedExpenses[key] = weights[index]; });
         continue;
       }
       if (basis === 'weight') weights = result.map(item => number(item.quantityKg, 'وزن قلم'));

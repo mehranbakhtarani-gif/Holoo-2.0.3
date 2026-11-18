@@ -31,6 +31,11 @@ const manual = allocateImportExpenses(items, { insurance: 101 }, { insurance: 'm
   insurance: { I1: 70, I2: 31 }
 });
 assert.deepEqual(manual.items.map(x => x.allocatedExpenses.insurance), [70, 31]);
+const fractionalManual = allocateImportExpenses(items, { insurance: 3 }, { insurance: 'manual' }, {
+  insurance: { I1: 1.5, I2: 1.5 }
+});
+assert.deepEqual(fractionalManual.items.map(x => x.allocatedExpenses.insurance), [1.5, 1.5]);
+assert.equal(fractionalManual.items.reduce((sum, item) => sum + item.allocatedExpenses.insurance, 0), 3);
 assert.throws(() => allocateImportExpenses(items, { insurance: 100 }, { insurance: 'manual' }, {
   insurance: { I1: 70, I2: 20 }
 }), /دقیقاً برابر/);
