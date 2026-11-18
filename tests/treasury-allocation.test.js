@@ -19,7 +19,7 @@ function load(source, name, context) {
   vm.runInContext(source + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
-function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyValue = '' }) {
+function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyValue = '', failPosting = false }) {
   const values = {
     'tr-dir': dir, 'tr-party': 'P1', 'tr-method': 'cash', 'tr-amount': String(amount),
     'tr-bank-acc': 'B1', 'tr-desc': 'آزمون تخصیص', 'tr-alloc-inv': legacyValue
@@ -40,7 +40,7 @@ function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyVa
   const posted = [];
   let saves = 0;
   const save = load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    state, document, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); }, saveState() { saves++; },
+    state, document, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); if (failPosting) throw new Error('simulated journal failure'); return 1; }, saveState() { saves++; },
     closeModal() {}, renderAll() {}, showToast() {}, faNum: String
   });
   return { state, posted, get saves() { return saves; }, run: save };
@@ -61,7 +61,21 @@ test('one receipt allocates across multiple selected sales invoices in order', (
   assert.equal(r.posted.length, 1);
   assert.equal(r.posted[0][1].reduce((s, x) => s + x.debit, 0), 700);
   assert.equal(r.posted[0][1].reduce((s, x) => s + x.credit, 0), 700);
+  assert.equal(r.posted[0][3].deferSave, true);
   assert.equal(r.saves, 1);
+});
+
+test('failed treasury journal leaves cash, invoice allocation, and transaction history untouched', () => {
+  const r = fixture({ amount: 100, selectedIds: [111], failPosting: true, invoices: [
+    { id: 111, type: 'sale', status: 'active', partyId: 'P1', grandTotal: 500, paidAmount: 0 }
+  ]});
+  r.run();
+  assert.equal(r.posted.length, 1);
+  assert.equal(r.posted[0][3].deferSave, true);
+  assert.equal(r.state.bankAccounts[0].balance, 1000);
+  assert.equal(r.state.invoices[0].paidAmount, 0);
+  assert.equal(r.state.treasuryTxs.length, 0);
+  assert.equal(r.saves, 0);
 });
 
 test('separate receipts accumulate against the same invoice balance', () => {

@@ -4178,14 +4178,29 @@
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-        state.checks.unshift({ id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) });
+        const check = { id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) };
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
-        postVoucher('ثبت چک صیادی ' + sayad, lines, undefined, { type: 'check', id: checkId, event: 'issued' });
+        let voucherId;
+        try {
+          voucherId = postVoucher('ثبت چک صیادی ' + sayad, lines, undefined, { type: 'check', id: checkId, event: 'issued', deferSave: true });
+          if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
+        } catch (error) {
+          showToast('ثبت سند چک ناموفق بود؛ چک و تخصیص‌ها ثبت نشدند. ' + (error?.message || ''), 'error');
+          return;
+        }
+        check.voucherRefs = { issued: voucherId };
+        state.checks.unshift(check);
       } else {
         const bAcc = state.bankAccounts.find(b => b.id === document.getElementById('tr-bank-acc').value) || state.bankAccounts.find(b => b.type === 'cash') || state.bankAccounts[0];
         const accountCode = bAcc.type === 'cash' ? '1101' : '1102';
         const lines = dir === 'receive' ? [{ code: accountCode, partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bAcc.name, debit: 0, credit: amount }];
-        postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted' });
+        try {
+          const voucherId = postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted', deferSave: true });
+          if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
+        } catch (error) {
+          showToast('ثبت سند خزانه ناموفق بود؛ مانده حساب و فاکتورها تغییر نکردند. ' + (error?.message || ''), 'error');
+          return;
+        }
         bAcc.balance = Number(bAcc.balance || 0) + (dir === 'receive' ? amount : -amount);
       }
 
@@ -4446,13 +4461,25 @@
         const bank = state.bankAccounts.find(x => x.id === c.bankAccountId) || state.bankAccounts.find(x => x.type !== 'cash');
         if (!bank) { showToast('حساب بانکی برای ثبت وصول/پرداخت چک تعریف نشده است.', 'error'); return; }
         const lines = c.dir === 'receive' ? [{ code: '1102', partyId: null, desc: 'واریز چک به بانک', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'تسویه اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'تسویه اسناد پرداختنی', debit: amount, credit: 0 }, { code: '1102', partyId: null, desc: 'برداشت بانک', debit: 0, credit: amount }];
-        postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
+        try {
+          const voucherId = postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true });
+          if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
+        } catch (error) {
+          showToast('صدور سند وصول چک ناموفق بود؛ وضعیت چک و مانده بانک تغییر نکردند. ' + (error?.message || ''), 'error');
+          return;
+        }
         bank.balance = Number(bank.balance || 0) + (c.dir === 'receive' ? amount : -amount);
       } else if (['bounced', 'voided'].includes(st)) {
         const lines = c.dir === 'receive'
           ? [{ code: '1103', partyId: c.partyId, desc: st === 'bounced' ? 'برگشت چک دریافتی و احیای مطالبات' : 'ابطال چک دریافتی و احیای مطالبات', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'خروج از اسناد دریافتنی', debit: 0, credit: amount }]
           : [{ code: '2102', partyId: c.partyId, desc: st === 'bounced' ? 'ابطال اثر چک پرداختی برگشتی' : 'ابطال چک پرداختی', debit: amount, credit: 0 }, { code: '2101', partyId: c.partyId, desc: 'بازگشت بدهی به تأمین‌کننده', debit: 0, credit: amount }];
-        postVoucher((st === 'bounced' ? 'برگشت' : 'ابطال') + ' چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st });
+        try {
+          const voucherId = postVoucher((st === 'bounced' ? 'برگشت' : 'ابطال') + ' چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true });
+          if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
+        } catch (error) {
+          showToast('صدور سند برگشت/ابطال چک ناموفق بود؛ وضعیت و تخصیص‌ها تغییر نکردند. ' + (error?.message || ''), 'error');
+          return;
+        }
         for (const allocation of releasedAllocations) {
           const invoice = state.invoices.find(x => String(x.id) === String(allocation.invoiceId));
           invoice.paidAmount = Math.max(0, Number(invoice.paidAmount || 0) - Number(allocation.amount || 0));

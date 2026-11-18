@@ -62,7 +62,7 @@ function runTreasury(amount) {
   const posted = [];
   let saves = 0;
   const save = loadFunction(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    document, state, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
+    document, state, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); return 1; }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
   });
   save();
   return { state, posted, saves };
@@ -88,7 +88,7 @@ test('a check can be cleared once; repeated clearing does not repost or change b
   const state = { checks: [{ id: 'C1', sayad: '123456789', status: 'in_progress', dir: 'receive', amount: 500, partyId: 'P1' }], bankAccounts: [{ id: 'B1', type: 'bank', balance: 1000 }] };
   const posted = [];
   const update = loadFunction(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...args) { posted.push(args); }, showToast() {}, addAudit() {}, saveState() {}, renderAll() {}
+    state, postVoucher(...args) { posted.push(args); return 1; }, showToast() {}, addAudit() {}, saveState() {}, renderAll() {}
   });
   update('C1', 'cleared');
   update('C1', 'cleared');
