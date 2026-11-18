@@ -2831,6 +2831,12 @@
       return net;
     }
 
+    // Backward-compatible single-ledger balance helper; never aggregates control accounts.
+    function getPartyNetBalance(partyId) {
+      const party = (state.parties || []).find(p => String(p.id) === String(partyId));
+      return getPartyAccountNetBalance(partyId, party?.ledgerAccountCode || '1103');
+    }
+
     function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
       const postingDateText = String(date || '').trim().replace(/-/g, '/').replace(/[۰-۹٠-٩]/g, ch => {
         const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
