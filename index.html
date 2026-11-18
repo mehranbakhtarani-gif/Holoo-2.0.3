@@ -5036,6 +5036,8 @@
       return jalaliDateOrdinal(String(period).trim() + '/01');
     }
     function renderAssetsModule() {
+      const assetDateInput = document.getElementById('ast-date');
+      if (!assetDateInput.value) assetDateInput.value = typeof getTodayJalaliDate === 'function' ? getTodayJalaliDate() : String(state.fiscalYear) + '/01/01';
       const periodInput = document.getElementById('ast-dep-period');
       if (!periodInput.value) periodInput.value = (typeof getTodayJalaliDate === 'function' ? getTodayJalaliDate() : String(state.fiscalYear) + '/01').slice(0,7);
       document.getElementById('assets-grid').innerHTML = (state.fixedAssets || []).map(a => {
