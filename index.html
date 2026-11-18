@@ -3170,7 +3170,9 @@
     }
     function openImportModal() {
       const options = (state.parties || []).filter(p => String(p.role || '').includes('تأمین')).map(p => '<option value="' + p.id + '">' + p.name + '</option>').join('');
-      document.getElementById('imp-supplier-party').innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
+      const supplierSelect = document.getElementById('imp-supplier-party');
+      supplierSelect.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
+      supplierSelect.onchange = () => { const party = (state.parties || []).find(p => String(p.id) === String(supplierSelect.value)); if (party) document.getElementById('imp-supplier').value = party.name; };
       const fxParty = document.getElementById('fxc-party');
       if (fxParty) fxParty.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
       document.getElementById('imp-items-container').innerHTML = '';
@@ -3356,7 +3358,6 @@
     }
 
     function renderImportsModule() {
-      document.getElementById('imp-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
       const imports = state.imports || [];
       const openFx = imports.reduce((sum, m) => sum + Math.max(0, Number(m.fxTotal || 0) - Number(m.fxPaid || 0)), 0);
       const today = currentJalaliOrdinal();
