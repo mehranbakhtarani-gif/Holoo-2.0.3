@@ -1825,6 +1825,8 @@
       const rpcUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/rpc/holoo_apply_state_operation';
       let expectedUpdatedAt = localStorage.getItem(CLOUD_BASELINE_KEY) || null;
       let applied = 0;
+      let didMerge = false;
+      let latestServerUpdatedAt = expectedUpdatedAt;
 
       for (const operation of operations) {
         const response = await fetchWithTimeout(rpcUrl, {
@@ -1886,22 +1888,58 @@
           throw new Error('پاسخ RPC عملیات معتبر نیست.');
         }
 
-        expectedUpdatedAt = result.updated_at || expectedUpdatedAt;
-        if (expectedUpdatedAt) localStorage.setItem(CLOUD_BASELINE_KEY, expectedUpdatedAt);
-        await acknowledgeOperations([operation.operationId], expectedUpdatedAt || new Date().toISOString());
+        latestServerUpdatedAt = result.updated_at || latestServerUpdatedAt;
+        if (result.merged === true) {
+          // Keep the original baseline while draining this device's queued operations.
+          // Advancing it here would let a later stale full snapshot overwrite the merge.
+          didMerge = true;
+        } else if (!didMerge) {
+          expectedUpdatedAt = result.updated_at || expectedUpdatedAt;
+          if (expectedUpdatedAt) localStorage.setItem(CLOUD_BASELINE_KEY, expectedUpdatedAt);
+        }
+        await acknowledgeOperations([operation.operationId], latestServerUpdatedAt || new Date().toISOString());
         applied++;
       }
 
       const remaining = await listPendingOperations(1);
-      if (!remaining.length &&
-          localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
-          localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart) {
+      const localSnapshotUnchanged =
+        localStorage.getItem(LOCAL_UPDATED_KEY) === localUpdatedAt &&
+        localStorage.getItem(CLOUD_OUTBOX_KEY) === queuedAtStart;
+      if (!remaining.length && didMerge && localSnapshotUnchanged) {
+        // The server may now contain disjoint edits from another device.
+        // Refresh the merged snapshot locally before clearing the outbox/baseline.
+        const readUrl = cloudConfig.url.replace(/\\/$/, '') + '/rest/v1/' +
+          encodeURIComponent(cloudConfig.table) + '?id=eq.' +
+          encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
+        const readRes = await fetchWithTimeout(readUrl, {
+          headers: { 'apikey': cloudConfig.key, 'Authorization': 'Bearer ' + cloudConfig.key }
+        });
+        if (!readRes.ok) throw new Error('دریافت نسخه ادغام‌شده پس از ثبت عملیات ناموفق بود.');
+        const rows = await readRes.json();
+        const latest = Array.isArray(rows) ? rows[0] : null;
+        if (!latest?.data || !Array.isArray(latest.data.vouchers) || !latest.updated_at) {
+          throw new Error('نسخه ادغام‌شده ابری ساختار معتبر ندارد؛ صف محلی حفظ شد.');
+        }
+        state = latest.data;
+        state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
+        ensureAuditLogIds(state);
+        lastSavedState = JSON.parse(JSON.stringify(state));
+        lastQueuedAuditId = state.auditLogs?.[0]?.id || null;
+        const mergedSnapshot = JSON.stringify(state);
+        localStorage.setItem(STORE_KEY, mergedSnapshot);
+        localStorage.setItem(LOCAL_UPDATED_KEY, latest.updated_at);
+        localStorage.setItem(CLOUD_BASELINE_KEY, latest.updated_at);
+        localStorage.removeItem(CLOUD_OUTBOX_KEY);
+        await writeLocalMirror(state);
+        renderAll();
+      } else if (!remaining.length && !didMerge && localSnapshotUnchanged) {
+        if (latestServerUpdatedAt) localStorage.setItem(CLOUD_BASELINE_KEY, latestServerUpdatedAt);
         localStorage.removeItem(CLOUD_OUTBOX_KEY);
       } else if (remaining.length) {
         scheduleCloudSync();
       }
       await renderCloudSyncStatus();
-      return { supported: true, applied };
+      return { supported: true, applied, merged: didMerge };
     }
     async function readLocalMirror() {
       const db = await openLocalDatabase();
