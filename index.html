@@ -226,6 +226,19 @@
             </div>
           </div>
 
+          <section id="dashboard-menu-search" class="bg-white rounded-2xl border border-sky-200 shadow-sm p-3 space-y-2" aria-label="جستجوی منوها و قابلیت‌ها">
+            <div class="flex items-center gap-2">
+              <span class="text-lg" aria-hidden="true">🔎</span>
+              <div class="min-w-0 flex-1">
+                <h3 class="text-sm font-black text-slate-800">جستجوی منو و قابلیت‌ها</h3>
+                <p class="text-[11px] text-slate-500">نام بخش یا کاری را که دنبالش هستی بنویس و از فهرست انتخاب کن.</p>
+              </div>
+            </div>
+            <input id="dashboard-menu-search-input" type="search" autocomplete="off" oninput="renderDashboardMenuSearch(this.value)" placeholder="مثلاً: گزارش سنی، چاپ، فاکتور، انبار، حقوق..." class="touch-btn w-full border border-slate-300 rounded-xl px-3 bg-slate-50 text-sm focus:bg-white focus:border-sky-500" />
+            <div id="dashboard-menu-search-hint" class="text-[11px] text-slate-500">با شروع جستجو، گزینه‌های مرتبط به شکل فهرست انتخابی نمایش داده می‌شوند.</div>
+            <div id="dashboard-menu-search-results" class="hidden max-h-64 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100" role="listbox" aria-label="نتایج جستجوی منوها"></div>
+          </section>
+
           <div id="diagnostic-box" class="hidden bg-emerald-950 text-white rounded-2xl p-4 shadow-lg border border-emerald-500/40 space-y-2 text-xs"></div>
 
           <div id="dash-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
@@ -2591,6 +2604,69 @@
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     function getPartyName(id) { return state.parties.find(p => p.id === id)?.name || '—'; }
     function getWhName(id) { return state.warehouses.find(w => w.id === id)?.name || 'انبار مرکزی'; }
+
+    const DASHBOARD_SEARCH_ITEMS = [
+      { id: 'dashboard', title: 'داشبورد مدیریتی', keywords: 'پیشخوان وضعیت کلی خلاصه مدیریت' },
+      { id: 'products', title: 'کالا، نخ و مشخصات محصولات', keywords: 'کالا محصول نخ نساجی دنیر رنگ قیمت بارکد' },
+      { id: 'inventory', title: 'انبار، کاردکس و انبارگردانی', keywords: 'موجودی چندانباری انتقال سری ساخت راکد' },
+      { id: 'parties', title: 'مشتریان، تأمین‌کنندگان و اشخاص', keywords: 'طرف حساب بدهکار بستانکار دفتر تفصیلی تطبیق اشخاص حساب کنترلی' },
+      { id: 'invoices', title: 'فاکتورهای خرید و فروش و برگشت', keywords: 'فاکتور فروش خرید پیش فاکتور چاپ صورتحساب' },
+      { id: 'orders', title: 'پیش‌فاکتور و سفارش فروش', keywords: 'سفارش فروش پیگیری' },
+      { id: 'imports', title: 'واردات، کانتینر و ترخیص', keywords: 'محموله گمرک هزینه واردات' },
+      { id: 'treasury', title: 'خزانه، دریافت، پرداخت و چک', keywords: 'بانک صندوق چک صیادی نقد دریافت پرداخت' },
+      { id: 'accounting', title: 'حسابداری، مرور و تراز', keywords: 'دفترکل سند حساب تراز آزمایشی گزارش مالی' },
+      { id: 'reconcile', title: 'مغایرت‌گیری بانکی', keywords: 'تطبیق بانک csv صورت حساب' },
+      { id: 'fx', title: 'ارز و تعهدات ارزی', keywords: 'ارزی نرخ ارز تسعیر' },
+      { id: 'cashflow', title: 'پیش‌بینی جریان نقدینگی', keywords: 'نقدینگی جریان نقدی ۳۰ ۶۰ ۹۰' },
+      { id: 'aging', title: 'گزارش سنی مطالبات و بدهی‌ها', keywords: 'سررسید تأخیر ۳۰ ۶۰ ۹۰ روز مطالبات بدهی طلبکار بدهکار' },
+      { id: 'planner', title: 'برنامه‌ریزی سرمایه واردات', keywords: 'سناریو سرمایه سودآوری برنامه' },
+      { id: 'hr', title: 'کارکنان و حقوق و دستمزد', keywords: 'پرسنل حقوق مزایا فیش payroll' },
+      { id: 'assets', title: 'دارایی‌های ثابت و استهلاک', keywords: 'اموال دارایی depreciation استهلاک' },
+      { id: 'approvals', title: 'تأییدیه‌ها، قفل اسناد و سوابق عملیات', keywords: 'تأیید کنترل حسابرسی لاگ عملیات' },
+      { id: 'settings', title: 'تنظیمات، شخصی‌سازی و پشتیبان‌گیری', keywords: 'تنظیمات شرکت کاربران پشتیبان بکاپ بازیابی' }
+    ];
+    function normalizeDashboardSearch(value) {
+      return String(value || '').toLowerCase()
+        .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
+        .replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/[\u064B-\u065F\u0670]/g, '').trim();
+    }
+    function renderDashboardMenuSearch(query) {
+      const results = document.getElementById('dashboard-menu-search-results');
+      const hint = document.getElementById('dashboard-menu-search-hint');
+      if (!results || !hint) return;
+      const q = normalizeDashboardSearch(query);
+      results.replaceChildren();
+      if (!q) {
+        results.classList.add('hidden');
+        hint.textContent = 'با شروع جستجو، گزینه‌های مرتبط به شکل فهرست انتخابی نمایش داده می‌شوند.';
+        return;
+      }
+      const matches = DASHBOARD_SEARCH_ITEMS.filter(item =>
+        normalizeDashboardSearch(item.title + ' ' + item.keywords).includes(q)
+      );
+      results.classList.remove('hidden');
+      if (!matches.length) {
+        hint.textContent = 'موردی پیدا نشد؛ نام دیگری را امتحان کن.';
+        return;
+      }
+      hint.textContent = matches.length + ' گزینه پیدا شد؛ برای ورود مستقیم، یکی را انتخاب کن.';
+      matches.forEach(item => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'w-full flex items-center gap-3 px-3 py-3 text-right text-xs font-bold text-slate-700 hover:bg-sky-50 focus:bg-sky-50';
+        button.setAttribute('role', 'option');
+        button.innerHTML = '<span class="w-5 h-5 shrink-0 rounded-md border border-sky-400 text-sky-700 flex items-center justify-center" aria-hidden="true">✓</span><span class="flex-1">' + item.title + '</span><span class="text-[10px] text-sky-700">ورود</span>';
+        button.addEventListener('click', () => {
+          navigateTo(item.id);
+          const input = document.getElementById('dashboard-menu-search-input');
+          if (input) input.value = '';
+          renderDashboardMenuSearch('');
+        });
+        results.appendChild(button);
+      });
+    }
 
     let currentMod = 'dashboard';
     function navigateTo(mod) {
