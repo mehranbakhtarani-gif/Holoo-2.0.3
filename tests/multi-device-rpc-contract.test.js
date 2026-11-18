@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/202611180001_multi_device_operation_journal.sql', 'utf8');
+const latestMigration = fs.readFileSync('supabase/migrations/202611180003_guarantees_payable_commitments.sql', 'utf8');
 
 function quotedList(source, pattern, label) {
   const match = source.match(pattern);
@@ -16,7 +17,7 @@ const clientCollections = quotedList(
   'client sync collection list'
 );
 const rpcCollections = quotedList(
-  migration,
+  latestMigration,
   /v_entity_type not in \(([\s\S]*?)\) then/,
   'RPC entity allowlist'
 );
