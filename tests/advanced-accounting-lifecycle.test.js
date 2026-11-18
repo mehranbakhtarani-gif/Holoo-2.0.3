@@ -196,5 +196,73 @@ test('cheque allocation reversal is rejected if invoice balance no longer contai
   assert.equal(saves,0);
 });
 
+
+test('invoice return amount reduces the open balance used by aging and treasury', () => {
+  const outstanding = load(section('function getInvoiceReturnedAmount(inv)', 'function agingBucket(daysPastDue)'), 'getInvoiceOutstanding', {});
+  assert.equal(outstanding({ grandTotal:1000, paidAmount:300, returnRefs:[{amount:200},{amount:50}] }),450);
+  assert.equal(outstanding({ grandTotal:1000, paidAmount:1000, returnRefs:[{amount:200}] }),0);
+});
+
+test('partial return validates every row before changing any stock or invoice quantity', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'AVG',
+    invoices:[{id:3101,type:'sale',partyId:'P1',items:[
+      {productId:'X1',kg:5,returnedKg:0,price:10},
+      {productId:'X2',kg:2,returnedKg:0,price:20}
+    ]}],
+    products:[{id:'X1',stock:5,kardex:[]},{id:'X2',stock:2,kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, document:doc({'partial-ret-inv-id':'3101','pret-qty-0':'2','pret-qty-1':'3'}),
+    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  submit();
+  assert.equal(state.invoices[0].items[0].returnedKg,0);
+  assert.equal(state.products[0].stock,5);
+  assert.equal(state.products[1].stock,2);
+  assert.equal(posted.length,0);
+  assert.equal(saves,0);
+});
+
+test('partial return stores return value so the invoice outstanding is reduced', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'AVG',
+    invoices:[{id:3102,type:'sale',partyId:'P1',grandTotal:100,paidAmount:0,items:[{productId:'X1',kg:10,returnedKg:0,price:10}]}],
+    products:[{id:'X1',stock:4,kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
+    state, document:doc({'partial-ret-inv-id':'3102','pret-qty-0':'2'}),
+    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+  });
+  submit();
+  const outstanding=load(section('function getInvoiceReturnedAmount(inv)', 'function agingBucket(daysPastDue)'), 'getInvoiceOutstanding', {});
+  assert.equal(state.invoices[0].returnRefs[0].amount,20);
+  assert.equal(outstanding(state.invoices[0]),80);
+  assert.equal(state.products[0].stock,6);
+  assert.equal(posted.length,1);
+  assert.equal(saves,1);
+});
+
+test('cancelling an invoice after partial returns reverses only its remaining value', () => {
+  const state = {
+    fiscalYear:'1405', costingMethod:'AVG',
+    invoices:[{id:3103,type:'sale',partyId:'P1',grandTotal:1000,paidAmount:0,status:'active',returnRefs:[{id:'RET-OLD',amount:250}],items:[{productId:'X1',kg:10,returnedKg:2,price:100}]}],
+    products:[{id:'X1',stock:2,kardex:[]}]
+  };
+  const posted=[]; let saves=0;
+  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+    state, postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+  });
+  cancel(3103);
+  assert.equal(state.invoices[0].status,'cancelled');
+  assert.equal(state.products[0].stock,10);
+  assert.equal(posted.length,1);
+  assert.equal(posted[0][1][0].debit,750);
+  assert.equal(posted[0][1][1].credit,750);
+  assert.equal(saves,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
