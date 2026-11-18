@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
+for (const [i, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new vm.Script(match[1], { filename: 'index.html:inline-script-' + i });
 }
 function extract(start, end) {
@@ -20,7 +20,7 @@ function load(source, name, context = {}) {
 }
 const rowsFn = load(extract('function getPayrollRows(', 'function savePayrollSettings()'), 'getPayrollRows', { state: { employees: [{ id: 'E1', name: 'نمونه', base: 1000000, benefits: 200000, deductions: 50000 }] } });
 const periodFn = load(extract('function payrollPeriodOrdinal(', 'function getPayrollRows('), 'payrollPeriodOrdinal', {
-  jalaliDateOrdinal(value) { return /^\\d{4}\\/(0[1-9]|1[0-2])\\/01$/.test(value) ? Number(value.replaceAll('/', '')) : null; }
+  jalaliDateOrdinal(value) { return /^\d{4}\/(0[1-9]|1[0-2])\/01$/.test(value) ? Number(value.replaceAll('/', '')) : null; }
 });
 const depreciationFn = load(extract('function calculateAssetMonthlyDepreciation(', 'function renderAssetsModule()'), 'calculateAssetMonthlyDepreciation');
 
@@ -38,8 +38,8 @@ assert.equal(depreciationFn({ cost: 1200000, residualValue: 120000, lifeYears: 3
 assert.equal(depreciationFn({ cost: 1200000, residualValue: 120000, lifeYears: 3, accDep: 1070000 }), 10000);
 assert.equal(depreciationFn({ cost: 1200000, residualValue: 120000, lifeYears: 3, accDep: 1080000 }), 0);
 assert.equal(depreciationFn({ cost: 1200000, residualValue: 1300000, lifeYears: 3, accDep: 0 }), 0);
-assert.match(html, /state\\.payrollRuns/);
-assert.match(html, /state\\.depreciationEntries/);
+assert.match(html, /state\.payrollRuns/);
+assert.match(html, /state\.depreciationEntries/);
 assert.match(html, /sourceType === 'payroll_run'/);
 assert.match(html, /sourceType === 'asset_depreciation'/);
 console.log('PASS: payroll and fixed-asset accounting controls');
