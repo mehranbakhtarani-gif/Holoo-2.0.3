@@ -5819,11 +5819,14 @@
     function getBankAccountBookBalances() {
       const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
       const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
-      let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0;
+      let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0, invalidBankLines = 0;
       (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach(line => {
         if (String(line.code) !== '1102') return;
         const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
-        if (!Number.isFinite(debit) || !Number.isFinite(credit)) return;
+        if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+          invalidBankLines++;
+          return;
+        }
         const id = line.bankAccountId == null ? '' : String(line.bankAccountId);
         const target = id ? byId.get(id) : null;
         if (target) { target.debit += debit; target.credit += credit; }
@@ -5834,7 +5837,7 @@
         accounts: [...byId.values()].map(row => ({ ...row, net: row.debit - row.credit })),
         unassignedNet: unassignedDebit - unassignedCredit,
         unknownNet: unknownDebit - unknownCredit,
-        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit
+        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit, invalidBankLines
       };
     }
     function renderReconcileModule() {
@@ -5848,8 +5851,12 @@
       const unassigned = bankBalances.unassignedNet || bankBalances.unknownNet
         ? `<div class="rounded-lg bg-amber-900/30 p-2"><span class="block text-amber-200">گردش‌های بدون حساب مشخص / شناسه ناشناخته</span><strong class="tabular-nums">${money(bankBalances.unassignedNet + bankBalances.unknownNet)}</strong></div>`
         : '';
+      const invalidBankWarning = bankBalances.invalidBankLines
+        ? `<div class="col-span-full rounded-lg bg-amber-900/30 p-2 text-amber-200">توجه: ${faNum(bankBalances.invalidBankLines)} ردیف حساب بانکی به دلیل مبلغ نامعتبر، منفی یا ثبت هم‌زمان بدهکار و بستانکار در مانده دفتری محاسبه نشده است.</div>`
+        : '';
       document.getElementById('reconcile-summary-bar').innerHTML = `
         <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${unassigned}</div></div>
+        ${invalidBankWarning}
         <div><span class="text-slate-400 block">تراکنش‌های وصل‌شده به سند:</span><strong class="text-emerald-300">${faNum(verified.length)}</strong></div>
         <div><span class="text-slate-400 block">نیازمند بررسی:</span><strong class="text-amber-300">${faNum(pending)} مورد</strong></div>
         <div><span class="text-slate-400 block">تطبیق‌های قدیمی بدون مرجع سند:</span><strong class="text-amber-300">${faNum(legacy)} مورد</strong></div>
