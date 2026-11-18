@@ -142,11 +142,15 @@
         (line.fifoReturnedAllocations || []).forEach(entry => {
           returnedByBatch.set(String(entry.batchId), (returnedByBatch.get(String(entry.batchId)) || 0) + Number(entry.quantity || 0));
         });
-        const remainingAllocations = allocations.map(allocation => ({
-          ...allocation,
-          returnedQuantity: Math.min(Number(allocation.quantity || 0), returnedByBatch.get(String(allocation.batchId)) || 0),
-          quantity: Math.max(0, Number(allocation.quantity || 0) - (returnedByBatch.get(String(allocation.batchId)) || 0))
-        })).filter(allocation => allocation.quantity > 0 || allocation.returnedQuantity > 0);
+        let unallocatedReturn = Math.max(0, Number(line.returnedKg || 0) - [...returnedByBatch.values()].reduce((sum, value) => sum + value, 0));
+        const remainingAllocations = allocations.map(allocation => {
+          const originalQty = Math.max(0, Number(allocation.quantity || 0));
+          const explicitReturn = Math.min(originalQty, returnedByBatch.get(String(allocation.batchId)) || 0);
+          const inferredReturn = Math.min(Math.max(0, originalQty - explicitReturn), unallocatedReturn);
+          unallocatedReturn -= inferredReturn;
+          const returnedQuantity = explicitReturn + inferredReturn;
+          return { ...allocation, returnedQuantity, quantity: Math.max(0, originalQty - returnedQuantity) };
+        }).filter(allocation => allocation.quantity > 0 || allocation.returnedQuantity > 0);
         const remainingTotal = remainingAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
         if (remainingTotal <= 0) continue;
         const revenue = Number(line.total ?? (Number(line.kg) * Number(line.price || 0))) * (netQty / Number(line.kg));
