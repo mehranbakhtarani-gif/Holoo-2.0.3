@@ -32,4 +32,5 @@ jobs:
           node tests/extended-workflow.test.js
           node tests/advanced-accounting-lifecycle.test.js
           node tests/reporting-and-sync.test.js
+          node tests/multi-device-rpc-contract.test.js
           node tests/full-fiscal-period.integration.test.js
