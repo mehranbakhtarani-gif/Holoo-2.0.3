@@ -30,7 +30,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [{ id: 7 }] };
   let saves = 0;
   const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', {
-    state, addAudit() {}, saveState() { saves++; }
+    state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() { saves++; }
   });
   assert.equal(post('test', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }]), 1);
   assert.throws(() => post('bad', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 99 }]));
@@ -38,7 +38,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
 });
 test('same source event is idempotent; separate check events remain distinct', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() {} });
   const lines = [{ code: '1102', debit: 50, credit: 0 }, { code: '1104', debit: 0, credit: 50 }];
   const first = post('clear', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
   const repeated = post('clear again', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
