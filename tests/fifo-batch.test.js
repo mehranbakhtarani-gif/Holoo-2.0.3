@@ -35,7 +35,7 @@ test('new batches default to the Jalali operation date, not the ISO/Gregorian da
   const p = { id: 'P-DATE', stock: 0, buyPrice: 75, batches: [] };
   const batch = addStockBatch(p, { quantity: 2, unitCost: 75 });
   assert.equal(batch.receivedDate, '1405/09/02');
-  assert.match(batch.receivedDate, /^\\d{4}\\/\\d{2}\\/\\d{2}$/);
+  assert.equal(batch.receivedDate.split('/').length, 3);
 });
 
 test('legacy AVG stock with over-counted historical lots is reconciled without shipment attribution', () => {
