@@ -216,7 +216,7 @@ test('party control reconciliation lists legacy rows with missing or unknown par
   const build = loadFunction(source, 'buildPartyControlReconciliation', {
     state: { parties: [{ id: 'P1', name: 'مشتری' }], vouchers },
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
-    jalaliDateOrdinal(value) { const m = String(value || '').match(/^(\d{4})\\/(\d{2})\\/(\d{2})$/); return m ? Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]) : null; },
+    jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
     countInvalidReportVoucherLines() { return 0; }
   });
   const result = build('1405/01/01', '1405/01/31');
