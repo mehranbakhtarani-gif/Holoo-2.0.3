@@ -62,7 +62,7 @@ function runTreasury(amount) {
   const posted = [];
   let saves = 0;
   const save = loadFunction(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    document, state, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
+    document, state, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); return 1; }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
   });
   save();
   return { state, posted, saves };
