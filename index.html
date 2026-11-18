@@ -4379,7 +4379,7 @@
       let ledger;
       try { ledger = buildAccountLedger(accountCode, fromDate, toDate); } catch (error) { showToast(error.message, 'error'); return; }
       const accountName = CHART_ACCOUNTS.find(a => String(a.code) === String(accountCode))?.name || accountCode;
-      const cell = value => { let raw = String(value == null ? '' : value); if (typeof value === 'string' && /^[\\s]*[=+@-]/.test(raw)) raw = "'" + raw; return '"' + raw.replace(/"/g, '""') + '"'; };
+      const cell = value => { let raw = String(value == null ? '' : value); if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw; return '"' + raw.replace(/"/g, '""') + '"'; };
       const rows = [['تاریخ','شماره سند','شرح سند','شرح ردیف','طرف حساب','بدهکار','بستانکار','مانده خالص'], ...ledger.rows.map(r => [r.date,r.voucherId,r.voucherDesc,r.desc,r.partyName,r.debit,r.credit,r.balance])];
       const csv = '\uFEFF' + [['حساب',accountCode,accountName],['از تاریخ',fromDate,'تا تاریخ',toDate],['مانده اول دوره',ledger.openingNet,'گردش بدهکار',ledger.periodDebit,'گردش بستانکار',ledger.periodCredit,'مانده پایان دوره',ledger.closingNet], ...rows].map(row => row.map(cell).join(',')).join('\r\n');
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8'}); const url = URL.createObjectURL(blob);
