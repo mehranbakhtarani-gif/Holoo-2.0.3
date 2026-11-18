@@ -1192,6 +1192,9 @@
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
       })[ch]);
     };
+    // Backward-compatible global alias used by treasury and reconciliation renderers.
+    window.escapeBankReconcileText = window.escapeBankReconciliationText;
+    var escapeBankReconcileText = window.escapeBankReconcileText;
   </script>
   <script>
     // =========================================================================
