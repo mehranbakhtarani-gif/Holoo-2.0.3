@@ -2601,7 +2601,7 @@
       const batch = {
         id: details.id || (typeof createStableId === 'function' ? createStableId('batch') : ('BATCH-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8))),
         lot: String(details.lot || ('LOT-' + Date.now())),
-        receivedDate: details.receivedDate || new Date().toISOString().slice(0, 10),
+        receivedDate: details.receivedDate || getTodayJalaliDate(),
         productionDate: details.productionDate || '',
         expiryDate: details.expiryDate || '',
         quantity: qty,
