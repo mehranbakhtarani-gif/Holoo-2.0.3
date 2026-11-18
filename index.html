@@ -1025,6 +1025,7 @@
       <div><label class="block text-[10px] font-bold mb-0.5">تخصیص مبلغ به فاکتورهای باز (اختیاری؛ برای انتخاب چند فاکتور، چند مورد را انتخاب کنید):</label><select id="tr-alloc-inv" multiple size="4" class="w-full border rounded-xl px-2 py-1 bg-slate-50"></select><p class="text-[10px] text-slate-500 mt-1">مبلغ به‌ترتیب فاکتورهای انتخاب‌شده تخصیص می‌یابد؛ مبلغ اضافه‌تر از مجموع مانده‌ها پذیرفته نمی‌شود.</p></div>
       <div id="tr-bank-box"><select id="tr-bank-acc" class="touch-btn w-full border rounded-xl px-2.5"></select></div>
       <div id="tr-check-box" class="hidden space-y-1.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+        <select id="tr-check-account" class="touch-btn w-full border rounded-xl px-2.5 bg-white" aria-label="حساب بانکی وصول یا پرداخت چک"></select>
         <input type="text" id="tr-sayad" maxlength="16" placeholder="شناسه صیادی ۱۶ رقمی *" class="touch-btn w-full border rounded-xl px-2.5 bg-white tabular-nums" />
         <div class="grid grid-cols-2 gap-1.5">
           <input type="text" id="tr-chk-bank" value="بانک ملت شعبه بازار" class="touch-btn border rounded-xl px-2 bg-white" />
@@ -4457,6 +4458,8 @@
       document.getElementById('tr-form-title').textContent = dir === 'receive' ? 'ثبت دریافت وجه / چک دریافتی' : 'ثبت پرداخت وجه / چک پرداختی';
       document.getElementById('tr-party').innerHTML = state.parties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
       document.getElementById('tr-bank-acc').innerHTML = state.bankAccounts.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+      document.getElementById('tr-check-account').innerHTML = state.bankAccounts.filter(b => b.type === 'bank')
+        .map(b => `<option value="${b.id}">${b.name}</option>`).join('');
       populateAllocatableInvoices(); toggleCheckFields(); openModal('modal-treasury-form');
     }
     function populateAllocatableInvoices() {
@@ -4516,6 +4519,10 @@
         : state.bankAccounts.find(account => String(account.id) === String(selectedAccountId));
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
+        const checkBankId = document.getElementById('tr-check-account').value;
+        const checkBankAccount = state.bankAccounts.find(account =>
+          String(account.id) === String(checkBankId) && account.type === 'bank');
+        if (!checkBankAccount) { showToast('برای چک، حساب بانکی مقصد یا مبدأ معتبر انتخاب کنید.', 'error'); return; }
         if (!sayad || state.checks.some(c => String(c.sayad) === sayad)) { showToast('شناسه صیادی الزامی است و نباید تکراری باشد.', 'error'); return; }
       } else {
         const expectedAccountType = method === 'cash' ? 'cash' : (method === 'bank' ? 'bank' : null);
@@ -4531,7 +4538,7 @@
       if (method === 'check') {
         const sayad = document.getElementById('tr-sayad').value.trim();
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-        const check = { id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) };
+        const check = { id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value, amount, bank: document.getElementById('tr-chk-bank').value, bankAccountId: document.getElementById('tr-check-account').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) };
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
         let voucherId;
         try {
@@ -4811,8 +4818,13 @@
         }
       }
       if (st === 'cleared') {
-        const bank = state.bankAccounts.find(x => x.id === c.bankAccountId) || state.bankAccounts.find(x => x.type !== 'cash');
-        if (!bank) { showToast('حساب بانکی برای ثبت وصول/پرداخت چک تعریف نشده است.', 'error'); return; }
+        const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+        // Legacy checks without a stored account may use a sole bank account only;
+        // never guess the first account when several banks exist.
+        const bank = c.bankAccountId
+          ? bankAccounts.find(account => String(account.id) === String(c.bankAccountId))
+          : (bankAccounts.length === 1 ? bankAccounts[0] : null);
+        if (!bank) { showToast('حساب بانکی این چک مشخص نیست؛ حساب صحیح را در اطلاعات چک تعیین کنید.', 'error'); return; }
         const lines = c.dir === 'receive' ? [{ code: '1102', partyId: null, desc: 'واریز چک به بانک', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'تسویه اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'تسویه اسناد پرداختنی', debit: amount, credit: 0 }, { code: '1102', partyId: null, desc: 'برداشت بانک', debit: 0, credit: amount }];
         try {
           const voucherId = postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true });
