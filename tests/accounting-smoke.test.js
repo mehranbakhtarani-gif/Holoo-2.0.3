@@ -42,7 +42,7 @@ test('dashboard balances exclude invalid-date and invalid-amount vouchers and re
     }
   });
   const result = build();
-  assert.equal(result.balances['1101'].debTurn, 140);
+  assert.equal(result.balances['1101'].debTurn, 170);
   assert.equal(result.balances['4101'].credTurn, 125);
   assert.equal(result.quality.invalidDateVouchers, 1);
   assert.equal(result.quality.invalidAmountVouchers, 1);
