@@ -131,5 +131,44 @@ test('opening balance labels include first-period inventory but exclude ordinary
   assert.equal(isOpening('رسید خرید اول دوره'), false);
 });
 
+// 7. Inventory reconciliation evaluates kardex in chronological date order without mutating stored rows.
+test('kardex reconciliation sorts dated movements and preserves an earlier opening balance', () => {
+  const source = section('function inspectInventoryReconciliation(products)', 'function ensureProductBatches(product)');
+  const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
+    inspectProductBatchReconciliation() { return { valid: true, stock: 15, tracked: 15, difference: 0 }; },
+    jalaliDateOrdinal(value) {
+      const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
+    },
+    isOpeningKardexDocument(value) { return /موجودی اول دوره|موجودی اولیه|افتتاحیه/.test(String(value || '')); }
+  });
+  const kardex = [
+    { date: '1405/02/01', doc: 'فاکتور فروش #2', inQty: 0, outQty: 5, bal: 15 },
+    { date: '1405/01/01', doc: 'موجودی اول دوره', inQty: 20, outQty: 0, bal: 20 }
+  ];
+  const result = inspect([{ id: 'TX-103', name: 'Test yarn', stock: 15, batches: [], kardex }]);
+  assert.equal(result.unverifiedCount, 0);
+  assert.equal(result.issueCount, 0);
+  assert.equal(kardex[0].doc, 'فاکتور فروش #2');
+  assert.equal(kardex[1].doc, 'موجودی اول دوره');
+});
+
+test('kardex baseline remains unverified when the earliest dated movement is an ordinary receipt', () => {
+  const source = section('function inspectInventoryReconciliation(products)', 'function ensureProductBatches(product)');
+  const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
+    inspectProductBatchReconciliation() { return { valid: true, stock: 4200, tracked: 4200, difference: 0 }; },
+    jalaliDateOrdinal(value) {
+      const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
+    },
+    isOpeningKardexDocument(value) { return /موجودی اول دوره|موجودی اولیه|افتتاحیه/.test(String(value || '')); }
+  });
+  const result = inspect([{ id: 'TX-103', name: 'Test yarn', stock: 4200, batches: [], kardex: [
+    { date: '1405/01/05', doc: 'ورود محموله هند', inQty: 4200, outQty: 0, bal: 4200 }
+  ] }]);
+  assert.equal(result.unverifiedCount, 1);
+  assert.match(result.unverified[0].detail, /ورود محموله هند/);
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
