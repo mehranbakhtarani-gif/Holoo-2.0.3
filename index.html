@@ -64,7 +64,18 @@
       #print-area .barcode-label { border: 0 !important; border-radius: 0 !important; margin: 0 !important; }
       #print-area .barcode-label svg { max-width: 100% !important; }
     }
-  </style>
+  
+    /* Persian calendar date picker */
+    #jalali-calendar-overlay { position:fixed; inset:0; z-index:10080; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(15,23,42,.58); backdrop-filter:blur(5px); }
+    #jalali-calendar-panel { width:min(100%,390px); border:1px solid rgba(148,163,184,.35); border-radius:24px; padding:18px; color:#e2e8f0; background:linear-gradient(145deg,#172554,#0f172a 72%); box-shadow:0 24px 80px rgba(2,6,23,.45); direction:rtl; }
+    #jalali-calendar-panel .jc-day { min-height:40px; border-radius:13px; font-weight:800; transition:background .15s,transform .15s; }
+    #jalali-calendar-panel .jc-day:not(:disabled):hover { background:rgba(45,212,191,.2); transform:translateY(-1px); }
+    #jalali-calendar-panel .jc-day.is-selected { color:#042f2e; background:#5eead4; box-shadow:0 4px 14px rgba(45,212,191,.22); }
+    #jalali-calendar-panel .jc-day.is-today { outline:1px solid #2dd4bf; outline-offset:-2px; }
+    .jalali-calendar-trigger { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:38px; height:38px; margin-inline-start:5px; border:1px solid #99f6e4; border-radius:12px; color:#0f766e; background:#f0fdfa; font-size:18px; cursor:pointer; vertical-align:middle; }
+    .jalali-calendar-trigger:hover { background:#ccfbf1; }
+    @media(max-width:480px) { #jalali-calendar-panel { padding:14px; } #jalali-calendar-panel .jc-day { min-height:38px; } }
+</style>
 </head>
 <body>
   <div class="erp-layout">
@@ -2334,7 +2345,155 @@
       return !!(label && /تاریخ/.test(label.textContent || ''));
     }
 
+    const JALALI_MONTH_NAMES = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+    let activeJalaliCalendarInput = null;
+    let jalaliCalendarYear = 1405;
+    let jalaliCalendarMonth = 1;
+
+    function jalaliCalendarYearDays(year) {
+      const y = Number(year) - 979;
+      const days = value => 365 * value + Math.floor(value / 33) * 8 + Math.floor(((value % 33) + 3) / 4) + 78;
+      return days(y + 1) - days(y);
+    }
+
+    function jalaliCalendarMonthLength(year, month) {
+      if (month >= 1 && month <= 6) return 31;
+      if (month >= 7 && month <= 11) return 30;
+      return jalaliCalendarYearDays(year) === 366 ? 30 : 29;
+    }
+
+    function jalaliCalendarParts(value) {
+      const digits = String(value || '').trim().replace(/[۰-۹٠-٩]/g, ch => {
+        const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch));
+      });
+      const parts = digits.replace(/-/g, '/').split('/');
+      if (parts.length !== 3 || parts.some(part => !/^\d{1,4}$/.test(part))) return null;
+      const nums = parts.map(Number);
+      const dayFirst = nums[2] >= 1000 && nums[0] <= 31;
+      const year = dayFirst ? nums[2] : nums[0];
+      const month = nums[1];
+      const day = dayFirst ? nums[0] : nums[2];
+      if (year < 1 || month < 1 || month > 12 || day < 1 || day > jalaliCalendarMonthLength(year, month)) return null;
+      return { year, month, day };
+    }
+
+    function jalaliCalendarWeekday(year, month, day) {
+      const todayParts = getTodayJalaliDate().split('/').map(Number);
+      const todayOrdinal = jalaliDateOrdinal(getTodayJalaliDate());
+      const targetOrdinal = jalaliDateOrdinal(year + '/' + String(month).padStart(2, '0') + '/' + String(day).padStart(2, '0'));
+      if (todayOrdinal === null || targetOrdinal === null) return 0;
+      const weekday = (new Date().getDay() + targetOrdinal - todayOrdinal + 7000) % 7;
+      return (weekday + 1) % 7; // Saturday-first calendar
+    }
+
+    function ensureJalaliCalendarOverlay() {
+      let overlay = document.getElementById('jalali-calendar-overlay');
+      if (overlay) return overlay;
+      overlay = document.createElement('div');
+      overlay.id = 'jalali-calendar-overlay';
+      overlay.className = 'hidden';
+      overlay.innerHTML = `
+        <section id="jalali-calendar-panel" role="dialog" aria-modal="true" aria-labelledby="jalali-calendar-title">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <div><p class="text-[11px] text-teal-300 font-bold mb-1">انتخاب تاریخ شمسی</p><h3 id="jalali-calendar-title" class="text-xl font-black text-white">تقویم شمسی</h3></div>
+            <button type="button" onclick="closeJalaliCalendar()" aria-label="بستن تقویم" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xl">×</button>
+          </div>
+          <div class="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-2 mb-3">
+            <button type="button" onclick="changeJalaliCalendarMonth(-1)" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-teal-400/20 text-white text-xl" aria-label="ماه قبل">‹</button>
+            <div class="text-center"><div id="jalali-calendar-month" class="font-black text-white"></div><div id="jalali-calendar-year" class="text-xs text-slate-300 mt-1"></div></div>
+            <button type="button" onclick="changeJalaliCalendarMonth(1)" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-teal-400/20 text-white text-xl" aria-label="ماه بعد">›</button>
+          </div>
+          <div class="grid grid-cols-7 gap-1 text-center text-[11px] text-teal-200 font-bold mb-2">
+            <span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span>
+          </div>
+          <div id="jalali-calendar-days" class="grid grid-cols-7 gap-1 text-center"></div>
+          <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-white/10">
+            <button type="button" onclick="selectJalaliCalendarToday()" class="px-3 py-2 rounded-xl bg-teal-400/15 text-teal-200 text-sm font-bold">امروز</button>
+            <button type="button" onclick="closeJalaliCalendar()" class="px-4 py-2 rounded-xl bg-white/10 text-white text-sm font-bold">انصراف</button>
+          </div>
+        </section>`;
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeJalaliCalendar(); });
+      document.body.appendChild(overlay);
+      return overlay;
+    }
+
+    function renderJalaliCalendar() {
+      const overlay = ensureJalaliCalendarOverlay();
+      overlay.classList.remove('hidden');
+      document.getElementById('jalali-calendar-month').textContent = JALALI_MONTH_NAMES[jalaliCalendarMonth - 1];
+      document.getElementById('jalali-calendar-year').textContent = String(jalaliCalendarYear);
+      const days = document.getElementById('jalali-calendar-days');
+      const firstWeekday = jalaliCalendarWeekday(jalaliCalendarYear, jalaliCalendarMonth, 1);
+      const monthLength = jalaliCalendarMonthLength(jalaliCalendarYear, jalaliCalendarMonth);
+      const selected = jalaliCalendarParts(activeJalaliCalendarInput?.value);
+      const today = getTodayJalaliDate().split('/').map(Number);
+      let markup = '';
+      for (let blank = 0; blank < firstWeekday; blank++) markup += '<span></span>';
+      for (let day = 1; day <= monthLength; day++) {
+        const isSelected = selected && selected.year === jalaliCalendarYear && selected.month === jalaliCalendarMonth && selected.day === day;
+        const isToday = today[0] === jalaliCalendarYear && today[1] === jalaliCalendarMonth && today[2] === day;
+        markup += `<button type="button" class="jc-day ${isSelected ? 'is-selected' : ''} ${isToday ? 'is-today' : ''} text-white" onclick="chooseJalaliCalendarDay(${day})" aria-label="${day} ${JALALI_MONTH_NAMES[jalaliCalendarMonth - 1]} ${jalaliCalendarYear}">${day}</button>`;
+      }
+      days.innerHTML = markup;
+    }
+
+    function openJalaliCalendar(input) {
+      if (!isJalaliDateInput(input)) return;
+      activeJalaliCalendarInput = input;
+      const selected = jalaliCalendarParts(input.value) || (() => {
+        const p = getTodayJalaliDate().split('/').map(Number);
+        return { year: p[0], month: p[1], day: p[2] };
+      })();
+      jalaliCalendarYear = selected.year;
+      jalaliCalendarMonth = selected.month;
+      renderJalaliCalendar();
+    }
+
+    function closeJalaliCalendar() {
+      const overlay = document.getElementById('jalali-calendar-overlay');
+      if (overlay) overlay.classList.add('hidden');
+      activeJalaliCalendarInput = null;
+    }
+
+    function changeJalaliCalendarMonth(delta) {
+      jalaliCalendarMonth += Number(delta);
+      if (jalaliCalendarMonth < 1) { jalaliCalendarMonth = 12; jalaliCalendarYear--; }
+      if (jalaliCalendarMonth > 12) { jalaliCalendarMonth = 1; jalaliCalendarYear++; }
+      renderJalaliCalendar();
+    }
+
+    function chooseJalaliCalendarDay(day) {
+      if (!activeJalaliCalendarInput) return;
+      const input = activeJalaliCalendarInput;
+      input.value = String(day).padStart(2, '0') + '/' + String(jalaliCalendarMonth).padStart(2, '0') + '/' + jalaliCalendarYear;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      closeJalaliCalendar();
+      input.focus();
+    }
+
+    function selectJalaliCalendarToday() {
+      const p = getTodayJalaliDate().split('/').map(Number);
+      jalaliCalendarYear = p[0]; jalaliCalendarMonth = p[1];
+      chooseJalaliCalendarDay(p[2]);
+    }
+
+    function addJalaliCalendarButton(input) {
+      if (!isJalaliDateInput(input) || input.dataset.jalaliCalendarReady === '1') return;
+      input.dataset.jalaliCalendarReady = '1';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'jalali-calendar-trigger';
+      button.innerHTML = '▦';
+      button.title = 'انتخاب تاریخ از تقویم شمسی';
+      button.setAttribute('aria-label', 'باز کردن تقویم شمسی');
+      button.addEventListener('click', () => openJalaliCalendar(input));
+      input.insertAdjacentElement('afterend', button);
+    }
+
     function bindGlobalJalaliDateFormatting() {
+
       const format = (input, finalize = false) => {
         if (!isJalaliDateInput(input)) return;
         const before = input.value;
@@ -2357,7 +2516,14 @@
       document.addEventListener('change', event => format(event.target, true), true);
       document.addEventListener('focus', event => format(event.target, true), true);
       document.addEventListener('focusout', event => format(event.target, true), true);
-      document.querySelectorAll('input').forEach(input => format(input, true));
+      document.querySelectorAll('input').forEach(input => { format(input, true); addJalaliCalendarButton(input); });
+      const observer = new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
+        if (node.nodeType !== 1) return;
+        if (node.matches?.('input')) { format(node, true); addJalaliCalendarButton(node); }
+        node.querySelectorAll?.('input').forEach(input => { format(input, true); addJalaliCalendarButton(input); });
+      })));
+      observer.observe(document.body, { childList: true, subtree: true });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeJalaliCalendar(); });
     }
 
     function addAudit(action, metadata = {}) {
