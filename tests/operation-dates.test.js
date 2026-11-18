@@ -30,5 +30,16 @@ assert.ok(state.auditLogs[0].createdAt);
 assert.match(html, /id="mv-date"/);
 assert.match(html, /jalaliDateOrdinal\(operationDate\) === null/);
 assert.match(html, /mode: 'manual'/);
-assert.ok(html.includes('function postVoucher(desc, lines, date = (typeof getTodayJalaliDate'));
+assert.ok(html.includes('function postVoucher(desc, lines, date = getTodayJalaliDate()'));
+assert.ok(!html.includes('${state.fiscalYear}/08/27'), 'legacy fixed operation date must be absent');
+for (const snippet of [
+  "doc: 'موجودی اولیه', inQty: stock",
+  'function submitWhTransfer()',
+  'function submitPhysicalStocktaking()',
+  'function saveOrder()',
+  'issueDate: getTodayJalaliDate()',
+  'id: txId, date: getTodayJalaliDate()',
+  'getTodayJalaliDate(now)'
+]) assert.ok(html.includes(snippet), 'missing current-date workflow: ' + snippet);
+assert.ok(html.includes('date: getTodayJalaliDate(), doc:'), 'partial return kardex must use current Jalali date');
 console.log('PASS: 8 manual/automatic operation date and audit tests');

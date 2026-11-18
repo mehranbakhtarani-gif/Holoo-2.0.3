@@ -45,12 +45,12 @@ const state = {
 };
 let saves=0;
 const post=load('postVoucher',{
-  state, addAudit(message){state.auditLogs.push(message);}, saveState(){saves++;}
+  state, getTodayJalaliDate(){return '1405/09/02';}, addAudit(message){state.auditLogs.push(message);}, saveState(){saves++;}
 });
 const balances=load('getAccountBalances',{state,CHART_ACCOUNTS});
 const partyBalance=load('getPartyNetBalance',{state});
 const updateCheck=load('updateCheckStatus',{
-  state, postVoucher:post, addAudit(message){state.auditLogs.push(message);},
+  state, getTodayJalaliDate(){return '1405/09/02';}, postVoucher:post, addAudit(message){state.auditLogs.push(message);},
   saveState(){saves++;}, renderAll(){}, showToast(){}
 });
 
