@@ -22,6 +22,7 @@ vm.runInNewContext(source + '\nthis.normalizeJalaliDateInputValue = normalizeJal
 assert.equal(context.normalizeJalaliDateInputValue('02011405'), '02/01/1405');
 assert.equal(context.normalizeJalaliDateInputValue('۰۲۰۱۱۴۰۵'), '02/01/1405');
 assert.equal(context.normalizeJalaliDateInputValue('02/01/1405', true), '02/01/1405');
+assert.equal(context.normalizeJalaliDateInputValue('1405/01/02', true), '02/01/1405');
 assert.equal(context.normalizeJalaliDateInputValue('02/', false), '02/');
 assert.equal(context.normalizeJalaliDateInputValue('02/01/', false), '02/01/');
 assert.equal(context.normalizeLedgerDate('02/01/1405'), '14050102');
