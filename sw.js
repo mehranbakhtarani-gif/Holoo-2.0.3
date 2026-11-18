@@ -1,4 +1,4 @@
-const CACHE_NAME = 'holoo-pwa-shell-v10';
+const CACHE_NAME = 'holoo-pwa-shell-v11';
 const APP_SHELL = ['./', './index.html', './import-domain.js', './manifest.json', './icons/icon.svg', './icons/icon-192.svg', './icons/icon-512.svg'];
 const CDN_HOSTS = new Set([
   'cdn.tailwindcss.com',
