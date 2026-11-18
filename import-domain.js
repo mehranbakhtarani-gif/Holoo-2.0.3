@@ -2,7 +2,7 @@
   'use strict';
 
   function number(value, label) {
-    const n = Number(value || 0);
+    const n = value === undefined || value === null || value === '' ? 0 : Number(value);
     if (!Number.isFinite(n) || n < 0) throw new Error((label || 'مقدار') + ' باید عددی و نامنفی باشد.');
     return n;
   }
