@@ -4357,7 +4357,7 @@
           if (dateKey < from) { openingDebit += debit; openingCredit += credit; }
           else if (dateKey <= to) {
             periodDebit += debit; periodCredit += credit;
-            entries.push({ dateKey, date: v.date || v.operationDate, voucherId: v.id, voucherDesc: v.desc || '', partyId: line.partyId ?? null, partyName: line.partyId != null ? getPartyName(line.partyId) : '—', desc: line.desc || v.desc || '', debit, credit });
+            entries.push({ dateKey, date: v.date || v.operationDate, voucherId: v.id, voucherDesc: v.desc || '', partyId: line.partyId ?? null, partyName: line.partyId != null ? ((state.parties || []).find(p => String(p.id) === String(line.partyId))?.name || '—') : '—', desc: line.desc || v.desc || '', debit, credit });
           }
         });
       });
@@ -4379,11 +4379,11 @@
       let ledger;
       try { ledger = buildAccountLedger(accountCode, fromDate, toDate); } catch (error) { showToast(error.message, 'error'); return; }
       const accountName = CHART_ACCOUNTS.find(a => String(a.code) === String(accountCode))?.name || accountCode;
-      const cell = value => '"' + String(value == null ? '' : value).replace(/"/g, '""') + '"';
+      const cell = value => { let raw = String(value == null ? '' : value); if (typeof value === 'string' && /^[\\s]*[=+@-]/.test(raw)) raw = "'" + raw; return '"' + raw.replace(/"/g, '""') + '"'; };
       const rows = [['تاریخ','شماره سند','شرح سند','شرح ردیف','طرف حساب','بدهکار','بستانکار','مانده خالص'], ...ledger.rows.map(r => [r.date,r.voucherId,r.voucherDesc,r.desc,r.partyName,r.debit,r.credit,r.balance])];
       const csv = '\uFEFF' + [['حساب',accountCode,accountName],['از تاریخ',fromDate,'تا تاریخ',toDate],['مانده اول دوره',ledger.openingNet,'گردش بدهکار',ledger.periodDebit,'گردش بستانکار',ledger.periodCredit,'مانده پایان دوره',ledger.closingNet], ...rows].map(row => row.map(cell).join(',')).join('\r\n');
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8'}); const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'Holoo_Ledger_' + accountCode + '.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      const a = document.createElement('a'); a.href = url; a.download = 'Holoo_Ledger_' + accountCode + '.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       showToast('خروجی گردش حساب دانلود شد.');
     }
 
