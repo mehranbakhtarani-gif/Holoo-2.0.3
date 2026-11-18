@@ -28,6 +28,7 @@ const shipment = { id: 'IMP-TEST', productId: product.id, weightKg: 10, landedCo
 const vouchers = [];
 const sandbox = {
   state: { products: [product], costingMethod: 'FIFO', activeRole: 'mehran', fiscalYear: '1405' },
+  HolooImportDomain: require('../import-domain.js'),
   DEVICE_ID: 'DEVICE-IMPORT',
   createStableId: (() => { let n = 0; return p => p + '-' + (++n); })(),
   getTodayJalaliDate: () => '1405/09/01',
