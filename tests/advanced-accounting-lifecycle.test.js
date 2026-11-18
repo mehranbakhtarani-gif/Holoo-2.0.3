@@ -100,7 +100,7 @@ test('settled invoice cancellation is blocked and leaves stock and journal uncha
   };
   const posted = []; let saves = 0;
   const cancel = load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2002);
   assert.equal(state.invoices[0].status, 'active');
@@ -119,7 +119,7 @@ test('partial sales return restores only returned quantity and posts a linked jo
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2003','pret-qty-0':'3'}),
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,5);
@@ -141,7 +141,7 @@ test('partial return rejects quantity above remaining invoice quantity', () => {
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2004','pret-qty-0':'2'}),
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,4);
@@ -171,7 +171,7 @@ test('partial FIFO sales return reverses exact allocated COGS and restores inven
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2050','pret-qty-0':'4'}),
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   const lines=posted[0][1];
@@ -203,7 +203,7 @@ test('sales invoice cancellation reverses only the unreturned FIFO COGS', () => 
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, getInvoiceReturnedAmount(inv){return (inv.returnRefs||[]).reduce((sum,ref)=>sum+Number(ref.amount||0),0);},
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2051);
   const lines=posted[0][1];
@@ -227,7 +227,7 @@ test('check issue rejects duplicate SAYAD and does not create a treasury transac
   const posted=[]; let saves=0;
   const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'500','tr-alloc-inv':'0','tr-desc':'duplicate','tr-sayad':'111122223333444455556666','tr-chk-due':'1405/09/01','tr-chk-bank':'بانک تست','tr-bank-acc':'B1'};
   const save=load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    state, document:doc(values), getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
+    state, document:doc(values), getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
   });
   save();
   assert.equal(state.checks.length,1);
@@ -280,7 +280,7 @@ test('bounced received check posts once and repeated status change has no side e
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
   });
   update('CHK-1','bounced');
   update('CHK-1','bounced');
@@ -300,7 +300,7 @@ test('bounced cheque releases its original invoice allocations exactly once', ()
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
   });
   update('CHK-ALLOC','bounced');
   update('CHK-ALLOC','bounced');
@@ -320,7 +320,7 @@ test('voided supplier cheque releases purchase invoice allocation', () => {
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
   });
   update('CHK-VOID','voided');
   assert.equal(state.invoices[0].paidAmount,0);
@@ -338,7 +338,7 @@ test('cheque allocation reversal is rejected if invoice balance no longer contai
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
   });
   update('CHK-STALE','bounced');
   assert.equal(state.invoices[0].paidAmount,100);
@@ -366,7 +366,7 @@ test('partial return validates every row before changing any stock or invoice qu
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3101','pret-qty-0':'2','pret-qty-1':'3'}),
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,0);
@@ -386,7 +386,7 @@ test('partial return stores return value so the invoice outstanding is reduced',
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3102','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   const outstanding=load(section('function getInvoiceReturnedAmount(inv)', 'function agingBucket(daysPastDue)'), 'getInvoiceOutstanding', {});
@@ -405,7 +405,7 @@ test('cancelling an invoice after partial returns reverses only its remaining va
   };
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(3103);
   assert.equal(state.invoices[0].status,'cancelled');
@@ -427,7 +427,7 @@ test('return on a fully settled sales invoice creates customer credit instead of
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3201','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
   submit();
   assert.equal(state.treasuryTxs.length,1);
@@ -451,7 +451,7 @@ test('return below the unpaid invoice balance does not create excess party credi
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3202','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
   submit();
   assert.equal(state.treasuryTxs.length,0);
