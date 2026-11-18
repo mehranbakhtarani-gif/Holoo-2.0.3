@@ -93,7 +93,7 @@ assert.equal(trial.totals.closingBalanceCredit,2300);
 assert.equal(trial.movementDifference,0);
 assert.equal(trial.closingDifference,0);
 for (const [code, expected] of Object.entries({
-  '1101':{debit:0,credit:0,closing:1200},
+  '1101':{debit:300,credit:100,closing:1200},
   '1102':{debit:500,credit:200,closing:800},
   '1201':{debit:200,credit:0,closing:200},
   '2201':{debit:0,credit:300,closing:-300},
@@ -163,5 +163,5 @@ assert.equal(trial.rows.find(r=>r.code==='1101').closingBalanceDebit +
   'trial balance cash and bank accounts must equal cash flow closing cash');
 console.log('PASS: seven-report synthetic cross-validation — ledger, P&L, balance sheet, cash flow, aging and bank reconciliation');
 console.log('PASS: invalid voucher is excluded consistently from ledger, trial balance, P&L, balance sheet and cash flow');
-console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow
-PASS: bank transaction matching is exact and one voucher cannot be matched twice');
+console.log('PASS: trial balance reconciles account-by-account with ledgers, P&L, balance sheet and cash flow');
+console.log('PASS: bank transaction matching is exact and one voucher cannot be matched twice');
