@@ -4946,7 +4946,7 @@
       b.textContent = `🧮 راس‌گیری وزنی چک‌های در جریان (${faNum(chks.length)} فقره به مبلغ ${money(sum)}): میانگین سررسید وزنی ${faNum(weightedDays)} روز آینده است.`;
     }
 
-    function escapeBankReconcileText(value) {
+    function escapeBankReconciliationText(value) {
       return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       })[ch]);
