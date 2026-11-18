@@ -254,7 +254,7 @@ test('cancelling an invoice after partial returns reverses only its remaining va
   };
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...a){posted.push(a);}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(3103);
   assert.equal(state.invoices[0].status,'cancelled');
