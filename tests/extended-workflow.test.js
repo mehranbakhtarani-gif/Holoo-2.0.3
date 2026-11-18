@@ -39,7 +39,7 @@ test('new customer receives a stable subledger identity and customer control acc
   let saves = 0;
   const values = { 'np-name': 'مشتری آزمایشی ۱', 'np-phone': '09120000001', 'np-role': 'مشتری', 'np-eco': '', 'np-credit': '1000000', 'np-terms': 'نقدی' };
   const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
-    state, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
+    state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
   assert.equal(state.parties.length, 1);
@@ -54,7 +54,7 @@ test('duplicate party name or phone is rejected without a second record', () => 
   let saves = 0;
   const values = { 'np-name': 'آزمایشگاه الف', 'np-phone': '09122222222', 'np-role': 'مشتری', 'np-eco': '', 'np-credit': '', 'np-terms': '' };
   const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
-    state, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
+    state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
   assert.equal(state.parties.length, 1);
