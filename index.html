@@ -4450,7 +4450,7 @@
       }
 
       const accounts = new Map();
-      let totalDebit = 0, totalCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0;
+      let totalDebit = 0, totalCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0, currentYearProfit = 0;
       (state.vouchers || []).forEach(voucher => {
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
@@ -4465,6 +4465,7 @@
           totalDebit += debit;
           totalCredit += credit;
           const code = String(line.code || '');
+          if (dateKey >= fiscalStart && /^[456]/.test(code)) currentYearProfit += code.startsWith('4') ? credit - debit : debit - credit;
           if (!/^[123456]/.test(code)) return;
           if (!accounts.has(code)) {
             const catalog = CHART_ACCOUNTS.find(a => String(a.code) === code) ||
@@ -4496,12 +4497,8 @@
       const equity = rows.filter(r => r.group === 'equity').reduce((s,r) => s + r.balance, 0);
 
       // Current fiscal-year profit is added once to equity; prior-year results must already
-      // have been closed into retained earnings (e.g. account 3102).
-      let currentYearProfit = 0;
-      rows.filter(r => r.group === 'results').forEach(r => {
-        const signed = r.code.startsWith('4') ? r.credit - r.debit : r.debit - r.credit;
-        currentYearProfit += signed;
-      });
+      // have been closed into retained earnings (e.g. account 3102). It is accumulated
+      // only from fiscalStart, not from the beginning of all historical vouchers.
       const liabilitiesAndEquity = liabilities + equity + currentYearProfit;
       return {
         asOfDate, rows, assets, liabilities, equity, currentYearProfit,
