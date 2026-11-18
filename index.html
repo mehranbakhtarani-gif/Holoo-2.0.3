@@ -5355,7 +5355,7 @@
       catch (error) { showToast(error.message, 'error'); return; }
       const cell = value => {
         let raw = String(value == null ? '' : value);
-        if (/^\s*[=+@-]/.test(raw)) raw = "'" + raw;
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw;
         return '"' + raw.replace(/"/g, '""') + '"';
       };
       const data = [
