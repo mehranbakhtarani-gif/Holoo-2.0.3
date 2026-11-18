@@ -4344,7 +4344,7 @@
     function buildAccountLedger(accountCode, fromDate, toDate) {
       const from = normalizeLedgerDate(fromDate);
       const to = normalizeLedgerDate(toDate);
-      if (!from || !to || from > to || jalaliDateOrdinal(from) === null || jalaliDateOrdinal(to) === null) throw new Error('بازه تاریخ دفتر حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) throw new Error('بازه تاریخ دفتر حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       const entries = [];
       let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
       (state.vouchers || []).forEach(v => {
