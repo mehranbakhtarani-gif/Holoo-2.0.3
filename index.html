@@ -1908,7 +1908,7 @@
       if (!remaining.length && didMerge && localSnapshotUnchanged) {
         // The server may now contain disjoint edits from another device.
         // Refresh the merged snapshot locally before clearing the outbox/baseline.
-        const readUrl = cloudConfig.url.replace(/\\/$/, '') + '/rest/v1/' +
+        const readUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' +
           encodeURIComponent(cloudConfig.table) + '?id=eq.' +
           encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
         const readRes = await fetchWithTimeout(readUrl, {
