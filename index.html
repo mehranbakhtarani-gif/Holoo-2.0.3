@@ -2969,6 +2969,16 @@
       const partyId = document.getElementById('inv-party').value;
       const warehouseId = document.getElementById('inv-warehouse').value;
       const payMethod = document.getElementById('inv-pay-method').value;
+      const settlementAccount = payMethod === 'credit'
+        ? null
+        : (state.bankAccounts || []).find(account => account.type === payMethod);
+      if (payMethod !== 'credit' && !settlementAccount) {
+        showToast(payMethod === 'bank'
+          ? 'برای تسویه بانکی فاکتور، ابتدا یک حساب بانکی تعریف کنید.'
+          : 'برای تسویه نقدی فاکتور، ابتدا یک حساب صندوق تعریف کنید.', 'error');
+        return;
+      }
+      const settlementAccountCode = payMethod === 'bank' ? '1102' : (payMethod === 'cash' ? '1101' : null);
       const vatRate = Number(document.getElementById('inv-vat-rate').value || 0);
       const commRate = Number(document.getElementById('inv-commission-rate').value || 0);
       const sub = invDraft.lines.reduce((s, l) => s + l.total, 0); // مبلغ خالص پس از تخفیف؛ مبنای ثبت حسابداری
@@ -2982,7 +2992,8 @@
 
       state.invoices.unshift({
         id, type, date, dueDate: document.getElementById('inv-due-date').value, partyId, warehouseId,
-        payMethod, salesperson: document.getElementById('inv-salesperson').value, commRate, commAmount,
+        payMethod, ...(settlementAccount ? { bankAccountId: settlementAccount.id } : {}),
+        salesperson: document.getElementById('inv-salesperson').value, commRate, commAmount,
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal, paidAmount: payMethod === 'credit' ? 0 : grandTotal,
         status: 'active', items: [...invDraft.lines]
       });
@@ -3002,9 +3013,7 @@
             p.kardex.push({ date, doc: `فاکتور فروش #${id}`, inQty: 0, outQty: l.kg, bal: p.stock, price: state.costingMethod === 'FIFO' ? (lineCost / l.kg) : p.buyPrice, costingMethod: state.costingMethod, fifoAllocations: l.fifoAllocations || [] });
           }
         });
-        const debAcc = payMethod === 'credit' ? '1103' : (payMethod === 'bank' ? '1102' : '1101');
-        if (payMethod === 'bank') state.bankAccounts[0].balance += grandTotal;
-        if (payMethod === 'cash') state.bankAccounts[2].balance += grandTotal;
+        const debAcc = payMethod === 'credit' ? '1103' : settlementAccountCode;
         const lines = [
           { code: debAcc, partyId, desc: `فاکتور فروش #${id}`, debit: grandTotal, credit: 0 },
           { code: '4101', partyId, desc: `درآمد فروش #${id}`, debit: 0, credit: sub },
@@ -3017,6 +3026,7 @@
           lines.push({ code: '2101', partyId: null, desc: `پورسانت پرداختنی #${id}`, debit: 0, credit: commAmount });
         }
         postVoucher(`صدور فاکتور فروش #${id}`, lines, date, { type: 'invoice', id });
+        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) + grandTotal;
       } else {
         invDraft.lines.forEach(l => {
           const p = state.products.find(x => x.id === l.productId);
@@ -3028,11 +3038,15 @@
             p.kardex.push({ date, doc: `فاکتور خرید #${id}`, inQty: l.kg, outQty: 0, bal: p.stock, price: receivedUnitCost, batchRef: 'PUR-' + id });
           }
         });
+        const purchaseCreditCode = settlementAccountCode || '2101';
         postVoucher(`ثبت فاکتور خرید #${id}`, [
           { code: '1105', partyId: null, desc: `ورود کالا #${id}`, debit: sub, credit: 0 },
           { code: '1106', partyId: null, desc: `اعتبار ارزش افزوده #${id}`, debit: vatAmount, credit: 0 },
-          { code: '2101', partyId, desc: `بستانکار بابت خرید #${id}`, debit: 0, credit: grandTotal }
+          { code: purchaseCreditCode, partyId: payMethod === 'credit' ? partyId : null,
+            desc: payMethod === 'credit' ? `بستانکار بابت خرید #${id}` : `پرداخت خرید از ${settlementAccount.name} #${id}`,
+            debit: 0, credit: grandTotal }
         ], date, { type: 'invoice', id });
+        if (settlementAccount) settlementAccount.balance = Number(settlementAccount.balance || 0) - grandTotal;
       }
 
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
