@@ -556,6 +556,7 @@
             <div class="flex gap-2">
                 <button onclick="openModal('modal-new-fx-commitment')" class="touch-btn bg-emerald-700 text-white px-3 rounded-xl text-xs font-extrabold">+ ثبت تعهد ارزی</button>
                 <button onclick="openModal('modal-fx-rates')" class="touch-btn bg-indigo-700 text-white px-3 rounded-xl text-xs font-extrabold">🔄 نرخ روز ارزها</button>
+                <button onclick="postFxRevaluation()" class="touch-btn bg-amber-700 text-white px-3 rounded-xl text-xs font-extrabold">ثبت تسعیر پایان دوره</button>
               </div>
           </div>
           <div id="fx-rates-cards" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
@@ -1836,6 +1837,14 @@
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '1107')) state.accountCatalog.push({ id: 'SUB-1107', code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان', level: 'subsidiary', parentId: 'GL-11', system: true, active: true });
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '2106')) state.accountCatalog.push({ id: 'SUB-2106', code: '2106', name: 'بستانکاران هزینه‌های واردات', level: 'subsidiary', parentId: 'GL-21', system: true, active: true });
     if (!Array.isArray(state.fxCommitments)) state.fxCommitments = [];
+    (state.imports || []).forEach(m => {
+      if (!Number(m.carryingRate)) m.carryingRate = Number(m.fxRate || 0);
+      if (!Array.isArray(m.revaluationHistory)) m.revaluationHistory = [];
+    });
+    state.fxCommitments.forEach(c => {
+      if (!Number(c.carryingRate)) c.carryingRate = Number(c.initialRate || 0);
+      if (!Array.isArray(c.revaluationHistory)) c.revaluationHistory = [];
+    });
     if (!state.fxRates || typeof state.fxRates !== 'object') state.fxRates = { USD: 0, CNY: 0, EUR: 0 };
     if (!Array.isArray(state.parties)) state.parties = [];
     state.parties.forEach(p => {
@@ -3257,7 +3266,7 @@
         containerNo: document.getElementById('imp-container').value,
         productId: costing.items[0].productId,
         weightKg: costing.totalWeightKg, cartons: costing.totalCartons,
-        currency: currency, fxTotal: costing.fxTotal, fxRate: fxRate, fxPaid: 0,
+        currency: currency, fxTotal: costing.fxTotal, fxRate: fxRate, carryingRate: fxRate, fxPaid: 0, revaluationHistory: [],
         expenses: expenses, expenseAllocationBasis: expenseAllocationBasis, items: costing.items,
         landedCostPerKg: Math.round(costing.totalLandedRial / costing.totalWeightKg),
         totalLandedRial: costing.totalLandedRial, postedToWh: false,
@@ -3465,14 +3474,15 @@
       document.getElementById('fx-commitments-list').innerHTML = state.imports.map(m => {
         const remFx = Math.max(0, m.fxTotal - m.fxPaid);
         const curRate = state.fxRates[m.currency] || m.fxRate;
-        const unrealizedDiff = (m.fxRate - curRate) * remFx;
+        const carryingRate = Number(m.carryingRate || m.fxRate || 0);
+        const unrealizedDiff = (carryingRate - curRate) * remFx;
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between font-black"><span>تعهد ارزی محموله ${m.id} — ${m.supplier}</span><span class="tabular-nums">${faNum(m.fxTotal)} ${m.currency}</span></div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-2.5 rounded-xl bg-slate-50 border tabular-nums">
               <div>پرداخت‌شده: <strong>${faNum(m.fxPaid)} ${m.currency}</strong></div>
               <div>مانده بدهی ارزی: <strong class="text-rose-700">${faNum(remFx)} ${m.currency}</strong></div>
-              <div>نرخ ثبت اولیه: <strong>${money(m.fxRate, false)}</strong></div>
+              <div>نرخ دفتری فعلی: <strong>${money(carryingRate, false)}</strong></div>
               <div>سود/زیان تسعیر تحقق‌نیافته: <strong class="${unrealizedDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(Math.abs(unrealizedDiff))} (${unrealizedDiff >= 0 ? 'سود' : 'زیان'})</strong></div>
             </div>
             ${remFx > 0 ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-2"><input type="number" id="fx-import-pay-${m.id}" min="0.01" max="${remFx}" step="any" value="${Math.min(5000, remFx)}" class="touch-btn border rounded-lg px-2 tabular-nums" aria-label="مبلغ پرداخت ارزی محموله" /><select id="fx-import-bank-${m.id}" class="touch-btn border rounded-lg px-2"><option value="">بدون تخصیص بانک</option>${(state.bankAccounts || []).map(b => `<option value="${b.id}">${b.name}</option>`).join('')}</select><button onclick="payFxStage('${m.id}')" class="touch-btn bg-indigo-700 text-white px-4 rounded-xl font-bold">💸 ثبت پرداخت مرحله‌ای</button></div>` : '<span class="text-emerald-700 font-bold">تسویه کامل ارزی ✔</span>'}
@@ -3481,7 +3491,8 @@
       }).join('') + (state.fxCommitments || []).map(c => {
         const remFx = Math.max(0, Number(c.amount || 0) - Number(c.paidAmount || 0));
         const curRate = Number(state.fxRates[c.currency] || c.initialRate || 0);
-        const unrealizedDiff = (Number(c.initialRate || 0) - curRate) * remFx;
+        const carryingRate = Number(c.carryingRate || c.initialRate || 0);
+        const unrealizedDiff = (carryingRate - curRate) * remFx;
         const dueOrdinal = jalaliDateOrdinal(c.dueDate);
         const todayOrdinal = currentJalaliOrdinal();
         const overdue = remFx > 0 && dueOrdinal !== null && todayOrdinal !== null && todayOrdinal > dueOrdinal;
@@ -3518,7 +3529,7 @@
       const id = createStableId('fxc');
       const commitment = {
         id, counterparty, supplierPartyId, reference: document.getElementById('fxc-reference').value.trim(),
-        currency, amount, initialRate, paidAmount: 0, dueDate: document.getElementById('fxc-due-date').value.trim(),
+        currency, amount, initialRate, carryingRate: initialRate, revaluationHistory: [], paidAmount: 0, dueDate: document.getElementById('fxc-due-date').value.trim(),
         purpose: document.getElementById('fxc-purpose').value.trim(), notes: document.getElementById('fxc-notes').value.trim(),
         status: 'open', payments: [], createdAt: new Date().toISOString(), createdBy: state.activeRole, deviceId: DEVICE_ID
       };
@@ -3541,7 +3552,8 @@
       const bankId = document.getElementById(`fx-pay-bank-${c.id}`).value;
       const bank = (state.bankAccounts || []).find(x => x.id === bankId);
       if (!bank) { showToast('برای ثبت پرداخت ارزی، حساب بانک مقصد را انتخاب کنید.', 'error'); return; }
-      const bookRial = Math.round(amount * Number(c.initialRate));
+      const bookRate = Number(c.carryingRate || c.initialRate);
+      const bookRial = Math.round(amount * bookRate);
       const paidRial = Math.round(amount * rate);
       const diff = bookRial - paidRial;
       const paymentId = createStableId('fxpay');
@@ -3554,7 +3566,7 @@
       const previous = { paidAmount: Number(c.paidAmount || 0), status: c.status, payments: [...(c.payments || [])], bankBalance: bank ? Number(bank.balance || 0) : null };
       c.paidAmount = previous.paidAmount + amount;
       c.status = c.paidAmount + 0.000001 >= c.amount ? 'paid' : 'partial';
-      c.payments = [...previous.payments, { id: paymentId, amount, currency: c.currency, rate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
+      c.payments = [...previous.payments, { id: paymentId, amount, currency: c.currency, rate, bookRate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
       if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
       try {
         postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId });
@@ -3571,11 +3583,74 @@
       showToast('پرداخت تعهد ارزی و سند تسعیر ثبت شد.');
     }
 
+
+    function postFxRevaluation() {
+      const operationDate = getTodayJalaliDate();
+      const obligations = [];
+      (state.imports || []).forEach(ref => {
+        const remaining = Math.max(0, Number(ref.fxTotal || 0) - Number(ref.fxPaid || 0));
+        if (remaining > 0) obligations.push({ kind: 'import', ref, id: ref.id, remaining, currency: ref.currency, initialRate: ref.fxRate, carryingRate: ref.carryingRate || ref.fxRate, partyId: ref.supplierPartyId || null, label: 'محموله ' + ref.id });
+      });
+      (state.fxCommitments || []).forEach(ref => {
+        const remaining = Math.max(0, Number(ref.amount || 0) - Number(ref.paidAmount || 0));
+        if (remaining > 0) obligations.push({ kind: 'commitment', ref, id: ref.id, remaining, currency: ref.currency, initialRate: ref.initialRate, carryingRate: ref.carryingRate || ref.initialRate, partyId: ref.supplierPartyId || null, label: 'تعهد ' + (ref.reference || ref.id) });
+      });
+      if (!obligations.length) { showToast('تعهد ارزی باز برای تسعیر وجود ندارد.', 'error'); return false; }
+      if (obligations.some(item => item.ref.lastRevaluationAt === operationDate)) {
+        showToast('برای این تاریخ قبلاً تسعیر ثبت شده است؛ از ثبت دوباره جلوگیری شد.', 'error'); return false;
+      }
+      const snapshots = obligations.map(item => ({
+        ref: item.ref, carryingRate: item.ref.carryingRate, lastRevaluationAt: item.ref.lastRevaluationAt,
+        revaluationHistory: [...(item.ref.revaluationHistory || [])]
+      }));
+      const lines = [];
+      const revaluationId = createStableId('fxreval');
+      try {
+        for (const item of obligations) {
+          const currentRate = Number(state.fxRates[item.currency] || 0);
+          const carryingRate = Number(item.carryingRate || item.initialRate || 0);
+          if (!Number.isFinite(currentRate) || currentRate <= 0 || !Number.isFinite(carryingRate) || carryingRate <= 0) {
+            throw new Error('نرخ روز یا نرخ دفتری یکی از تعهدات ارزی معتبر نیست: ' + item.label);
+          }
+          const carryingRial = Math.round(item.remaining * carryingRate);
+          const marketRial = Math.round(item.remaining * currentRate);
+          const difference = carryingRial - marketRial;
+          if (difference > 0) {
+            lines.push({ code: '2105', partyId: item.partyId, desc: 'کاهش بدهی ارزی ' + item.label, debit: difference, credit: 0 });
+            lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر پایان دوره ' + item.label, debit: 0, credit: difference });
+          } else if (difference < 0) {
+            lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر پایان دوره ' + item.label, debit: Math.abs(difference), credit: 0 });
+            lines.push({ code: '2105', partyId: item.partyId, desc: 'افزایش بدهی ارزی ' + item.label, debit: 0, credit: Math.abs(difference) });
+          }
+          item.ref.carryingRate = currentRate;
+          item.ref.lastRevaluationAt = operationDate;
+          item.ref.revaluationHistory = [...(item.ref.revaluationHistory || []), {
+            id: revaluationId, date: operationDate, currency: item.currency, remainingAmount: item.remaining,
+            previousRate: carryingRate, currentRate: currentRate, difference: difference,
+            actor: state.activeRole, deviceId: DEVICE_ID
+          }];
+        }
+        if (lines.length) postVoucher('ثبت تسعیر پایان دوره ' + operationDate, lines, operationDate, { type: 'fx_revaluation', id: revaluationId, event: 'period_end' });
+      } catch (error) {
+        snapshots.forEach(snapshot => {
+          snapshot.ref.carryingRate = snapshot.carryingRate;
+          snapshot.ref.lastRevaluationAt = snapshot.lastRevaluationAt;
+          snapshot.ref.revaluationHistory = snapshot.revaluationHistory;
+        });
+        showToast('ثبت تسعیر پایان دوره ناموفق بود؛ نرخ دفتری تعهدات بدون تغییر ماند. ' + (error?.message || ''), 'error');
+        return false;
+      }
+      addAudit('ثبت تسعیر پایان دوره ' + operationDate + ' برای ' + obligations.length + ' تعهد ارزی', { mode: 'automatic', operationDate, sourceType: 'fx_revaluation' });
+      saveState(); renderFxModule(); renderImportsModule();
+      showToast(lines.length ? 'سند تسعیر پایان دوره صادر شد و نرخ دفتری تعهدات به‌روزرسانی شد.' : 'اختلاف تسعیر قابل ثبت وجود نداشت؛ نرخ دفتری تعهدات به‌روزرسانی شد.');
+      return true;
+    }
+
     function updateFxRates() {
       state.fxRates.USD = Number(document.getElementById('fx-usd').value || 685000);
       state.fxRates.CNY = Number(document.getElementById('fx-cny').value || 96000);
       state.fxRates.EUR = Number(document.getElementById('fx-eur').value || 742000);
-      saveState(); closeModal('modal-fx-rates'); renderAll(); showToast('نرخ ارزها به‌روزرسانی و تسعیر محاسبه شد.');
+      saveState(); closeModal('modal-fx-rates'); renderAll(); showToast('نرخ روز ذخیره شد؛ برآورد تسعیر مانده‌ها به‌روزرسانی شد. برای ثبت سند پایان دوره از دکمه «ثبت تسعیر پایان دوره» استفاده کنید.');
     }
 
     function payFxStage(impId) {
@@ -3591,7 +3666,8 @@
       const bankId = document.getElementById(`fx-import-bank-${shipment.id}`)?.value || '';
       const bank = (state.bankAccounts || []).find(x => x.id === bankId);
       if (!bank) { showToast('برای ثبت پرداخت ارزی محموله، حساب بانک مقصد را انتخاب کنید.', 'error'); return; }
-      const bookRial = Math.round(payFx * Number(shipment.fxRate));
+      const bookRate = Number(shipment.carryingRate || shipment.fxRate);
+      const bookRial = Math.round(payFx * bookRate);
       const paidRial = Math.round(payFx * curRate);
       const diff = bookRial - paidRial;
       const paymentId = createStableId('impfxpay');
@@ -3605,7 +3681,7 @@
       const previousPayments = [...(shipment.fxPayments || [])];
       const previousBankBalance = bank ? Number(bank.balance || 0) : null;
       shipment.fxPaid = previousPaid + payFx;
-      shipment.fxPayments = [...previousPayments, { id: paymentId, amount: payFx, currency: shipment.currency, rate: curRate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
+      shipment.fxPayments = [...previousPayments, { id: paymentId, amount: payFx, currency: shipment.currency, rate: curRate, bookRate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
       if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
       try {
         postVoucher(`پرداخت مرحله‌ای تعهد ارزی ${shipment.id}`, lines, getTodayJalaliDate(), { type: 'import', id: shipment.id, event: paymentId });
