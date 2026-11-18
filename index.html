@@ -390,14 +390,18 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-2.5">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-2.5">
               <div>
                 <label class="block font-bold mb-1">نحوه تسویه</label>
-                <select id="inv-pay-method" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50">
+                <select id="inv-pay-method" onchange="renderInvoiceSettlementAccounts()" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50">
                   <option value="credit">نسیه (حساب دفتری)</option>
                   <option value="bank">واریز بانکی</option>
                   <option value="cash">صندوق نقدی</option>
                 </select>
+              </div>
+              <div id="inv-settlement-account-wrap" class="hidden">
+                <label class="block font-bold mb-1">حساب صندوق / بانک</label>
+                <select id="inv-settlement-account" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50"></select>
               </div>
               <div>
                 <label class="block font-bold mb-1">بازاریاب / کارشناس فروش</label>
@@ -2871,9 +2875,33 @@
       document.getElementById('inv-warehouse').innerHTML = state.warehouses.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
       document.getElementById('inv-line-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name} (موجود: ${faNum(p.stock)} KG)</option>`).join('');
       document.getElementById('inv-line-unit-mode').innerHTML = (state.customUnits || []).map(u => `<option value="${u.id}">واحد: ${u.name}</option>`).join('');
+      renderInvoiceSettlementAccounts();
       checkPartyCredit(); onInvProductChange(); renderInvDraftLines();
     }
 
+    function renderInvoiceSettlementAccounts() {
+      const method = document.getElementById('inv-pay-method')?.value || 'credit';
+      const wrap = document.getElementById('inv-settlement-account-wrap');
+      const select = document.getElementById('inv-settlement-account');
+      if (!wrap || !select) return;
+      if (method === 'credit') {
+        wrap.classList.add('hidden');
+        select.disabled = true;
+        select.innerHTML = '';
+        return;
+      }
+      const previousId = select.value;
+      const accounts = (state.bankAccounts || []).filter(account => account.type === method);
+      wrap.classList.remove('hidden');
+      if (!accounts.length) {
+        select.innerHTML = '<option value="">حسابی برای این روش تسویه تعریف نشده است</option>';
+        select.disabled = true;
+        return;
+      }
+      select.disabled = false;
+      select.innerHTML = accounts.map(account => '<option value="' + escapeBankReconcileText(account.id) + '">' + escapeBankReconcileText(account.name || account.id) + '</option>').join('');
+      select.value = accounts.some(account => String(account.id) === String(previousId)) ? previousId : String(accounts[0].id);
+    }
     function checkPartyCredit() {
       const p = state.parties.find(x => x.id === document.getElementById('inv-party').value);
       const b = document.getElementById('inv-credit-banner');
@@ -2969,9 +2997,10 @@
       const partyId = document.getElementById('inv-party').value;
       const warehouseId = document.getElementById('inv-warehouse').value;
       const payMethod = document.getElementById('inv-pay-method').value;
+      const settlementAccountId = document.getElementById('inv-settlement-account')?.value;
       const settlementAccount = payMethod === 'credit'
         ? null
-        : (state.bankAccounts || []).find(account => account.type === payMethod);
+        : (state.bankAccounts || []).find(account => account.type === payMethod && String(account.id) === String(settlementAccountId));
       if (payMethod !== 'credit' && !settlementAccount) {
         showToast(payMethod === 'bank'
           ? 'برای تسویه بانکی فاکتور، ابتدا یک حساب بانکی تعریف کنید.'
