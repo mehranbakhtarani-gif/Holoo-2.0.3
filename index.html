@@ -3261,13 +3261,14 @@
         lot: costing.items[0].lot || impId,
         productionDate: costing.items[0].productionDate || '',
         expiryDate: costing.items[0].expiryDate || '',
-        status: document.getElementById('imp-status').value,
+        status: document.getElementById('imp-status').value === 'received' ? 'cleared' : document.getElementById('imp-status').value,
         eta: document.getElementById('imp-eta').value.trim(),
         billOfLading: document.getElementById('imp-bl').value.trim(),
         destinationPort: document.getElementById('imp-port').value.trim(),
         statusUpdatedAt: new Date().toISOString(),
-        statusHistory: [{ status: document.getElementById('imp-status').value, at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }]
+        statusHistory: [{ status: document.getElementById('imp-status').value === 'received' ? 'cleared' : document.getElementById('imp-status').value, at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }]
       };
+      const receiveImmediately = document.getElementById('imp-status').value === 'received';
       state.imports.unshift(shipment);
       try {
         postVoucher('ثبت محموله وارداتی ' + impId + ' - ' + supplier, [
@@ -3279,12 +3280,14 @@
         state.imports = state.imports.filter(entry => entry.id !== impId);
         showToast('صدور سند اولیه محموله ناموفق بود؛ محموله ذخیره نشد. ' + (error?.message || ''), 'error'); return;
       }
-      if (shipment.status === 'received') {
-        try { receiveImportShipment(shipment); }
-        catch (error) {
-          shipment.status = 'cleared';
-          shipment.statusHistory.push({ status: 'cleared', at: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID });
-          showToast('محموله ثبت شد اما تحویل انبار انجام نشد: ' + (error?.message || ''), 'error');
+      if (receiveImmediately) {
+        try {
+          receiveImportShipment(shipment);
+          shipment.status = 'received';
+          shipment.statusUpdatedAt = new Date().toISOString();
+          shipment.statusHistory.push({ status: 'received', at: shipment.statusUpdatedAt, actor: state.activeRole, deviceId: DEVICE_ID });
+        } catch (error) {
+          showToast('محموله ثبت شد اما تحویل انبار انجام نشد؛ وضعیت آن برای تلاش مجدد روی «ترخیص‌شده» ماند: ' + (error?.message || ''), 'error');
         }
       }
       addAudit('ثبت محموله ' + impId + ' با ' + costing.items.length + ' قلم کالا', { mode: 'manual', sourceType: 'import' });
@@ -3334,6 +3337,8 @@
           product.kardex = product.kardex || [];
           product.kardex.push({ date: receivedDate, doc: 'تحویل محموله ' + shipment.id + ' به انبار', inQty: qty, outQty: 0, bal: product.stock, price: unitCost, batchRef: shipment.id, sourceItemId: item.id });
         }
+        shipment.postedToWh = true;
+        shipment.receivedAt = receivedDate;
         postVoucher('تحویل محموله وارداتی ' + shipment.id + ' به انبار', [
           { code: '1103', partyId: null, desc: 'موجودی انبار از محموله ' + shipment.id, debit: shipment.totalLandedRial, credit: 0 },
           { code: '1105', partyId: null, desc: 'خروج از موجودی در راه محموله ' + shipment.id, debit: 0, credit: shipment.totalLandedRial }
@@ -3350,8 +3355,6 @@
         shipment.receivedAt = null;
         throw error;
       }
-      shipment.postedToWh = true;
-      shipment.receivedAt = receivedDate;
       addAudit('تحویل محموله ' + shipment.id + ' با ' + items.length + ' قلم به انبار و ثبت بچ‌های موجودی', { mode: 'automatic', operationDate: receivedDate, sourceType: 'import' });
       return true;
     }
