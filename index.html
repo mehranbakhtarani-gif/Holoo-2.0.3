@@ -574,6 +574,16 @@
             <div id="cashflow-horizons-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
             <div class="h-60 w-full pt-2"><canvas id="cashflowChart"></canvas></div>
           </div>
+          <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
+            <div><h2 class="text-base font-black text-slate-900">📑 صورت جریان وجوه نقد واقعی</h2>
+              <p class="text-xs text-slate-500">بر پایه اسناد دفتر روزنامه و گردش صندوق و بانک (۱۱۰۱ و ۱۱۰۲)؛ مستقل از پیش‌بینی نقدینگی</p></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label class="text-xs font-bold">از تاریخ (شمسی)<input id="cashflow-actual-from" class="touch-btn mt-1 w-full border rounded-lg px-2" /></label>
+              <label class="text-xs font-bold">تا تاریخ (شمسی)<input id="cashflow-actual-to" class="touch-btn mt-1 w-full border rounded-lg px-2" /></label>
+            </div>
+            <button onclick="renderActualCashFlowReport()" class="touch-btn bg-holoo-700 text-white rounded-xl px-4 font-bold">محاسبه صورت جریان وجوه نقد</button>
+            <div id="cashflow-actual-report" class="space-y-3"></div>
+          </div>
         </section>
 
         <!-- ==================== MODULE 14: RECEIVABLES / PAYABLES AGING ==================== -->
@@ -4358,6 +4368,114 @@
           options: { responsive: true, maintainAspectRatio: false }
         });
       }
+    }
+
+    let actualCashFlowFromDate = null;
+    let actualCashFlowToDate = null;
+
+    function buildActualCashFlowReport(fromDate, toDate) {
+      const from = normalizeLedgerDate(fromDate), to = normalizeLedgerDate(toDate);
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null)
+        throw new Error('بازه تاریخ صورت جریان وجوه نقد معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
+      const isCash = code => /^110[12]/.test(String(code || ''));
+      const classify = code => {
+        const c = String(code || '');
+        if (/^(4104|6104)/.test(c)) return 'fx';
+        if (/^12/.test(c)) return 'investing';
+        if (/^3/.test(c) || /^22/.test(c)) return 'financing';
+        if (/^[12456]/.test(c)) return 'operating';
+        return 'unclassified';
+      };
+      const totals = { operating: 0, investing: 0, financing: 0, fx: 0, unclassified: 0 };
+      const details = [];
+      let openingCash = 0, periodCashChange = 0, invalidDateVouchers = 0, invalidAmountVouchers = 0;
+      let unbalancedVoucherCount = 0, voucherDebitCreditDifference = 0;
+      (state.vouchers || []).forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
+        let debitTotal = 0, creditTotal = 0, invalid = false;
+        (voucher.lines || []).forEach(line => {
+          const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+          if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) { invalid = true; return; }
+          debitTotal += debit; creditTotal += credit;
+        });
+        if (invalid) { invalidAmountVouchers++; return; }
+        if (dateKey >= from && dateKey <= to) {
+          const diff = debitTotal - creditTotal;
+          if (Math.abs(diff) > 0.000001) { unbalancedVoucherCount++; voucherDebitCreditDifference += diff; }
+        }
+        const cashLines = (voucher.lines || []).filter(line => isCash(line.code));
+        const cashDelta = cashLines.reduce((sum,line) => sum + Number(line.debit || 0) - Number(line.credit || 0), 0);
+        if (!cashDelta) return;
+        if (dateKey < from) { openingCash += cashDelta; return; }
+        if (dateKey > to) return;
+        periodCashChange += cashDelta;
+        const counterpartLines = (voucher.lines || []).filter(line => !isCash(line.code) &&
+          (cashDelta > 0 ? Number(line.credit || 0) > 0 : Number(line.debit || 0) > 0));
+        const weights = counterpartLines.map(line => Math.abs(Number(cashDelta > 0 ? line.credit : line.debit)));
+        const weightTotal = weights.reduce((sum,value) => sum + value, 0);
+        let allocated = 0;
+        counterpartLines.forEach((line,index) => {
+          const amount = index === counterpartLines.length - 1 ? Math.abs(cashDelta) - allocated :
+            Math.abs(cashDelta) * weights[index] / (weightTotal || 1);
+          allocated += amount;
+          const category = classify(line.code), signed = Math.sign(cashDelta) * amount;
+          totals[category] += signed;
+          details.push({ voucherId: voucher.id, date: rawDate, desc: voucher.desc || '',
+            accountCode: String(line.code || ''), accountName: CHART_ACCOUNTS.find(a => String(a.code) === String(line.code))?.name ||
+              (state.accountCatalog || []).find(a => String(a.code) === String(line.code))?.name || String(line.code || 'نامشخص'),
+            category, amount: signed });
+        });
+        if (!counterpartLines.length) {
+          totals.unclassified += cashDelta;
+          details.push({ voucherId: voucher.id, date: rawDate, desc: voucher.desc || '',
+            accountCode: '—', accountName: 'طرف حساب نقدی مشخص نشد', category: 'unclassified', amount: cashDelta });
+        }
+      });
+      const classifiedNetChange = Object.values(totals).reduce((sum,value) => sum + value, 0);
+      return { fromDate, toDate, openingCash, periodCashChange, closingCash: openingCash + periodCashChange,
+        totals, details, classifiedNetChange, reconciliationDifference: periodCashChange - classifiedNetChange,
+        invalidDateVouchers, invalidAmountVouchers, unbalancedVoucherCount, voucherDebitCreditDifference };
+    }
+
+    function renderActualCashFlowReport() {
+      const fromInput = document.getElementById('cashflow-actual-from'), toInput = document.getElementById('cashflow-actual-to');
+      const from = fromInput?.value || actualCashFlowFromDate || (String(state.fiscalYear || '1405') + '/01/01');
+      const to = toInput?.value || actualCashFlowToDate || getTodayJalaliDate();
+      actualCashFlowFromDate = from; actualCashFlowToDate = to;
+      let report;
+      try { report = buildActualCashFlowReport(from, to); }
+      catch (error) {
+        document.getElementById('cashflow-actual-report').innerHTML =
+          '<div class="p-3 rounded-xl bg-rose-50 text-rose-800">' + escapeLedgerText(error.message) + '</div>';
+        return;
+      }
+      const labels = { operating: 'فعالیت‌های عملیاتی', investing: 'فعالیت‌های سرمایه‌گذاری',
+        financing: 'فعالیت‌های تأمین مالی', fx: 'اثر تسعیر ارز و تعدیلات ارزی', unclassified: 'جریان‌های نیازمند طبقه‌بندی' };
+      const rows = Object.keys(labels).map(key => '<div class="flex justify-between gap-2 border-b py-2 text-sm"><span>' +
+        labels[key] + '</span><strong class="tabular-nums">' + money(report.totals[key]) + '</strong></div>').join('');
+      const details = report.details.map(row => '<div class="grid grid-cols-1 sm:grid-cols-5 gap-1 border rounded-lg p-2 text-xs">' +
+        '<span>' + escapeLedgerText(faNum(row.date)) + '</span><span>سند #' + escapeLedgerText(faNum(row.voucherId)) + '</span>' +
+        '<span>' + escapeLedgerText(row.accountCode + ' - ' + row.accountName) + '</span>' +
+        '<span>' + escapeLedgerText(labels[row.category]) + '</span><strong>' + money(row.amount) + '</strong>' +
+        '<span class="sm:col-span-5">' + escapeLedgerText(row.desc) +
+        ' <button onclick="openVoucherFromLedger(\'' + escapeLedgerText(row.voucherId) + '\')" class="text-holoo-700 underline font-bold">مشاهده سند</button></span></div>').join('');
+      const warnings = [];
+      if (report.reconciliationDifference !== 0) warnings.push('جمع طبقات جریان نقدی با تغییر مانده صندوق و بانک برابر نیست.');
+      if (report.unbalancedVoucherCount) warnings.push(faNum(report.unbalancedVoucherCount) + ' سند در این بازه توازن بدهکار/بستانکار ندارد.');
+      if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر از گزارش کنار گذاشته شد.');
+      if (report.invalidAmountVouchers) warnings.push(faNum(report.invalidAmountVouchers) + ' سند با مبلغ نامعتبر از گزارش کنار گذاشته شد.');
+      document.getElementById('cashflow-actual-report').innerHTML =
+        '<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span class="text-xs">مانده نقد اول دوره</span><strong class="block">' + money(report.openingCash) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span class="text-xs">خالص تغییر وجه نقد</span><strong class="block">' + money(report.periodCashChange) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span class="text-xs">مانده نقد پایان دوره</span><strong class="block">' + money(report.closingCash) + '</strong></div></div>' +
+        '<div class="rounded-xl border p-3 space-y-1"><h3 class="font-black">طبقه‌بندی جریان‌های نقدی</h3>' + rows +
+        '<div class="flex justify-between gap-2 border-t pt-2 font-black"><span>جمع خالص جریان‌های طبقه‌بندی‌شده</span><strong>' + money(report.classifiedNetChange) + '</strong></div></div>' +
+        (warnings.length ? '<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">' + warnings.map(w => '<p>' + escapeLedgerText(w) + '</p>').join('') + '</div>' :
+          '<div class="p-2 rounded-lg bg-emerald-50 text-emerald-800 text-xs">جمع جریان‌های نقدی با تغییر مانده صندوق و بانک تطبیق دارد.</div>') +
+        '<div class="space-y-2"><h3 class="font-black">جزئیات اسناد</h3>' + (details || '<p class="text-xs text-slate-400">در این بازه گردش نقدی ثبت نشده است.</p>') + '</div>';
     }
 
     // =========================================================================
