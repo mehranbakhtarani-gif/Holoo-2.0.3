@@ -40,6 +40,7 @@ assert.equal(depreciationFn({ cost: 1200000, residualValue: 120000, lifeYears: 3
 assert.equal(depreciationFn({ cost: 1200000, residualValue: 1300000, lifeYears: 3, accDep: 0 }), 0);
 assert.match(html, /state\.payrollRuns/);
 assert.match(html, /state\.depreciationEntries/);
+assert.equal([...html.matchAll(/(?<![\\w$.])escapeBankReconciliationText\\s*\\(/g)].length, 1, 'all renderer call sites must use the window-scoped HTML escape helper');
 assert.match(html, /sourceType === 'payroll_run'/);
 assert.match(html, /sourceType === 'asset_depreciation'/);
 console.log('PASS: payroll and fixed-asset accounting controls');
