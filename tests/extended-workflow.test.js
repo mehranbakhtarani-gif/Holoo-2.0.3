@@ -68,7 +68,7 @@ test('opening stock creates kardex entry and accounting voucher', () => {
   for (let i = 0; i < 10; i++) values[`p-lvl-${i}`] = String(25000 + i * 100);
   const vouchers = [];
   const save = load(extractFunction('saveProduct', 'function renderInventoryModule()'), 'saveProduct', {
-    state, document: fakeDocument(values), getTodayJalaliDate() { return '1405/09/02'; }, postVoucher(...args) { vouchers.push(args); }, saveState() {}, closeModal() {}, renderAll() {}, showToast() {}
+    state, editingProductId: null, document: fakeDocument(values), getTodayJalaliDate() { return '1405/09/02'; }, postVoucher(...args) { vouchers.push(args); }, saveState() {}, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
   assert.equal(state.products.length, 1);
