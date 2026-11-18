@@ -162,6 +162,22 @@ test('inventory reconciliation detects kardex balance mismatch', () => {
   assert.ok(report.issues.some(x => x.type === 'kardex-balance'));
 });
 
+test('inventory reconciliation detects an incorrect intermediate kardex balance even when the final balance matches stock', () => {
+  const products = [{ id: 'R-MID', name: 'کالای میانی', stock: 9, batches: [], kardex: [
+    { bal: 10, inQty: 10, outQty: 0, doc: 'افتتاحیه' },
+    { bal: 4, inQty: 0, outQty: 3, doc: 'فروش اول' },
+    { bal: 9, inQty: 5, outQty: 0, doc: 'خرید بعدی' }
+  ] }];
+  const report = inspectInventoryReconciliation(products);
+  assert.ok(report.issues.some(x => x.type === 'kardex-sequence'));
+  assert.equal(report.issues.some(x => x.type === 'kardex-balance'), false);
+});
+
+test('inventory reconciliation detects a positive-stock product with no kardex history', () => {
+  const report = inspectInventoryReconciliation([{ id: 'R-NO-KARDEX', name: 'بدون کاردکس', stock: 4, batches: [], kardex: [] }]);
+  assert.ok(report.issues.some(x => x.type === 'kardex-missing'));
+});
+
 test('inventory reconciliation validates paired warehouse transfer references and quantities', () => {
   const products = [
     { id: 'SRC', name: 'مبدأ', stock: 4, batches: [], kardex: [{ bal: 4, outQty: 3, inQty: 0, doc: 'حواله خروج انتقال TR-123-abcd به مقصد' }] },
@@ -175,4 +191,4 @@ test('inventory reconciliation validates paired warehouse transfer references an
   assert.ok(mismatch.issues.some(x => x.type === 'transfer'));
 });
 
-console.log('PASS: 13 FIFO and inventory reconciliation tests');
+console.log('PASS: 15 FIFO and inventory reconciliation tests');
