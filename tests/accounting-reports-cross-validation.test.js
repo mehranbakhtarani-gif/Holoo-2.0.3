@@ -15,17 +15,18 @@ const state = {
   fiscalYear:'1405',
   parties:[{id:'C1',name:'مشتری آزمایشی'},{id:'S1',name:'تأمین‌کننده آزمایشی'}],
   accountCatalog:[{code:'1201',name:'دارایی ثابت'}],
+  bankAccounts:[{id:'BANK-A',type:'bank',name:'بانک الف'},{id:'BANK-B',type:'bank',name:'بانک ب'}],
   invoices:[
     {id:1,type:'sale',status:'active',partyId:'C1',grandTotal:500,paidAmount:200,dueDate:'1405/01/10',returnRefs:[{amount:50}]},
     {id:2,type:'purchase',status:'active',partyId:'S1',grandTotal:300,paidAmount:100}
   ],
-  bankReconcileItems:[{id:'BANK-TX-1',date:'1405/01/02',amount:500,desc:'واریز مشتری',ref:'R-1',matched:false}],
+  bankReconcileItems:[{id:'BANK-TX-1',date:'1405/01/02',amount:500,desc:'واریز مشتری',ref:'R-1',bankAccountId:'BANK-A',matched:false}],
   vouchers:[
     voucher(1,'1404/12/29','مانده افتتاحیه',[
       {code:'1101',debit:1000,credit:0},{code:'1102',debit:500,credit:0},{code:'3101',debit:0,credit:1500}
     ]),
     voucher(2,'1405/01/02','دریافت فروش',[
-      {code:'1102',debit:500,credit:0},{code:'4101',debit:0,credit:500}
+      {code:'1102',bankAccountId:'BANK-A',debit:500,credit:0},{code:'4101',debit:0,credit:500}
     ]),
     voucher(3,'1405/01/03','پرداخت هزینه',[
       {code:'6101',debit:100,credit:0},{code:'1101',debit:0,credit:100}
@@ -140,9 +141,22 @@ assert.equal(receivables[0].bucket,'۳۱ تا ۶۰ روز');
 assert.equal(payables[0].outstanding,200);
 assert.equal(payables[0].bucket,'بدون سررسید');
 
+state.vouchers.push(voucher(7,'1405/01/02','دریافت آزمایشی بانک ب',[
+  {code:'1102',bankAccountId:'BANK-B',debit:500,credit:0},{code:'4101',debit:0,credit:500}
+]));
 const candidates = api.getBankReconciliationCandidates(state.bankReconcileItems[0]);
 assert.deepEqual(Array.from(candidates, c=>c.id),[2]);
+assert.deepEqual(Array.from(api.getBankReconciliationCandidates({id:'BANK-B-TX',date:'1405/01/02',amount:500,bankAccountId:'BANK-B'}), c=>c.id),[7],
+  'transactions from bank B must not match bank A vouchers');
+const legacyLine = state.vouchers.find(v=>v.id===2).lines.find(line=>line.code==='1102');
+delete legacyLine.bankAccountId;
+state.bankAccounts = [{id:'BANK-A',type:'bank',name:'بانک الف'}];
+assert.deepEqual(Array.from(api.getBankReconciliationCandidates({id:'LEGACY-TX',date:'1405/01/02',amount:500,bankAccountId:'BANK-A'}), c=>c.id),[2],
+  'untagged legacy vouchers are allowed only with a single bank account');
+legacyLine.bankAccountId = 'BANK-A';
+state.bankAccounts.push({id:'BANK-B',type:'bank',name:'بانک ب'});
 api.confirmBankReconcileMatch('BANK-TX-1',2);
+state.vouchers = state.vouchers.filter(v=>v.id!==7);
 state.bankReconcileItems.push({id:'BANK-TX-2',date:'1405/01/02',amount:500,desc:'تراکنش تکراری',ref:'R-2',matched:false});
 assert.equal(api.getBankReconciliationCandidates(state.bankReconcileItems[1]).length,0,
   'one voucher cannot be linked to two bank statement rows');

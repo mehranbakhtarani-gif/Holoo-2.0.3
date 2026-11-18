@@ -8,6 +8,7 @@ const end = html.indexOf('    function confirmBankReconcileMatch(itemId, voucher
 assert.ok(start >= 0 && end > start, 'bank reconciliation candidate function must exist');
 
 const state = {
+  bankAccounts: [{ id: 'LEGACY-BANK', type: 'bank', name: 'بانک قدیمی' }],
   bankReconcileItems: [],
   vouchers: [
     { id: 1, date: '1405/09/02', desc: 'سند بانکی یکتا', lines: [{ code: '1102', debit: 100, credit: 0 }] },
