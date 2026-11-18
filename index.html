@@ -572,7 +572,7 @@
               </div>
               <div class="flex gap-2">
                 <button onclick="autoMatchBankTx()" class="touch-btn bg-emerald-600 text-white px-3 rounded-xl font-bold">🔎 پیشنهاد تطبیق دقیق</button>
-                <button onclick="openModal('modal-import-bank-csv')" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">📥 ورود CSV صورتحساب بانک</button>
+                <button onclick="openBankCsvImport()" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">📥 ورود CSV صورتحساب بانک</button>
               </div>
               <p class="text-[11px] text-amber-700 bg-amber-50 rounded-lg p-2">تطبیق فقط با سند بانکی هم‌مبلغ و هم‌تاریخ پیشنهاد می‌شود؛ ثبت نهایی با تأیید شماست و هیچ سند حسابداری خودکار ساخته نمی‌شود.</p>
             </div>
@@ -1110,6 +1110,9 @@
   <div id="modal-import-bank-csv" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">📥 ورود صورتحساب CSV بانک</h3><button onclick="closeModal('modal-import-bank-csv')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <label class="block text-[11px] font-bold">حساب بانکی صورتحساب:
+        <select id="bank-csv-account" class="touch-btn w-full border rounded-xl px-2 py-2 mt-1"></select>
+      </label>
       <p class="text-[11px] text-slate-500">فرمت هر سطر: تاریخ,شرح تراکنش,مبلغ (مثبت واریز / منفی برداشت),شماره پیگیری</p>
       <textarea id="bank-csv-text" rows="5" class="w-full border rounded-xl p-2 font-mono text-[11px]" dir="ltr">1405/08/25,واریز پایا کارخانه بافندگی ماهان,1815000000,REF-8821
 1405/08/26,کارمزد صدور ضمانت‌نامه و حواله ارزی,-4500000,REF-8822</textarea>
@@ -2265,7 +2268,10 @@
         const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
       const operationMode = source?.mode === 'manual' ? 'manual' : 'automatic';
-      state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, locked: false, desc, lines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
+      const voucherLines = lines.map(line => line.code === '1102' && source?.bankAccountId
+        ? { ...line, bankAccountId: String(source.bankAccountId) }
+        : { ...line });
+      state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, locked: false, desc, lines: voucherLines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
       if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
       addAudit(`صدور سند حسابداری #${id}: ${desc}`, { mode: operationMode, operationDate: date, sourceType: source?.type || 'accounting_voucher' });
@@ -3218,7 +3224,7 @@
       state.invoices.unshift(invoice);
       try {
         postVoucher(type === 'sale' ? `صدور فاکتور فروش #${id}` : `ثبت فاکتور خرید #${id}`,
-          voucherLines, date, { type: 'invoice', id, deferSave: true });
+          voucherLines, date, { type: 'invoice', id, deferSave: true, ...(settlementAccount?.type === 'bank' ? { bankAccountId: settlementAccount.id } : {}) });
       } catch (error) {
         state.invoices = state.invoices.filter(entry => entry !== invoice);
         state.vouchers = (state.vouchers || []).filter(voucher =>
@@ -4183,7 +4189,7 @@
       c.payments = [...previous.payments, { id: paymentId, amount, currency: c.currency, rate, bookRate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
       if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
       try {
-        postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId });
+        postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId, bankAccountId: bank.id });
       } catch (error) {
         c.paidAmount = previous.paidAmount;
         c.status = previous.status;
@@ -4298,7 +4304,7 @@
       shipment.fxPayments = [...previousPayments, { id: paymentId, amount: payFx, currency: shipment.currency, rate: curRate, bookRate, rialAmount: paidRial, realizedDiff: diff, bankAccountId: bankId || null, createdAt: new Date().toISOString(), actor: state.activeRole, deviceId: DEVICE_ID }];
       if (bank) bank.balance = Number(bank.balance || 0) - paidRial;
       try {
-        postVoucher(`پرداخت مرحله‌ای تعهد ارزی ${shipment.id}`, lines, getTodayJalaliDate(), { type: 'import', id: shipment.id, event: paymentId });
+        postVoucher(`پرداخت مرحله‌ای تعهد ارزی ${shipment.id}`, lines, getTodayJalaliDate(), { type: 'import', id: shipment.id, event: paymentId, bankAccountId: bank.id });
       } catch (error) {
         shipment.fxPaid = previousPaid;
         shipment.fxPayments = previousPayments;
@@ -4555,7 +4561,7 @@
         const accountCode = bAcc.type === 'cash' ? '1101' : '1102';
         const lines = dir === 'receive' ? [{ code: accountCode, partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bAcc.name, debit: 0, credit: amount }];
         try {
-          const voucherId = postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted', deferSave: true });
+          const voucherId = postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted', deferSave: true, ...(bAcc.type === 'bank' ? { bankAccountId: bAcc.id } : {}) });
           if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
         } catch (error) {
           showToast('ثبت سند خزانه ناموفق بود؛ مانده حساب و فاکتورها تغییر نکردند. ' + (error?.message || ''), 'error');
@@ -4639,7 +4645,7 @@
         ? [{ code: '2101', partyId: credit.partyId, desc: 'تسویه نقدی اعتبار مشتری', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bank.name, debit: 0, credit: amount }]
         : [{ code: accountCode, partyId: null, desc: bank.name, debit: amount, credit: 0 }, { code: '1107', partyId: credit.partyId, desc: 'تسویه پیش‌پرداخت تأمین‌کننده از محل وجه دریافتی', debit: 0, credit: amount }];
       const refundId = createStableId('credit_refund');
-      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId, deferSave: true });
+      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId, deferSave: true, ...(bank.type === 'bank' ? { bankAccountId: bank.id } : {}) });
       if (voucherId === null || voucherId === undefined || voucherId === false) { showToast('صدور سند تسویه ناموفق بود؛ مانده‌ها تغییر نکرد.', 'error'); return; }
       bank.balance = Number(bank.balance || 0) + (direction === 'receive' ? amount : -amount);
       credit.remainingAmount = Math.max(0, remaining - amount);
@@ -4827,7 +4833,7 @@
         if (!bank) { showToast('حساب بانکی این چک مشخص نیست؛ حساب صحیح را در اطلاعات چک تعیین کنید.', 'error'); return; }
         const lines = c.dir === 'receive' ? [{ code: '1102', partyId: null, desc: 'واریز چک به بانک', debit: amount, credit: 0 }, { code: '1104', partyId: c.partyId, desc: 'تسویه اسناد دریافتنی', debit: 0, credit: amount }] : [{ code: '2102', partyId: c.partyId, desc: 'تسویه اسناد پرداختنی', debit: amount, credit: 0 }, { code: '1102', partyId: null, desc: 'برداشت بانک', debit: 0, credit: amount }];
         try {
-          const voucherId = postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true });
+          const voucherId = postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true, bankAccountId: bank.id });
           if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
         } catch (error) {
           showToast('صدور سند وصول چک ناموفق بود؛ وضعیت چک و مانده بانک تغییر نکردند. ' + (error?.message || ''), 'error');
@@ -4876,14 +4882,25 @@
       const signedAmount = Number(item.amount);
       const amount = Math.abs(signedAmount);
       if (!dateKey || !Number.isFinite(signedAmount) || amount <= 0) return [];
+      const selectedBankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
+      const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+      // A legacy voucher without bank metadata is safe to consider only when
+      // there is exactly one bank account in the company.
+      const allowLegacyUnassigned = bankAccounts.length === 1 &&
+        (!selectedBankId || String(bankAccounts[0].id) === selectedBankId);
+      if (selectedBankId && !bankAccounts.some(account => String(account.id) === selectedBankId)) return [];
       const usedVoucherIds = new Set((state.bankReconcileItems || []).filter(x => x.id !== item.id && x.matched && x.linkedVoucherId).map(x => String(x.linkedVoucherId)));
       return (state.vouchers || []).filter(v => {
         if (usedVoucherIds.has(String(v.id)) || bankTxDateKey(v.date || v.operationDate) !== dateKey) return false;
-        // A single statement transaction must not be matched against an aggregate
-        // of multiple bank-account ledger lines in one voucher.
         const bankLines = (v.lines || []).filter(line => String(line.code) === '1102');
         if (bankLines.length !== 1) return false;
         const line = bankLines[0];
+        const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
+        if (selectedBankId) {
+          if (voucherBankId ? voucherBankId !== selectedBankId : !allowLegacyUnassigned) return false;
+        } else if (voucherBankId || !allowLegacyUnassigned) {
+          return false;
+        }
         const debit = Number(line.debit || 0);
         const credit = Number(line.credit || 0);
         if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0) return false;
@@ -4989,14 +5006,25 @@
       return rows;
     }
 
+    function openBankCsvImport() {
+      const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+      const select = document.getElementById('bank-csv-account');
+      select.innerHTML = accounts.map(account => `<option value="${escapeBankReconcileText(account.id)}">${escapeBankReconcileText(account.name)}</option>`).join('');
+      if (!accounts.length) { showToast('برای ورود صورتحساب، ابتدا یک حساب بانکی تعریف کنید.', 'error'); return; }
+      if (accounts.length === 1) select.value = String(accounts[0].id);
+      openModal('modal-import-bank-csv');
+    }
+
     function parseBankCSV() {
       const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\\uFEFF/, '').trim();
       if (!input) { showToast('محتوای صورتحساب خالی است.', 'error'); return; }
       let rows;
       try { rows = parseBankCSVRecords(input); }
       catch (error) { showToast(error.message || 'ساختار فایل CSV معتبر نیست.', 'error'); return; }
+      const bankAccountId = String(document.getElementById('bank-csv-account')?.value || '');
+      if (!(state.bankAccounts || []).some(account => account.type === 'bank' && String(account.id) === bankAccountId)) { showToast('حساب بانکی صورتحساب را به‌درستی انتخاب کنید.', 'error'); return; }
       let added = 0, dup = 0, invalid = 0;
-      const seenRefs = new Set((state.bankReconcileItems || []).map(x => String(x.ref || '').trim()).filter(Boolean));
+      const seenRefs = new Set((state.bankReconcileItems || []).filter(x => String(x.ref || '').trim()).map(x => `${x.bankAccountId == null ? 'legacy' : String(x.bankAccountId)}::${String(x.ref).trim()}`));
       rows.forEach(parts => {
         if (!parts.some(value => String(value).trim())) return;
         if (parts.length < 4) { invalid++; return; }
@@ -5004,9 +5032,10 @@
         const date = String(dateRaw || '').trim(), desc = String(descRaw || '').trim(), ref = refParts.join(',').trim();
         const amount = Number(String(amountRaw || '').trim().replace(/,/g, ''));
         if (!bankTxDateKey(date) || !desc || !ref || !Number.isFinite(amount) || amount === 0) { invalid++; return; }
-        if (seenRefs.has(ref)) { dup++; return; }
-        seenRefs.add(ref);
-        state.bankReconcileItems.unshift({ id: 'REC-' + createStableId('banktx'), date, desc, amount, ref, matched: false, importedAt: new Date().toISOString() });
+        const scopedRef = `${bankAccountId}::${ref}`;
+        if (seenRefs.has(scopedRef) || seenRefs.has(`legacy::${ref}`)) { dup++; return; }
+        seenRefs.add(scopedRef);
+        state.bankReconcileItems.unshift({ id: 'REC-' + createStableId('banktx'), date, desc, amount, ref, bankAccountId, matched: false, importedAt: new Date().toISOString() });
         added++;
       });
       if (!added && invalid) { showToast(`هیچ ردیف معتبری وارد نشد؛ ${faNum(invalid)} ردیف نامعتبر بود.`, 'error'); return; }
