@@ -46,18 +46,33 @@ const state = {
   ]
 };
 const CHART_ACCOUNTS = [
-  { code: '100', name: 'نقد' },
+  { code: '100', name: '=HYPERLINK("https://example.com","Open")' },
   { code: '200', name: 'سرمایه' },
   { code: '300', name: 'حساب آزمایشی سوم' },
   { code: '400', name: 'بدون گردش' }
 ];
-const sandbox = { state, CHART_ACCOUNTS };
+const exportCapture = { csv: '', download: '', clicked: false, revoked: false, toast: '' };
+const sandbox = {
+  state, CHART_ACCOUNTS,
+  Blob: class { constructor(parts, options) { exportCapture.csv = String(parts[0]); this.options = options; } },
+  URL: {
+    createObjectURL: () => 'blob:trial-balance-test',
+    revokeObjectURL: url => { exportCapture.revoked = url === 'blob:trial-balance-test'; }
+  },
+  document: {
+    getElementById: id => ({ value: id === 'trial-from' ? '1405/01/02' : '1405/01/31' }),
+    createElement: () => ({ click() { exportCapture.clicked = true; }, remove() {} }),
+    body: { appendChild() {} }
+  },
+  setTimeout: callback => callback(),
+  showToast: message => { exportCapture.toast = message; }
+};
 vm.createContext(sandbox);
 const source =
   sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()') +
   sliceBetween('    function normalizeLedgerDate(', '    function buildAccountLedger(') +
-  sliceBetween('    function inspectTrialBalanceVoucher(', '    function exportTrialBalanceCSV()');
-vm.runInContext(source + '; this.buildTrialBalanceReport = buildTrialBalanceReport;', sandbox);
+  sliceBetween('    let trialBalanceFromDate = null;', '    function renderTrialBalanceReport()');
+vm.runInContext(source + '; this.buildTrialBalanceReport = buildTrialBalanceReport; this.exportTrialBalanceCSV = exportTrialBalanceCSV;', sandbox);
 
 const before = JSON.stringify(state);
 const report = sandbox.buildTrialBalanceReport('1405/01/02', '1405/01/31');
@@ -82,8 +97,18 @@ assert.equal(report.rows.find(row => row.code === '200').periodCredit, 70);
 assert.equal(JSON.stringify(state), before, 'report must not mutate accounting data');
 assert.throws(() => sandbox.buildTrialBalanceReport('1405/02/01', '1405/01/31'), /بازه تاریخ/);
 assert.throws(() => sandbox.buildTrialBalanceReport('1405/13/01', '1405/13/30'), /بازه تاریخ/);
+vm.runInContext("trialBalanceFromDate = '1405/01/02'; trialBalanceToDate = '1405/01/31'; exportTrialBalanceCSV();", sandbox);
+assert.equal(exportCapture.csv.charCodeAt(0), 0xFEFF, 'CSV must include an Excel-friendly UTF-8 BOM');
+const formulaPosition = exportCapture.csv.indexOf('=HYPERLINK');
+assert.ok(formulaPosition > 0 && exportCapture.csv[formulaPosition - 1] === "'",
+  'text cells beginning with a formula character must be escaped before CSV export');
+assert.match(exportCapture.download, /1405-01-02_1405-01-31/);
+assert.equal(exportCapture.clicked, true);
+assert.equal(exportCapture.revoked, true);
+assert.match(exportCapture.toast, /دانلود شد/);
 assert.match(html, /activeAccTab === 'trial'[\s\S]{0,100}renderTrialBalanceReport\(\)/);
 assert.match(html, /function exportTrialBalanceCSV\(\)/);
 console.log('PASS: four-column trial balance turnover, closing balances and inclusive date range');
 console.log('PASS: flags unbalanced and structurally incomplete vouchers without hiding their valid postings');
 console.log('PASS: reports invalid dates and leaves source accounting data unchanged');
+console.log('PASS: CSV export includes UTF-8 BOM, formula-safe text and date-based filename');
