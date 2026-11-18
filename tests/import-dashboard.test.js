@@ -106,7 +106,7 @@ const rollbackSandbox = {
 };
 vm.createContext(rollbackSandbox);
 vm.runInContext(html.slice(helperStart, helperEnd) + html.slice(receiptStart, receiptEnd) + '; this.receive = receiveImportShipment;', rollbackSandbox);
-assert.throws(() => rollbackSandbox.receive(rollbackShipment), /وزن یا بهای تمام‌شده/);
+assert.throws(() => rollbackSandbox.receive(rollbackShipment), /وزن قلم باید عددی و نامنفی/);
 assert.deepEqual(rollbackProducts.map(product => product.stock), [5, 7]);
 assert.deepEqual(rollbackProducts.map(product => product.batches.length), [0, 0]);
 assert.equal(rollbackShipment.postedToWh, false);
