@@ -132,12 +132,11 @@ assert.equal(accountBalances['1102'].credTurn,200);
 assert.equal(accountBalances['1101'].debTurn,1350,'valid unbalanced vouchers remain visible while invalid-date vouchers are excluded');
 
 let trialBalanceHtml = '';
-sandbox.activeAccTab = 'trial';
 sandbox.money = value => String(value);
 sandbox.faNum = String;
 sandbox.escapeLedgerText = value => String(value);
 sandbox.document = { getElementById() { return { set innerHTML(value) { trialBalanceHtml = value; }, get innerHTML() { return trialBalanceHtml; } }; } };
-vm.runInContext(sliceBetween('    function renderAccountingModule()', '    function saveManualVoucher()') +
+vm.runInContext("let activeAccTab = 'trial';\\n" + sliceBetween('    function renderAccountingModule()', '    function saveManualVoucher()') +
   '; this.renderAccountingModule = renderAccountingModule;', sandbox);
 sandbox.renderAccountingModule();
 for (const heading of ['گردش بدهکار','گردش بستانکار','مانده بدهکار','مانده بستانکار']) {
