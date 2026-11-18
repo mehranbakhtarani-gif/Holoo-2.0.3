@@ -1041,6 +1041,7 @@
         <select id="fxc-currency" class="touch-btn border rounded-xl px-2"><option value="USD">USD دلار</option><option value="CNY">CNY یوان</option><option value="EUR">EUR یورو</option></select>
         <input type="number" id="fxc-amount" min="0.01" step="any" placeholder="مبلغ تعهد ارزی *" class="touch-btn border rounded-xl px-2 tabular-nums" />
         <input type="number" id="fxc-rate" min="0.01" step="any" placeholder="نرخ ثبت اولیه ریال *" class="touch-btn border rounded-xl px-2 tabular-nums" />
+        <select id="fxc-offset-account" class="touch-btn border rounded-xl px-2"><option value="1105">موجودی کالا در راه (1105)</option><option value="6101">هزینه خدمات و کارمزد (6101)</option></select>
         <input type="text" id="fxc-due-date" placeholder="سررسید شمسی (مثلاً 1405/09/30)" class="touch-btn border rounded-xl px-2 tabular-nums" />
         <input type="text" id="fxc-purpose" placeholder="شرح / نوع تعهد" class="touch-btn border rounded-xl px-2" />
       </div>
@@ -1844,6 +1845,8 @@
     state.fxCommitments.forEach(c => {
       if (!Number(c.carryingRate)) c.carryingRate = Number(c.initialRate || 0);
       if (!Array.isArray(c.revaluationHistory)) c.revaluationHistory = [];
+      if (c.ledgerPosted === undefined) c.ledgerPosted = false;
+      if (!c.offsetAccountCode) c.offsetAccountCode = '1105';
     });
     if (!state.fxRates || typeof state.fxRates !== 'object') state.fxRates = { USD: 0, CNY: 0, EUR: 0 };
     if (!Array.isArray(state.parties)) state.parties = [];
@@ -3523,20 +3526,32 @@
       const currency = document.getElementById('fxc-currency').value;
       const amount = Number(document.getElementById('fxc-amount').value || 0);
       const initialRate = Number(document.getElementById('fxc-rate').value || 0);
-      if (!counterparty || !['USD','CNY','EUR'].includes(currency) || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(initialRate) || initialRate <= 0) {
+      const offsetAccountCode = document.getElementById('fxc-offset-account').value;
+      if (!counterparty || !['USD','CNY','EUR'].includes(currency) || !['1105','6101'].includes(offsetAccountCode) || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(initialRate) || initialRate <= 0) {
         showToast('ذی‌نفع، مبلغ و نرخ اولیه تعهد باید معتبر باشند.', 'error'); return;
       }
       const id = createStableId('fxc');
       const commitment = {
         id, counterparty, supplierPartyId, reference: document.getElementById('fxc-reference').value.trim(),
-        currency, amount, initialRate, carryingRate: initialRate, revaluationHistory: [], paidAmount: 0, dueDate: document.getElementById('fxc-due-date').value.trim(),
+        currency, amount, initialRate, carryingRate: initialRate, revaluationHistory: [], ledgerPosted: true, offsetAccountCode,
+        paidAmount: 0, dueDate: document.getElementById('fxc-due-date').value.trim(),
         purpose: document.getElementById('fxc-purpose').value.trim(), notes: document.getElementById('fxc-notes').value.trim(),
         status: 'open', payments: [], createdAt: new Date().toISOString(), createdBy: state.activeRole, deviceId: DEVICE_ID
       };
       state.fxCommitments.unshift(commitment);
+      try {
+        const openingRial = Math.round(amount * initialRate);
+        postVoucher('ثبت تعهد ارزی مستقل ' + id, [
+          { code: offsetAccountCode, partyId: null, desc: 'ثبت دارایی/هزینه مرتبط با تعهد ' + id, debit: openingRial, credit: 0 },
+          { code: '2105', partyId: supplierPartyId, desc: 'تعهد ارزی تأمین‌کننده ' + id, debit: 0, credit: openingRial }
+        ], getTodayJalaliDate(), { type: 'fx_commitment', id, event: 'registration' });
+      } catch (error) {
+        state.fxCommitments = state.fxCommitments.filter(item => item.id !== id);
+        showToast('ثبت سند اولیه تعهد ارزی ناموفق بود؛ تعهد ذخیره نشد. ' + (error?.message || ''), 'error'); return;
+      }
       addAudit(`ثبت تعهد ارزی ${id} به مبلغ ${amount} ${currency}`);
       saveState(); closeModal('modal-new-fx-commitment'); renderFxModule();
-      showToast('تعهد ارزی ثبت شد.');
+      showToast('تعهد ارزی و سند افتتاحیه آن ثبت شد.');
     }
 
     function payFxCommitmentStage(commitmentId) {
@@ -3557,8 +3572,9 @@
       const paidRial = Math.round(amount * rate);
       const diff = bookRial - paidRial;
       const paymentId = createStableId('fxpay');
+      const settlementAccountCode = c.ledgerPosted === false ? (c.offsetAccountCode || '1105') : '2105';
       const lines = [
-        { code: '2105', partyId: c.supplierPartyId || null, desc: `تسویه تعهد ارزی ${c.id} — ${amount} ${c.currency}`, debit: bookRial, credit: 0 },
+        { code: settlementAccountCode, partyId: settlementAccountCode === '2105' ? (c.supplierPartyId || null) : null, desc: `تسویه تعهد ارزی ${c.id} — ${amount} ${c.currency}`, debit: bookRial, credit: 0 },
         { code: '1102', partyId: null, desc: 'پرداخت ارزی به ذی‌نفع خارجی', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
@@ -3593,7 +3609,7 @@
       });
       (state.fxCommitments || []).forEach(ref => {
         const remaining = Math.max(0, Number(ref.amount || 0) - Number(ref.paidAmount || 0));
-        if (remaining > 0) obligations.push({ kind: 'commitment', ref, id: ref.id, remaining, currency: ref.currency, initialRate: ref.initialRate, carryingRate: ref.carryingRate || ref.initialRate, partyId: ref.supplierPartyId || null, label: 'تعهد ' + (ref.reference || ref.id) });
+        if (remaining > 0 && ref.ledgerPosted === true) obligations.push({ kind: 'commitment', ref, id: ref.id, remaining, currency: ref.currency, initialRate: ref.initialRate, carryingRate: ref.carryingRate || ref.initialRate, partyId: ref.supplierPartyId || null, label: 'تعهد ' + (ref.reference || ref.id) });
       });
       if (!obligations.length) { showToast('تعهد ارزی باز برای تسعیر وجود ندارد.', 'error'); return false; }
       if (obligations.some(item => item.ref.lastRevaluationAt === operationDate)) {
