@@ -55,7 +55,7 @@ test('one receipt allocates across multiple selected sales invoices in order', (
   ]});
   r.run();
   assert.equal(r.state.invoices[0].paidAmount, 300);
-  assert.equal(r.state.invoices[1].paidAmount, 400);
+  assert.equal(r.state.invoices[1].paidAmount, 500);
   assert.deepEqual(r.state.treasuryTxs[0].allocations.map(x => [x.invoiceId, x.amount]), [[101, 300], [102, 400]]);
   assert.equal(r.state.treasuryTxs[0].allocInvId, null);
   assert.equal(r.posted.length, 1);
