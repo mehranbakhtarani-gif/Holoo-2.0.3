@@ -1555,6 +1555,7 @@
       { code: '1104', name: 'اسناد دریافتنی (چک‌های صیادی)' },
       { code: '1105', name: 'موجودی کالا و نخ انبارها' },
       { code: '1106', name: 'اعتبار ارزش افزوده خرید' },
+      { code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان' },
       { code: '1201', name: 'دارایی‌های ثابت مشهود' },
       { code: '1202', name: 'استهلاک انباشته' },
       { code: '2101', name: 'حساب‌های پرداختنی تجاری (بستانکاران)' },
@@ -1832,6 +1833,8 @@
 
     if (!Array.isArray(state.accountCatalog) || !state.accountCatalog.length) state.accountCatalog = buildAccountCatalog();
     state.accountCatalog.filter(a => a.level === 'subsidiary').forEach(a => { if (!CHART_ACCOUNTS.some(existing => existing.code === a.code)) CHART_ACCOUNTS.push({ code: a.code, name: a.name }); });
+    // Add the supplier-advance account to existing installations without replacing their custom chart.
+    if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '1107')) state.accountCatalog.push({ id: 'SUB-1107', code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان', level: 'subsidiary', parentId: 'GL-11', system: true, active: true });
     if (!Array.isArray(state.fxCommitments)) state.fxCommitments = [];
     if (!state.fxRates || typeof state.fxRates !== 'object') state.fxRates = { USD: 0, CNY: 0, EUR: 0 };
     if (!Array.isArray(state.parties)) state.parties = [];
@@ -2096,7 +2099,7 @@
       const ledgerCode = party?.ledgerAccountCode || '1103';
       let net = 0;
       state.vouchers.forEach(v => v.lines.forEach(l => {
-        if (String(l.partyId) === String(partyId) && (l.code === ledgerCode || l.code === '1103' || l.code === '2101')) {
+        if (String(l.partyId) === String(partyId) && (l.code === ledgerCode || l.code === '1103' || l.code === '2101' || l.code === '1107')) {
           net += Number(l.debit || 0) - Number(l.credit || 0);
         }
       }));
@@ -2116,7 +2119,7 @@
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
       if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
       addAudit(`صدور سند حسابداری #${id}: ${desc}`, { mode: operationMode, operationDate: date, sourceType: source?.type || 'accounting_voucher' });
-      saveState();
+      if (!source?.deferSave) saveState();
       return id;
     }
 
@@ -2941,6 +2944,36 @@
       }
       if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
       const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      // Simulate FIFO changes on clones before posting anything; this catches insufficient stock or invalid batch returns.
+      if (state.costingMethod === 'FIFO') {
+        const simulatedProducts = new Map();
+        for (const entry of returnPlan) {
+          if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
+          const simulated = simulatedProducts.get(entry.product);
+          if (inv.type === 'sale') {
+            restoreFifoAllocations(simulated, entry.item.fifoAllocations || [], entry.qty, entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice, returnId, entry.item.fifoReturnedAllocations || []);
+          } else consumeFifoStock(simulated, entry.qty);
+        }
+      }
+      const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
+      const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
+      const returnVoucherLines = inv.type === 'sale'
+        ? [
+            { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 },
+            { code: '1103', partyId: inv.partyId, desc: `کاهش مطالبات مشتری بابت برگشت #${invId}`, debit: 0, credit: retTotal - partyCreditAmount },
+            ...(partyCreditAmount > 0 ? [{ code: '2101', partyId: inv.partyId, desc: `اعتبار بستانکاری مشتری بابت برگشت #${invId}`, debit: 0, credit: partyCreditAmount }] : [])
+          ]
+        : [
+            { code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal - partyCreditAmount, credit: 0 },
+            ...(partyCreditAmount > 0 ? [{ code: '1107', partyId: inv.partyId, desc: `پیش‌پرداخت تأمین‌کننده بابت برگشت #${invId}`, debit: partyCreditAmount, credit: 0 }] : []),
+            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }
+          ];
+      try {
+        postVoucher(`برگشت جزئی ردیف‌های فاکتور #${invId}`, returnVoucherLines, undefined, { type: 'invoice_return', id: returnId, event: String(invId), deferSave: true });
+      } catch (error) {
+        showToast('صدور سند برگشت ناموفق بود؛ موجودی و فاکتور تغییر نکردند. ' + (error?.message || ''), 'error');
+        return;
+      }
       // Apply inventory and item mutations only after the complete return plan passes validation.
       for (const entry of returnPlan) {
         const { item: it, product: p, qty: q } = entry;
@@ -2956,20 +2989,7 @@
         }
         p.kardex.push({ date: `${state.fiscalYear}/08/27`, doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
       }
-      const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
-      const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
-      const returnVoucherLines = inv.type === 'sale'
-        ? [
-            { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: retTotal, credit: 0 },
-            { code: '1103', partyId: inv.partyId, desc: `کاهش مطالبات مشتری بابت برگشت #${invId}`, debit: 0, credit: retTotal - partyCreditAmount },
-            ...(partyCreditAmount > 0 ? [{ code: '2101', partyId: inv.partyId, desc: `اعتبار بستانکاری مشتری بابت برگشت #${invId}`, debit: 0, credit: partyCreditAmount }] : [])
-          ]
-        : [
-            { code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal - partyCreditAmount, credit: 0 },
-            ...(partyCreditAmount > 0 ? [{ code: '1103', partyId: inv.partyId, desc: `مطالبه اعتبار از تأمین‌کننده بابت برگشت #${invId}`, debit: partyCreditAmount, credit: 0 }] : []),
-            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: retTotal }
-          ];
-      postVoucher(`برگشت جزئی ردیف‌های فاکتور #${invId}`, returnVoucherLines, undefined, { type: 'invoice_return', id: returnId, event: String(invId) });
+
       inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, items: returnPlan.map(x => ({ productId: x.item.productId, qty: x.qty, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
       if (partyCreditAmount > 0) {
         state.treasuryTxs = state.treasuryTxs || [];
@@ -3652,9 +3672,9 @@
       const isCustomer = expectedType === 'sale';
       const lines = [
         { code: '2101', partyId: credit.partyId, desc: isCustomer ? 'مصرف اعتبار بستانکاری مشتری' : 'تسویه بدهی با اعتبار تأمین‌کننده', debit: amount, credit: 0 },
-        { code: '1103', partyId: credit.partyId, desc: isCustomer ? 'کاهش مطالبات مشتری با اعتبار' : 'مصرف پیش‌پرداخت/اعتبار تأمین‌کننده', debit: 0, credit: amount }
+        { code: isCustomer ? '1103' : '1107', partyId: credit.partyId, desc: isCustomer ? 'کاهش مطالبات مشتری با اعتبار' : 'مصرف پیش‌پرداخت تأمین‌کننده', debit: 0, credit: amount }
       ];
-      const voucherId = postVoucher(isCustomer ? 'اعمال اعتبار مشتری' : 'اعمال اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_apply', id: credit.id, event: applyId });
+      const voucherId = postVoucher(isCustomer ? 'اعمال اعتبار مشتری' : 'اعمال اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_apply', id: credit.id, event: applyId, deferSave: true });
       if (voucherId === null || voucherId === undefined || voucherId === false) { showToast('صدور سند اعمال اعتبار ناموفق بود؛ مانده‌ها تغییر نکرد.', 'error'); return; }
       invoice.paidAmount = Number(invoice.paidAmount || 0) + amount;
       credit.remainingAmount = Math.max(0, remainingCredit - amount);
@@ -3691,9 +3711,9 @@
       const accountCode = bank.type === 'cash' ? '1101' : '1102';
       const lines = isCustomer
         ? [{ code: '2101', partyId: credit.partyId, desc: 'تسویه نقدی اعتبار مشتری', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bank.name, debit: 0, credit: amount }]
-        : [{ code: accountCode, partyId: null, desc: bank.name, debit: amount, credit: 0 }, { code: '1103', partyId: credit.partyId, desc: 'دریافت وجه از تأمین‌کننده بابت اعتبار', debit: 0, credit: amount }];
+        : [{ code: accountCode, partyId: null, desc: bank.name, debit: amount, credit: 0 }, { code: '1107', partyId: credit.partyId, desc: 'تسویه پیش‌پرداخت تأمین‌کننده از محل وجه دریافتی', debit: 0, credit: amount }];
       const refundId = createStableId('credit_refund');
-      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId });
+      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId, deferSave: true });
       if (voucherId === null || voucherId === undefined || voucherId === false) { showToast('صدور سند تسویه ناموفق بود؛ مانده‌ها تغییر نکرد.', 'error'); return; }
       bank.balance = Number(bank.balance || 0) + (direction === 'receive' ? amount : -amount);
       credit.remainingAmount = Math.max(0, remaining - amount);
