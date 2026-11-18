@@ -3318,7 +3318,7 @@
           const product = state.products.find(p => String(p.id) === String(item.productId));
           const qty = Number(item.quantityKg || 0);
           const itemCost = Number(item.landedCostRial ?? (qty * Number(item.landedCostPerKg ?? shipment.landedCostPerKg ?? 0)));
-          const unitCost = Number(item.landedCostPerKg ?? (itemCost / (qty || 1)));
+          const unitCost = Number(item.unitCost ?? item.landedCostPerKg ?? (itemCost / (qty || 1)));
           if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitCost) || unitCost < 0 || !Number.isFinite(itemCost) || itemCost < 0) throw new Error('وزن یا بهای تمام‌شده یکی از اقلام محموله معتبر نیست.');
           const oldStock = Number(product.stock || 0);
           const oldBuyPrice = Number(product.buyPrice || 0);
@@ -3396,6 +3396,10 @@
           const product = state.products.find(x => String(x.id) === String(item.productId));
           return (product ? product.name : item.productId) + ': ' + faNum(item.quantityKg) + ' KG';
         }).join(' • ');
+        const profitRows = shipmentProfit.items.map(item => {
+          const product = state.products.find(x => String(x.id) === String(item.productId));
+          return '<div class="grid grid-cols-2 md:grid-cols-5 gap-1 border-b last:border-0 py-1"><strong>' + (product ? product.name : item.productId) + '</strong><span>فروش: ' + faNum(item.soldKg) + ' KG</span><span>درآمد: ' + money(item.revenue) + '</span><span>بهای فروش: ' + money(item.cogs) + '</span><strong>سود: ' + money(item.grossProfit) + '</strong></div>';
+        }).join('');
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2.5 text-xs">
             <div class="flex flex-wrap justify-between items-center gap-2">
@@ -3412,6 +3416,7 @@
               </select>
             </div>
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
+            <div class="rounded-lg border px-2 py-1"><strong>سود هر قلم محموله</strong>${profitRows}</div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-50 border tabular-nums">
               <div><span class="text-slate-400 block">وزن و کارتن:</span><strong>${faNum(m.weightKg)} KG (${faNum(m.cartons)} کارتن)</strong></div>
               <div><span class="text-slate-400 block">مبلغ خرید ارزی:</span><strong>${faNum(m.fxTotal)} ${m.currency}</strong></div>
