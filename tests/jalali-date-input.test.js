@@ -20,7 +20,7 @@ const context = {};
 vm.runInNewContext(source + '\nthis.normalizeJalaliDateInputValue = normalizeJalaliDateInputValue; this.jalaliDateOrdinal = jalaliDateOrdinal; this.normalizeLedgerDate = normalizeLedgerDate;', context);
 
 assert.equal(context.normalizeJalaliDateInputValue('02011405'), '02/01/1405');
-assert.equal(context.normalizeJalaliDateInputValue('۰۲۱۴۰۱۰۵'), '۰۲/۱۴/۰۱۰۵'.replace('۱۴','01'));
+assert.equal(context.normalizeJalaliDateInputValue('۰۲۱۱۴۰۵'), '02/01/1405');
 assert.equal(context.normalizeJalaliDateInputValue('02/01/1405', true), '02/01/1405');
 assert.equal(context.normalizeJalaliDateInputValue('02/', false), '02/');
 assert.equal(context.normalizeJalaliDateInputValue('02/01/', false), '02/01/');
