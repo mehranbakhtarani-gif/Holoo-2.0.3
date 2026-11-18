@@ -3194,10 +3194,12 @@
       host.appendChild(div);
       div.querySelectorAll('input').forEach(input => input.addEventListener('input', updateImportTotals));
       updateImportTotals();
+      renderImportManualAllocations();
     }
     function removeImportItemRow(rowId) {
       document.getElementById(rowId)?.remove();
       updateImportTotals();
+      renderImportManualAllocations();
     }
     function updateImportTotals() {
       const total = Array.from(document.querySelectorAll('#imp-items-container .imp-item-fx')).reduce((sum, input) => sum + Math.max(0, Number(input.value || 0)), 0);
@@ -3223,6 +3225,8 @@
       const fields = document.getElementById('imp-manual-allocation-fields');
       if (!panel || !fields) return;
       const rows = Array.from(document.querySelectorAll('#imp-items-container .imp-item-row'));
+      const preserved = {};
+      fields.querySelectorAll('[data-manual-expense]').forEach(input => { preserved[input.dataset.manualExpense + '|' + input.dataset.manualItem] = input.value; });
       const expenseMeta = [
         ['freight', 'حمل دریایی', 'freight'], ['insurance', 'بیمه باربری', 'ins'],
         ['customs', 'حقوق گمرکی', 'customs'], ['port', 'هزینه بندری', 'port'],
@@ -3242,8 +3246,7 @@
             const productSelect = row.querySelector('.imp-item-product');
             const product = state.products.find(p => String(p.id) === String(productSelect && productSelect.value));
             const name = product ? product.name : ('قلم ' + (index + 1));
-            const existing = row.querySelector('[data-manual-expense="' + key + '"]');
-            const value = existing ? existing.value : '';
+            const value = preserved[key + '|' + itemId] ?? '';
             return '<label class="grid grid-cols-2 gap-2 items-center text-[10px]"><span>' + name + '</span><input type="number" min="0" step="1" data-manual-expense="' + key + '" data-manual-item="' + itemId + '" value="' + value + '" placeholder="سهم ریالی" class="touch-btn border rounded-lg px-2 py-1 tabular-nums" /></label>';
           }).join('') +
           '<div class="text-[10px] text-slate-500">جمع سهم‌های واردشده: <strong data-manual-total="' + key + '">0</strong></div></div>';
