@@ -12,6 +12,7 @@
   <link rel="manifest" href="./manifest.json" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -59,6 +60,9 @@
       #modal-print-preview { position: static !important; display: block !important; background: #fff !important; padding: 0 !important; }
       #modal-print-preview > div { max-width: 100% !important; max-height: none !important; box-shadow: none !important; padding: 0 !important; border: none !important; }
       #print-area { border: 1px solid #0f172a !important; width: 100% !important; }
+      #print-area > div { display: flex !important; flex-wrap: wrap !important; justify-content: flex-start !important; gap: 0 !important; }
+      #print-area .barcode-label { border: 0 !important; border-radius: 0 !important; margin: 0 !important; }
+      #print-area .barcode-label svg { max-width: 100% !important; }
     }
   </style>
 </head>
@@ -1170,6 +1174,38 @@
       </div>
       <p class="no-print text-[10px] text-slate-500">برای دریافت PDF، در پنجره چاپ گوشی یا رایانه گزینه «ذخیره به‌صورت PDF» را انتخاب کنید.</p>
       <div id="print-area" class="border-2 border-slate-800 p-4 rounded-xl"></div>
+    </div>
+  </div>
+
+  <div id="modal-barcode-settings" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 space-y-3 text-xs">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-black text-sm">🏷️ تنظیمات و ویرایش لیبل بارکد</h3>
+        <button onclick="closeModal('modal-barcode-settings')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button>
+      </div>
+      <div id="barcode-product-caption" class="font-bold text-slate-600"></div>
+      <label class="block font-bold">شماره بارکد کالا</label>
+      <input id="barcode-edit-value" type="text" inputmode="numeric" class="touch-btn w-full border rounded-xl px-3 font-mono tabular-nums" placeholder="شماره بارکد" />
+      <p class="text-[10px] text-slate-500">در صورت تغییر و تأیید، شماره جدید در مشخصات کالا ذخیره و با دستگاه‌های دیگر همگام می‌شود.</p>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block font-bold mb-1">تعداد برچسب</label>
+          <input id="barcode-label-count" type="number" min="1" max="200" value="1" class="touch-btn w-full border rounded-xl px-3 tabular-nums" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">اندازه لیبل</label>
+          <select id="barcode-label-size" class="touch-btn w-full border rounded-xl px-2 bg-white">
+            <option value="40x25">۴۰ × ۲۵ میلی‌متر</option>
+            <option value="50x30" selected>۵۰ × ۳۰ میلی‌متر</option>
+            <option value="60x40">۶۰ × ۴۰ میلی‌متر</option>
+            <option value="70x50">۷۰ × ۵۰ میلی‌متر</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="saveBarcodeLabelSettings()" class="flex-1 bg-holoo-700 text-white rounded-xl py-2.5 font-black">ذخیره بارکد و پیش‌نمایش</button>
+        <button onclick="closeModal('modal-barcode-settings')" class="bg-slate-200 rounded-xl px-4 py-2.5 font-bold">انصراف</button>
+      </div>
     </div>
   </div>
 
@@ -2716,19 +2752,80 @@
       showToast('کالای نساجی و ۱۰ سطح قیمت ثبت و به Supabase ارسال شد ✔');
     }
 
+    let barcodeLabelProductId = null;
+
+    function escapeBarcodeLabelText(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+
     function printBarcodeLabel(id) {
-      const p = state.products.find(x => x.id === id);
-      if (!p) return;
-      document.getElementById('print-title').textContent = 'چاپ لیبل مشخصات نساجی و بارکد';
-      document.getElementById('print-area').innerHTML = `
-        <div class="max-w-xs mx-auto border-2 border-dashed border-slate-800 p-3 rounded-xl text-center space-y-1.5">
-          <div class="font-black text-sm">${p.name}</div>
-          <div class="text-[11px] font-bold">${p.yarnType} | ${p.denier} | ${p.color} | ${p.twist}</div>
-          <div class="h-10 w-4/5 mx-auto barcode-bars"></div>
-          <div class="font-mono text-[11px]">${p.barcode} | LOT: ${p.lot}</div>
-          <div class="font-black text-holoo-900">وزن کارتن: ${faNum(p.cartonKg)} KG</div>
+      const p = state.products.find(x => String(x.id) === String(id));
+      if (!p) { showToast('کالای موردنظر پیدا نشد.', 'error'); return; }
+      barcodeLabelProductId = p.id;
+      document.getElementById('barcode-product-caption').textContent = p.name + ' · ' + p.id;
+      document.getElementById('barcode-edit-value').value = p.barcode || '';
+      document.getElementById('barcode-label-count').value = '1';
+      document.getElementById('barcode-label-size').value = '50x30';
+      openModal('modal-barcode-settings');
+    }
+
+    function saveBarcodeLabelSettings() {
+      const p = state.products.find(x => String(x.id) === String(barcodeLabelProductId));
+      if (!p) { showToast('کالا دیگر در فهرست وجود ندارد.', 'error'); return; }
+      const barcode = document.getElementById('barcode-edit-value').value.trim();
+      const count = Number(document.getElementById('barcode-label-count').value);
+      const size = document.getElementById('barcode-label-size').value;
+      if (!barcode) { showToast('شماره بارکد را وارد کنید.', 'error'); return; }
+      if (!Number.isInteger(count) || count < 1 || count > 200) {
+        showToast('تعداد برچسب باید بین ۱ تا ۲۰۰ باشد.', 'error'); return;
+      }
+      if (!['40x25', '50x30', '60x40', '70x50'].includes(size)) {
+        showToast('اندازه لیبل معتبر نیست.', 'error'); return;
+      }
+      if (state.products.some(item => String(item.id) !== String(p.id) && String(item.barcode || '') === barcode)) {
+        showToast('این بارکد قبلاً برای کالای دیگری ثبت شده است.', 'error'); return;
+      }
+      if (String(p.barcode || '') !== barcode) {
+        const previousBarcode = p.barcode || '';
+        p.barcode = barcode;
+        addAudit('ویرایش شماره بارکد کالا: ' + p.name + ' (' + p.id + ')؛ از ' + previousBarcode + ' به ' + barcode);
+        if (!saveState()) {
+          p.barcode = previousBarcode;
+          showToast('ذخیره شماره بارکد ناموفق بود؛ مقدار قبلی حفظ شد.', 'error');
+          return;
+        }
+        renderProductsModule();
+      }
+      closeModal('modal-barcode-settings');
+      renderBarcodeLabelPreview(p, count, size);
+    }
+
+    function renderBarcodeLabelPreview(p, count, size) {
+      const dimensions = size.split('x').map(Number);
+      const width = dimensions[0], height = dimensions[1];
+      const safe = escapeBarcodeLabelText;
+      const labels = Array.from({ length: count }, () => `
+        <div class="barcode-label border border-dashed border-slate-500 rounded text-center overflow-hidden p-1.5 flex flex-col items-center justify-center gap-1"
+             style="width:${width}mm;height:${height}mm;break-inside:avoid;page-break-inside:avoid">
+          <div class="font-black text-[9pt] leading-tight">${safe(p.name)}</div>
+          <div class="text-[7pt] leading-tight">${safe(p.yarnType)} | ${safe(p.denier)}</div>
+          <svg class="barcode-svg" data-barcode="${safe(p.barcode)}" style="width:90%;height:12mm"></svg>
+          <div class="font-mono text-[8pt]">${safe(p.barcode)}</div>
+          <div class="text-[7pt]">LOT: ${safe(p.lot)} · ${faNum(p.cartonKg)} KG</div>
         </div>
-      `;
+      `).join('');
+      document.getElementById('print-title').textContent = 'پیش‌نمایش ' + faNum(count) + ' لیبل بارکد · ' + width + '×' + height + ' میلی‌متر';
+      document.getElementById('print-area').innerHTML = `<div class="flex flex-wrap justify-center gap-2">${labels}</div>`;
+      if (typeof JsBarcode === 'function') {
+        document.querySelectorAll('#print-area .barcode-svg').forEach(svg => {
+          try { JsBarcode(svg, svg.dataset.barcode, { format: 'CODE128', displayValue: false, margin: 0, height: 34, width: 1.5 }); }
+          catch (error) { svg.outerHTML = '<div class="text-[8pt]">بارکد قابل ترسیم نیست</div>'; }
+        });
+      } else {
+        document.querySelectorAll('#print-area .barcode-svg').forEach(svg => {
+          svg.outerHTML = '<div class="text-[8pt] font-bold">برای چاپ بارکد تصویری، اتصال اینترنت لازم است</div>';
+        });
+      }
       openModal('modal-print-preview');
     }
 
