@@ -15,6 +15,8 @@ assert.match(html, /function requestPersistentStorage\(/);
 assert.match(html, /beforeinstallprompt/);
 assert.match(html, /controllerchange/);
 assert.match(html, /viewport-fit=cover/);
+assert.match(html, /input\[data-jalali-calendar-ready="1"\] \{ direction:ltr !important; unicode-bidi:isolate; text-align:center; \}/, 'Jalali numeric dates must render left-to-right in the RTL interface');
+assert.match(html, /input\.value = String\(day\)\.padStart\(2, '0'\) \+ '\/' \+ String\(jalaliCalendarMonth\)\.padStart\(2, '0'\) \+ '\/' \+ jalaliCalendarYear/, 'calendar selection must preserve DD/MM/YYYY order');
 assert.match(sw, /holoo-pwa-shell-v11/);
 assert.match(sw, /import-domain\.js/);
 assert.match(sw, /icon-192\.svg/);
