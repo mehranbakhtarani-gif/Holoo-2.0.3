@@ -4884,7 +4884,7 @@
             box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3"><button onclick="reviewKol=null; renderAccountingModule()" class="bg-slate-200 px-3 py-1 rounded-lg font-bold">⬅ بازگشت به حساب‌ها</button><p class="text-rose-700 font-bold">${error.message}</p></div>`;
             return;
           }
-          const accountName = CHART_ACCOUNTS.find(a => String(a.code) === String(reviewKol))?.name || reviewKol;
+          const accountName = CHART_ACCOUNTS.find(a => String(a.code) === String(reviewKol))?.name || (state.accountCatalog || []).find(a => String(a.code) === String(reviewKol))?.name || reviewKol;
           const balanceLabel = value => value > 0 ? `${money(value)} بدهکار` : value < 0 ? `${money(Math.abs(value))} بستانکار` : 'صفر';
           const rows = ledger.rows.map(r => `<div class="grid grid-cols-1 md:grid-cols-9 gap-1.5 p-2.5 rounded-xl bg-slate-50 border text-xs"><span>${faNum(r.date)}</span><span>سند #${faNum(r.voucherId)}</span><span>${escapeLedgerText(r.voucherDesc)}</span><span>${escapeLedgerText(r.desc)}</span><span>${escapeLedgerText(r.partyName)}</span><strong class="text-emerald-700">${r.debit ? money(r.debit) : '—'}</strong><strong class="text-rose-700">${r.credit ? money(r.credit) : '—'}</strong><strong>${balanceLabel(r.balance)}</strong><button onclick="openVoucherFromLedger('${escapeLedgerText(r.voucherId)}')" class="text-holoo-700 underline font-bold">مشاهده سند</button></div>`).join('');
           box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3">
@@ -4902,6 +4902,7 @@
               <div class="p-2 bg-slate-50 rounded-lg">جمع بستانکار اول دوره<strong class="block">${money(ledger.openingCredit)}</strong></div>
             </div>
             <div class="p-3 bg-holoo-950 text-amber-300 rounded-xl flex justify-between font-black"><span>مانده پایان دوره</span><span>${balanceLabel(ledger.closingNet)}</span></div>
+            ${(ledger.invalidDateVouchers || ledger.invalidAmountLines) ? `<div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">${ledger.invalidDateVouchers ? faNum(ledger.invalidDateVouchers) + ' سند با تاریخ نامعتبر از گردش کنار گذاشته شد. ' : ''}${ledger.invalidAmountLines ? faNum(ledger.invalidAmountLines) + ' ردیف مبلغ نامعتبر باعث کنارگذاشتن کل سند مربوط شد.' : ''}</div>` : ''}
             <div class="grid grid-cols-1 md:grid-cols-8 gap-1.5 text-[10px] font-black text-slate-500 px-2"><span>تاریخ</span><span>شماره سند</span><span>شرح سند</span><span>شرح ردیف</span><span>طرف حساب</span><span>بدهکار</span><span>بستانکار</span><span>مانده</span><span>پیگیری</span></div>
             ${rows || '<p class="text-center text-slate-400 p-4">در این بازه گردش ثبت نشده است.</p>'}
           </div>`;
