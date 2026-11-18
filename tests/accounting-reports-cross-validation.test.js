@@ -39,9 +39,6 @@ const state = {
     ]),
     voucher(6,'1405/01/06','سند دارای مبلغ نامعتبر',[
       {code:'1102',debit:999,credit:0},{code:'4101',debit:0,credit:999},{code:'6101',debit:-1,credit:0}
-    ]),
-    voucher(7,'1405/01/02','دریافت از بانک ب',[
-      {code:'1102',bankAccountId:'BANK-B',debit:500,credit:0},{code:'4101',debit:0,credit:500}
     ])
   ]
 };
@@ -144,6 +141,9 @@ assert.equal(receivables[0].bucket,'۳۱ تا ۶۰ روز');
 assert.equal(payables[0].outstanding,200);
 assert.equal(payables[0].bucket,'بدون سررسید');
 
+state.vouchers.push(voucher(7,'1405/01/02','دریافت آزمایشی بانک ب',[
+  {code:'1102',bankAccountId:'BANK-B',debit:500,credit:0},{code:'4101',debit:0,credit:500}
+]));
 const candidates = api.getBankReconciliationCandidates(state.bankReconcileItems[0]);
 assert.deepEqual(Array.from(candidates, c=>c.id),[2]);
 assert.deepEqual(Array.from(api.getBankReconciliationCandidates({id:'BANK-B-TX',date:'1405/01/02',amount:500,bankAccountId:'BANK-B'}), c=>c.id),[7],
@@ -156,6 +156,7 @@ assert.deepEqual(Array.from(api.getBankReconciliationCandidates({id:'LEGACY-TX',
 legacyLine.bankAccountId = 'BANK-A';
 state.bankAccounts.push({id:'BANK-B',type:'bank',name:'بانک ب'});
 api.confirmBankReconcileMatch('BANK-TX-1',2);
+state.vouchers = state.vouchers.filter(v=>v.id!==7);
 state.bankReconcileItems.push({id:'BANK-TX-2',date:'1405/01/02',amount:500,desc:'تراکنش تکراری',ref:'R-2',matched:false});
 assert.equal(api.getBankReconciliationCandidates(state.bankReconcileItems[1]).length,0,
   'one voucher cannot be linked to two bank statement rows');
