@@ -27,6 +27,10 @@ assert.match(sw, /Supabase and other API\/auth traffic must always go to the net
 assert.match(sw, /request\.mode === 'navigate'/);
 assert.match(sw, /holoo-pwa-/);
 assert.match(sw, /self\.clients\.claim\(\)/);
+assert.match(html, /request\.onblocked = \(\) => finish\(/);
+assert.match(html, /const openTimer = setTimeout\(/);
+assert.match(html, /باز کردن حافظه محلی بیش از حد طول کشید/);
+assert.match(html, /db\.onversionchange = \(\) => db\.close\(\)/);
 assert.match(html, /async function fetchWithTimeout\(/);
 assert.match(html, /مهلت پاسخ Supabase تمام شد/);
 assert.match(html, /در حال آماده‌سازی حافظه محلی/);
