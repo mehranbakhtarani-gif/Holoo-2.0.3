@@ -63,6 +63,16 @@
       #print-area > div { display: flex !important; flex-wrap: wrap !important; justify-content: flex-start !important; gap: 0 !important; }
       #print-area .barcode-label { border: 0 !important; border-radius: 0 !important; margin: 0 !important; }
       #print-area .barcode-label svg { max-width: 100% !important; }
+      #print-area .print-company-header { display:flex; justify-content:space-between; gap:16px; border-bottom:2px solid #0f172a; padding-bottom:10px; margin-bottom:14px; font-size:9pt; }
+      #print-area .print-company-header h1 { font-size:15pt; font-weight:800; margin:0 0 4px; }
+      #print-area .print-report-heading { display:flex; flex-direction:column; gap:5px; text-align:left; }
+      #print-area .print-report-content { font-size:9pt; color:#111827 !important; }
+      #print-area table { width:100% !important; border-collapse:collapse !important; font-size:8.5pt !important; }
+      #print-area th, #print-area td { border:1px solid #64748b !important; padding:5px !important; color:#111827 !important; }
+      #print-area thead { display:table-header-group; }
+      #print-area tr, #print-area .rounded-xl, #print-area .rounded-lg { break-inside:avoid; page-break-inside:avoid; }
+      #print-area .print-filter-value { display:inline-block; border-bottom:1px dotted #64748b; padding:2px 5px; }
+      #print-area .print-section-break { break-before:page; page-break-before:always; }
     }
   
     /* Persian calendar date picker */
@@ -7229,6 +7239,83 @@
       });
     }
 
+      // Universal printing for report views: print the exact visible report without changing business data.
+    function openReportPrintPreview(title, sourceIds) {
+      const area = document.getElementById('print-area');
+      if (!area) { showToast('بخش پیش‌نمایش چاپ پیدا نشد.', 'error'); return; }
+      const company = state?.settings?.companyName || 'هولو';
+      const address = state?.settings?.address || '';
+      const phone = state?.settings?.phone || '';
+      const clones = (sourceIds || []).map(id => document.getElementById(id)).filter(Boolean);
+      if (!clones.length) { showToast('محتوای گزارش برای چاپ پیدا نشد.', 'error'); return; }
+      const content = clones.map(node => {
+        const clone = node.cloneNode(true);
+        clone.querySelectorAll('.no-print, button, a, input[type="button"], input[type="submit"]').forEach(el => el.remove());
+        clone.querySelectorAll('input, select, textarea').forEach(el => {
+          const value = el.tagName === 'SELECT' ? (el.selectedOptions[0]?.textContent || '') : (el.value || '');
+          const replacement = document.createElement('span');
+          replacement.className = 'print-filter-value';
+          replacement.textContent = value;
+          el.replaceWith(replacement);
+        });
+        clone.querySelectorAll('[contenteditable="true"]').forEach(el => el.removeAttribute('contenteditable'));
+        return clone.innerHTML;
+      }).join('<div class="print-section-break"></div>');
+      document.getElementById('print-title').textContent = title || 'گزارش هولو';
+      area.innerHTML =
+        '<header class="print-company-header"><div><h1>' + escapeLedgerText(company) + '</h1>' +
+        (address ? '<div>' + escapeLedgerText(address) + '</div>' : '') +
+        (phone ? '<div>تلفن: ' + escapeLedgerText(phone) + '</div>' : '') +
+        '</div><div class="print-report-heading"><strong>' + escapeLedgerText(title || 'گزارش') +
+        '</strong><span>تاریخ تهیه: ' + escapeLedgerText(faNum(getTodayJalaliDate())) + '</span></div></header>' +
+        '<main class="print-report-content">' + content + '</main>';
+      openModal('modal-print-preview');
+    }
+
+    function ensureReportPrintButton(targetId, title, sourceIds) {
+      const target = document.getElementById(targetId);
+      if (!target || target.querySelector('[data-holoo-report-print="' + targetId + '"]')) return;
+      const text = (target.innerText || target.textContent || '').trim();
+      if (!text || text.length < 12) return;
+      if (targetId === 'accounting-panel-body' &&
+          !/(تراز آزمایشی|ترازنامه|سود و زیان|گردش حساب|دفتر کل|حساب معین)/.test(text)) return;
+      if (targetId === 'parties-grid' && !text.includes('گردش تفصیلی')) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'no-print flex justify-end mb-2';
+      wrap.setAttribute('data-holoo-report-print', targetId);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'touch-btn bg-slate-800 text-amber-300 rounded-lg px-4 py-2 font-bold';
+      button.textContent = '🖨️ چاپ نسخه گزارش';
+      button.addEventListener('click', () => openReportPrintPreview(title, sourceIds || [targetId]));
+      wrap.appendChild(button);
+      target.insertBefore(wrap, target.firstChild);
+    }
+
+    function installUniversalReportPrinting() {
+      const targets = [
+        ['accounting-panel-body', 'گزارش حسابداری', ['accounting-panel-body']],
+        ['parties-grid', 'گزارش گردش حساب طرف حساب', ['parties-grid']],
+        ['cashflow-actual-report', 'صورت جریان وجوه نقد واقعی', ['cashflow-actual-report']],
+        ['cashflow-horizons-grid', 'پیش‌بینی جریان نقدینگی', ['cashflow-horizons-grid']],
+        ['mod-aging', 'گزارش سنی مطالبات و بدهی‌ها', ['mod-aging']],
+        ['kardex-modal-list', 'گزارش کاردکس و گردش کالا', ['kardex-modal-list']],
+        ['rep-builder-table', 'گزارش سفارشی', ['rep-builder-table']]
+      ];
+      const scan = () => targets.forEach(([id, title, sources]) => ensureReportPrintButton(id, title, sources));
+      scan();
+      if (typeof MutationObserver !== 'undefined' && document.body) {
+        const observer = new MutationObserver(scan);
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installUniversalReportPrinting, { once: true });
+      else installUniversalReportPrinting();
+    }
+
+  
   </script>
   <script src="./operational-tools.js"></script>
 </body>
