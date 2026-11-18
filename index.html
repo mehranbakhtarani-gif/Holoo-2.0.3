@@ -4440,6 +4440,128 @@
       renderAccountingModule();
     }
 
+    let balanceSheetAsOfDate = null;
+
+    function buildBalanceSheetReport(asOfDate) {
+      const asOf = normalizeLedgerDate(asOfDate);
+      const fiscalStart = normalizeLedgerDate(String(state.fiscalYear || '1405') + '/01/01');
+      if (!asOf || !fiscalStart || jalaliDateOrdinal(asOfDate) === null || jalaliDateOrdinal(asOfDate) < jalaliDateOrdinal(String(state.fiscalYear || '1405') + '/01/01')) {
+        throw new Error('تاریخ ترازنامه معتبر نیست یا پیش از شروع سال مالی جاری است.');
+      }
+
+      const accounts = new Map();
+      let totalDebit = 0, totalCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0;
+      (state.vouchers || []).forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
+        if (dateKey > asOf) return;
+        (voucher.lines || []).forEach(line => {
+          const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+          if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+            invalidAmountLines++;
+            return;
+          }
+          totalDebit += debit;
+          totalCredit += credit;
+          const code = String(line.code || '');
+          if (!/^[123456]/.test(code)) return;
+          if (!accounts.has(code)) {
+            const catalog = CHART_ACCOUNTS.find(a => String(a.code) === code) ||
+              (state.accountCatalog || []).find(a => String(a.code) === code);
+            accounts.set(code, { code, name: catalog?.name || code, debit: 0, credit: 0, vouchers: [] });
+          }
+          const account = accounts.get(code);
+          account.debit += debit;
+          account.credit += credit;
+          if (debit || credit) account.vouchers.push({
+            voucherId: voucher.id, date: rawDate, desc: voucher.desc || '',
+            debit, credit, net: debit - credit
+          });
+        });
+      });
+
+      const rows = Array.from(accounts.values()).map(account => {
+        const prefix = account.code.charAt(0);
+        const net = account.debit - account.credit;
+        return {
+          ...account,
+          group: prefix === '1' ? 'assets' : prefix === '2' ? 'liabilities' : prefix === '3' ? 'equity' : 'results',
+          balance: prefix === '1' ? net : prefix === '2' || prefix === '3' ? -net : 0
+        };
+      }).sort((a,b) => a.code.localeCompare(b.code));
+
+      const assets = rows.filter(r => r.group === 'assets').reduce((s,r) => s + r.balance, 0);
+      const liabilities = rows.filter(r => r.group === 'liabilities').reduce((s,r) => s + r.balance, 0);
+      const equity = rows.filter(r => r.group === 'equity').reduce((s,r) => s + r.balance, 0);
+
+      // Current fiscal-year profit is added once to equity; prior-year results must already
+      // have been closed into retained earnings (e.g. account 3102).
+      let currentYearProfit = 0;
+      rows.filter(r => r.group === 'results').forEach(r => {
+        const signed = r.code.startsWith('4') ? r.credit - r.debit : r.debit - r.credit;
+        currentYearProfit += signed;
+      });
+      const liabilitiesAndEquity = liabilities + equity + currentYearProfit;
+      return {
+        asOfDate, rows, assets, liabilities, equity, currentYearProfit,
+        liabilitiesAndEquity, difference: assets - liabilitiesAndEquity,
+        totalDebit, totalCredit, trialBalanceDifference: totalDebit - totalCredit,
+        invalidDateVouchers, invalidAmountLines,
+        fiscalStart: String(state.fiscalYear || '1405') + '/01/01'
+      };
+    }
+
+    function renderBalanceSheetReport() {
+      const asOf = balanceSheetAsOfDate || getTodayJalaliDate();
+      let report;
+      try { report = buildBalanceSheetReport(asOf); }
+      catch (error) {
+        document.getElementById('accounting-panel-body').innerHTML =
+          '<div class="bg-white rounded-2xl p-4 border text-rose-700 font-bold">' + escapeLedgerText(error.message) + '</div>';
+        return;
+      }
+      const labels = { assets: 'دارایی‌ها', liabilities: 'بدهی‌ها', equity: 'حقوق صاحبان سرمایه' };
+      const groups = ['assets','liabilities','equity'];
+      const details = groups.map(group => {
+        const groupRows = report.rows.filter(r => r.group === group && (r.debit || r.credit));
+        return '<section class="space-y-2"><h3 class="font-black border-b pb-2">' + labels[group] + '</h3>' +
+          (groupRows.map(account => {
+            const amount = Math.abs(account.balance);
+            const voucherRows = account.vouchers.map(v =>
+              '<div class="grid grid-cols-1 md:grid-cols-5 gap-1.5 p-2 rounded-lg bg-white border text-[11px]">' +
+              '<span>' + escapeLedgerText(faNum(v.date)) + '</span><span>سند #' + escapeLedgerText(faNum(v.voucherId)) + '</span>' +
+              '<span class="md:col-span-2">' + escapeLedgerText(v.desc) + '</span>' +
+              '<strong class="text-left">' + money(v.debit - v.credit) + '</strong>' +
+              '<button onclick="openVoucherFromLedger(\'' + escapeLedgerText(v.voucherId) + '\')" class="text-holoo-700 underline font-bold">مشاهده سند</button></div>').join('');
+            return '<div class="rounded-xl border p-3 space-y-2"><div class="flex justify-between gap-2 font-bold"><span>' +
+              escapeLedgerText(faNum(account.code) + ' - ' + account.name) + '</span><strong>' + money(amount) + '</strong></div>' +
+              '<div class="space-y-1">' + voucherRows + '</div></div>';
+          }).join('') || '<p class="text-xs text-slate-400">گردشی برای این گروه تا تاریخ انتخابی ثبت نشده است.</p>') +
+          '</section>';
+      }).join('');
+      const warnings = [];
+      if (report.difference !== 0) warnings.push('ترازنامه تراز نیست؛ اختلاف دارایی با بدهی و حقوق صاحبان سرمایه: ' + money(report.difference));
+      if (report.trialBalanceDifference !== 0) warnings.push('جمع بدهکار و بستانکار اسناد تا تاریخ انتخابی برابر نیست: ' + money(report.trialBalanceDifference));
+      if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر وجود دارد و در محاسبه تاریخ‌دار وارد نشده است.');
+      if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف سند با مبلغ نامعتبر از محاسبه کنار گذاشته شد.');
+      document.getElementById('accounting-panel-body').innerHTML =
+        '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
+        '<div class="flex flex-wrap justify-between gap-2"><strong>ترازنامه بر مبنای دفتر کل</strong><span class="text-xs text-slate-500">مانده تا تاریخ انتخابی</span></div>' +
+        '<label class="block text-xs font-bold">تاریخ ترازنامه (شمسی)<input id="bs-as-of" value="' + escapeLedgerText(asOf) +
+        '" onchange="balanceSheetAsOfDate=this.value; renderBalanceSheetReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
+        '<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>جمع دارایی‌ها</span><strong class="block">' + money(report.assets) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>جمع بدهی‌ها</span><strong class="block">' + money(report.liabilities) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50"><span>حقوق صاحبان سرمایه قبل از سود جاری</span><strong class="block">' + money(report.equity) + '</strong></div></div>' +
+        '<div class="p-3 rounded-xl bg-slate-50 flex justify-between gap-2"><span>سود (زیان) سال مالی جاری تا تاریخ انتخابی</span><strong>' + money(report.currentYearProfit) + '</strong></div>' +
+        '<div class="p-3 rounded-xl bg-holoo-900 text-white flex justify-between font-black"><span>جمع بدهی‌ها + حقوق صاحبان سرمایه + سود جاری</span><strong>' + money(report.liabilitiesAndEquity) + '</strong></div>' +
+        (warnings.length ? '<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1">' + warnings.map(w => '<p>' + escapeLedgerText(w) + '</p>').join('') + '</div>' :
+          '<div class="p-2 rounded-lg bg-emerald-50 text-emerald-800">ترازنامه و کنترل بدهکار/بستانکار اسناد تا تاریخ انتخابی برابر است.</div>') +
+        '<p class="text-[11px] text-slate-500">سود سال مالی جاری یک‌بار به حقوق صاحبان سرمایه اضافه شده است. سود سال‌های قبل باید طبق روال بستن حساب‌ها به سود (زیان) انباشته منتقل شده باشد؛ این گزارش سند اختتامیه یا اصلاحی صادر نمی‌کند.</p>' +
+        details + '</div>';
+    }
+
     let pnlFromDate = null;
     let pnlToDate = null;
 
@@ -4669,11 +4791,7 @@
       } else if (activeAccTab === 'pnl') {
         renderProfitLossReport();
       } else if (activeAccTab === 'bs') {
-        const assets = Object.values(bal).filter(b => b.code.startsWith('1')).reduce((s, b) => s + b.debBal - b.credBal, 0);
-        const liabCap = Object.values(bal).filter(b => b.code.startsWith('2') || b.code.startsWith('3')).reduce((s, b) => s + b.credBal - b.debBal, 0);
-        const rev = (bal['4101']?.credBal || 0) + (bal['4104']?.credBal || 0) - (bal['4102']?.debBal || 0) - (bal['4103']?.debBal || 0);
-        const exp = (bal['5101']?.debBal || 0) + (bal['6101']?.debBal || 0) + (bal['6102']?.debBal || 0) + (bal['6103']?.debBal || 0) + (bal['6104']?.debBal || 0);
-        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-2"><div class="font-black text-sm">ترازنامه (Balance Sheet)</div><div class="p-3.5 bg-holoo-900 text-white rounded-xl font-black flex justify-between tabular-nums"><span>جمع کل دارایی‌ها:</span><span>${money(assets)}</span></div><div class="p-3.5 bg-emerald-800 text-white rounded-xl font-black flex justify-between tabular-nums"><span>جمع بدهی‌ها و حقوق صاحبان سهام:</span><span>${money(liabCap + (rev - exp))}</span></div></div>`;
+        renderBalanceSheetReport();
       }
     }
 
