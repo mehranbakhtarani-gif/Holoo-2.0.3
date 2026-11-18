@@ -180,6 +180,7 @@
       grossProfit: Math.round(item.revenue - item.cogs)
     }));
     const realizedFx = (shipment.fxPayments || []).reduce((sum, payment) => sum + Number(payment.realizedDiff || 0), 0);
+    const postedRevaluationFx = (shipment.revaluationHistory || []).reduce((sum, entry) => sum + Number(entry.difference || 0), 0);
     const remainingFx = Math.max(0, Number(shipment.fxTotal || 0) - Number(shipment.fxPaid || 0));
     const currentRate = Number((currentRates || {})[shipment.currency] || shipment.fxRate || 0);
     const unrealizedFx = (Number(shipment.carryingRate || shipment.fxRate || 0) - currentRate) * remainingFx;
@@ -187,8 +188,10 @@
     const cogs = rows.reduce((sum, row) => sum + row.cogs, 0);
     return {
       items: rows, revenue, cogs, grossProfit: revenue - cogs,
-      realizedFx: Math.round(realizedFx) || 0, unrealizedFx: Math.round(unrealizedFx) || 0,
+      realizedFx: Math.round(realizedFx) || 0, postedRevaluationFx: Math.round(postedRevaluationFx) || 0,
+      unrealizedFx: Math.round(unrealizedFx) || 0,
       profitAfterRealizedFx: Math.round(revenue - cogs + realizedFx) || 0,
+      profitAfterPostedFx: Math.round(revenue - cogs + realizedFx + postedRevaluationFx) || 0,
       untraceableSalesKg: Math.round(untraceableSales * 1000) / 1000
     };
   }
