@@ -48,7 +48,8 @@ const post=load('postVoucher',{
   state, getTodayJalaliDate(){return '1405/09/02';}, addAudit(message){state.auditLogs.push(message);}, saveState(){saves++;}
 });
 const balances=load('getAccountBalances',{state,CHART_ACCOUNTS});
-const partyBalance=load('getPartyNetBalance',{state});
+const partyAccountBalance=load('getPartyAccountNetBalance',{state});
+const partyBalance=load('getPartyNetBalance',{state,getPartyAccountNetBalance:partyAccountBalance});
 const updateCheck=load('updateCheckStatus',{
   state, getTodayJalaliDate(){return '1405/09/02';}, postVoucher:post, addAudit(message){state.auditLogs.push(message);},
   saveState(){saves++;}, renderAll(){}, showToast(){}
