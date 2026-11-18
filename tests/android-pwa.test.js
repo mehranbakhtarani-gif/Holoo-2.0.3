@@ -45,3 +45,11 @@ assert.match(releaseGuide, /three-device acceptance test/i);
 assert.match(releaseGuide, /actor names and device labels are not verified identities/i);
 
 console.log('PASS: Android PWA installation, cache safety, and release-readiness checks');
+
+// Startup must reveal the accounting UI before waiting for cloud queue inspection.
+const startupIndex = html.indexOf("window.addEventListener('DOMContentLoaded'");
+const startup = html.slice(startupIndex);
+assert.ok(startup.indexOf("navigateTo('dashboard')") < startup.indexOf("renderCloudSyncStatus()"), 'dashboard must open before cloud status inspection');
+assert.match(html, /const failedModules = \[\]/);
+assert.match(html, /Holoo module rendering failed/);
+assert.match(html, /محیط حسابداری باز است؛ بررسی صف کامل نشد/);
