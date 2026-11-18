@@ -2591,6 +2591,7 @@
             <div><span class="text-[10px] text-slate-400 block">قیمت سطح ${faNum(lvl + 1)} (هر کیلو):</span><strong class="text-holoo-900 font-black tabular-nums">${money(p.prices[lvl] || p.prices[0])}</strong></div>
             <div class="flex gap-1.5">
               <button onclick="openProductModal(this.dataset.productId)" data-product-id="${String(p.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" class="bg-amber-100 text-amber-900 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">✏️ ویرایش</button>
+              <button onclick="openKardexModal(this.dataset.productId)" data-product-id="${String(p.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" class="bg-indigo-100 text-indigo-900 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">📊 گردش کالا</button>
               <button onclick="printBarcodeLabel('${p.id}')" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold text-[10px]">🏷️ چاپ لیبل بارکد</button>
             </div>
           </div>
@@ -2910,22 +2911,65 @@
       `).join('');
     }
 
+    function escapeKardexText(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
     function openKardexModal(id) {
-      const p = state.products.find(x => x.id === id);
+      const p = state.products.find(x => String(x.id) === String(id));
       if (!p) return;
       document.getElementById('kardex-modal-title').textContent = `کاردکس گردش: ${p.name}`;
-      const batchRows = ensureProductBatches(p).map(b => `
+
+      // This view is intentionally read-only: do not call ensureProductBatches here,
+      // because that helper may initialize or normalize product data.
+      const batches = Array.isArray(p.batches) ? p.batches : [];
+      const batchRows = batches.map(b => `
         <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap justify-between gap-2">
-          <div><strong>بچ ${b.lot}</strong><span class="block text-[10px] text-slate-500">ورود: ${faNum(b.receivedDate)} | تولید: ${faNum(b.productionDate || '—')} | انقضا: ${faNum(b.expiryDate || '—')}</span></div>
-          <div class="text-left tabular-nums font-bold"><span>${faNum(b.remainingQty)} KG باقی‌مانده</span><span class="block text-[10px] text-slate-500">فی: ${money(b.unitCost)}</span></div>
+          <div><strong>بچ ${escapeKardexText(b.lot || '—')}</strong><span class="block text-[10px] text-slate-500">ورود: ${escapeKardexText(b.receivedDate || '—')} | تولید: ${escapeKardexText(b.productionDate || '—')} | انقضا: ${escapeKardexText(b.expiryDate || '—')}</span></div>
+          <div class="text-left tabular-nums font-bold"><span>${faNum(b.remainingQty)} KG باقی‌مانده</span><span class="block text-[10px] text-slate-500">بهای واحد: ${money(b.unitCost || 0)}</span></div>
         </div>
       `).join('');
-      document.getElementById('kardex-modal-list').innerHTML = batchRows + p.kardex.map(k => `
-        <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
-          <div><strong>${k.doc}</strong><span class="block text-[10px] text-slate-400 tabular-nums">${faNum(k.date)}</span></div>
-          <div class="tabular-nums font-bold">${k.inQty ? `<span class="text-emerald-700">+${faNum(k.inQty)}</span>` : `<span class="text-rose-700">-${faNum(k.outQty)}</span>`} | مانده: ${faNum(k.bal)} KG</div>
-        </div>
-      `).join('');
+
+      const movements = Array.isArray(p.kardex) ? p.kardex : [];
+      const movementRows = movements.map(k => {
+        const docMatch = String(k.doc || '').match(/#(\d+)/);
+        const invoice = docMatch
+          ? (state.invoices || []).find(inv => String(inv.id) === String(docMatch[1]))
+          : null;
+        const invoiceLine = invoice && Array.isArray(invoice.items)
+          ? invoice.items.find(item => String(item.productId) === String(p.id))
+          : null;
+        const party = invoice
+          ? (state.parties || []).find(item => String(item.id) === String(invoice.partyId))
+          : null;
+        const isSale = invoice?.type === 'sale' || String(k.doc || '').includes('فروش');
+        const transactionPrice = invoiceLine && Number.isFinite(Number(invoiceLine.price))
+          ? `قیمت فروش: ${money(invoiceLine.price)} / کیلو`
+          : (k.price != null ? `فی ثبت‌شده: ${money(k.price)}` : 'قیمت: —');
+        const partyLabel = invoice
+          ? `${isSale ? 'مشتری' : 'تأمین‌کننده'}: ${escapeKardexText(party?.name || 'نامشخص')}`
+          : '';
+        const invoiceTotal = invoiceLine && invoiceLine.total != null
+          ? ` | مبلغ ردیف: ${money(invoiceLine.total)}`
+          : '';
+        return `
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+            <div class="flex flex-wrap justify-between gap-2">
+              <div><strong>${escapeKardexText(k.doc || 'گردش کالا')}</strong><span class="block text-[10px] text-slate-500">تاریخ: ${escapeKardexText(k.date || '—')} ${invoice ? `| شماره فاکتور: ${faNum(invoice.id)}` : ''}</span></div>
+              <div class="tabular-nums font-bold">${k.inQty ? `<span class="text-emerald-700">+${faNum(k.inQty)} ورود</span>` : `<span class="text-rose-700">-${faNum(k.outQty)} خروج</span>`}<span class="block text-[10px] text-slate-500">مانده: ${faNum(k.bal)} KG</span></div>
+            </div>
+            <div class="text-[11px] text-slate-700">${transactionPrice}${invoiceTotal}</div>
+            ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
+            ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('kardex-modal-list').innerHTML =
+        (batchRows || '') +
+        (movementRows || '<div class="p-4 text-center text-slate-500">برای این کالا هنوز گردش ثبت‌شده‌ای وجود ندارد.</div>');
       openModal('modal-kardex');
     }
 
