@@ -45,7 +45,11 @@ const sandbox = {
   document: { getElementById: () => ({ innerHTML: '' }) }
 };
 vm.createContext(sandbox);
-vm.runInContext(html.slice(start, end) + '; this.api = { normalizeLedgerDate, jalaliDateOrdinal, buildProfitLossReport };', sandbox);
+const jalaliStart = html.indexOf('    function jalaliDateOrdinal(');
+const jalaliEnd = html.indexOf('    function currentJalaliOrdinal()', jalaliStart);
+assert.notEqual(jalaliStart, -1, 'Jalali date helper must exist');
+vm.runInContext(html.slice(jalaliStart, jalaliEnd), sandbox);
+vm.runInContext(html.slice(start, end) + '; this.api = { normalizeLedgerDate, buildProfitLossReport };', sandbox);
 const { buildProfitLossReport } = sandbox.api;
 
 const report = buildProfitLossReport('1405/01/01', '1405/01/30');
