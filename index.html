@@ -5267,6 +5267,156 @@
       saveState(); renderAccountingModule(); showToast('حساب معین جدید ثبت شد.');
     }
 
+    let trialBalanceFromDate = null;
+    let trialBalanceToDate = null;
+
+    function buildTrialBalanceReport(fromDate, toDate) {
+      const from = normalizeLedgerDate(fromDate);
+      const to = normalizeLedgerDate(toDate);
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
+        throw new Error('بازه تاریخ تراز آزمایشی معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
+      }
+
+      const accounts = new Map();
+      const registerAccount = (code, name) => {
+        const key = String(code || '').trim();
+        if (!key) return null;
+        if (!accounts.has(key)) accounts.set(key, {
+          code: key, name: String(name || key),
+          periodDebit: 0, periodCredit: 0, closingDebit: 0, closingCredit: 0
+        });
+        return accounts.get(key);
+      };
+
+      (CHART_ACCOUNTS || []).forEach(account => registerAccount(account.code, account.name));
+      (state.accountCatalog || []).forEach(account => registerAccount(account.code, account.name));
+
+      let invalidDateVouchers = 0, invalidAmountLines = 0, includedVouchers = 0;
+      (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) {
+          invalidDateVouchers++;
+          return;
+        }
+        if (dateKey > to) return;
+        const invalidLines = countInvalidReportVoucherLines(voucher);
+        if (invalidLines) {
+          invalidAmountLines += invalidLines;
+          return;
+        }
+        includedVouchers++;
+        (voucher.lines || []).forEach(line => {
+          const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+          const account = registerAccount(line.code, line.accountName || line.name || line.code);
+          if (!account) return;
+          account.closingDebit += debit;
+          account.closingCredit += credit;
+          if (dateKey >= from) {
+            account.periodDebit += debit;
+            account.periodCredit += credit;
+          }
+        });
+      });
+
+      const rows = Array.from(accounts.values()).map(account => {
+        const net = account.closingDebit - account.closingCredit;
+        return {
+          ...account,
+          closingBalanceDebit: net > 0 ? net : 0,
+          closingBalanceCredit: net < 0 ? Math.abs(net) : 0
+        };
+      }).filter(account =>
+        account.periodDebit || account.periodCredit ||
+        account.closingBalanceDebit || account.closingBalanceCredit
+      ).sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
+
+      const totals = rows.reduce((sum, row) => {
+        sum.periodDebit += row.periodDebit;
+        sum.periodCredit += row.periodCredit;
+        sum.closingBalanceDebit += row.closingBalanceDebit;
+        sum.closingBalanceCredit += row.closingBalanceCredit;
+        return sum;
+      }, { periodDebit: 0, periodCredit: 0, closingBalanceDebit: 0, closingBalanceCredit: 0 });
+
+      return {
+        fromDate, toDate, rows, totals, invalidDateVouchers, invalidAmountLines, includedVouchers,
+        movementDifference: totals.periodDebit - totals.periodCredit,
+        closingDifference: totals.closingBalanceDebit - totals.closingBalanceCredit
+      };
+    }
+
+    function exportTrialBalanceCSV() {
+      const from = document.getElementById('trial-from')?.value || trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
+      const to = document.getElementById('trial-to')?.value || trialBalanceToDate || getTodayJalaliDate();
+      let report;
+      try { report = buildTrialBalanceReport(from, to); }
+      catch (error) { showToast(error.message, 'error'); return; }
+      const cell = value => {
+        let raw = String(value == null ? '' : value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw;
+        return '"' + raw.replace(/"/g, '""') + '"';
+      };
+      const data = [
+        ['کد حساب','نام حساب','گردش بدهکار','گردش بستانکار','مانده بدهکار','مانده بستانکار'],
+        ...report.rows.map(row => [row.code,row.name,row.periodDebit,row.periodCredit,row.closingBalanceDebit,row.closingBalanceCredit]),
+        ['جمع کل','',report.totals.periodDebit,report.totals.periodCredit,report.totals.closingBalanceDebit,report.totals.closingBalanceCredit]
+      ];
+      const csv = '\uFEFF' + [['تراز آزمایشی چهارستونی','از تاریخ',from,'تا تاریخ',to], ...data]
+        .map(row => row.map(cell).join(',')).join('\r\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'Holoo_Trial_Balance_' + from.replace(/\//g,'-') + '_' + to.replace(/\//g,'-') + '.csv';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('خروجی تراز آزمایشی دانلود شد.');
+    }
+
+    function renderTrialBalanceReport() {
+      const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
+      const to = trialBalanceToDate || getTodayJalaliDate();
+      let report;
+      try { report = buildTrialBalanceReport(from, to); }
+      catch (error) {
+        document.getElementById('accounting-panel-body').innerHTML =
+          '<div class="bg-white rounded-2xl p-4 border text-rose-700 font-bold">' + escapeLedgerText(error.message) + '</div>';
+        return;
+      }
+      const rows = report.rows.map(row =>
+        '<div class="grid grid-cols-2 md:grid-cols-6 gap-2 p-2.5 rounded-lg border bg-white text-[11px] tabular-nums">' +
+        '<span class="font-bold">' + escapeLedgerText(faNum(row.code)) + '</span>' +
+        '<span class="col-span-1 md:col-span-1">' + escapeLedgerText(row.name) + '</span>' +
+        '<span class="text-left">' + money(row.periodDebit) + '</span>' +
+        '<span class="text-left">' + money(row.periodCredit) + '</span>' +
+        '<span class="text-left text-emerald-700">' + money(row.closingBalanceDebit) + '</span>' +
+        '<span class="text-left text-rose-700">' + money(row.closingBalanceCredit) + '</span></div>'
+      ).join('');
+      const totals = report.totals;
+      const warnings = [];
+      if (report.movementDifference !== 0) warnings.push('گردش بدهکار و بستانکار در بازه انتخابی برابر نیست: ' + money(report.movementDifference));
+      if (report.closingDifference !== 0) warnings.push('مانده‌های بدهکار و بستانکار برابر نیستند: ' + money(report.closingDifference));
+      if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر شناسایی شد؛ در گزارش تاریخ‌دار محاسبه نشده است.');
+      if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف مبلغ نامعتبر وجود داشت؛ کل سند مربوط از محاسبه کنار گذاشته شد.');
+      document.getElementById('accounting-panel-body').innerHTML =
+        '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
+        '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
+        '<button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button></div>' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
+        '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" onchange="trialBalanceFromDate=this.value; renderTrialBalanceReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
+        '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" onchange="trialBalanceToDate=this.value; renderTrialBalanceReport()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
+        '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">' +
+        '<div class="p-2 rounded-lg bg-slate-50">تعداد اسناد منظورشده<strong class="block">' + faNum(report.includedVouchers) + '</strong></div>' +
+        '<div class="p-2 rounded-lg bg-slate-50">تعداد حساب‌های دارای گردش/مانده<strong class="block">' + faNum(report.rows.length) + '</strong></div>' +
+        '<div class="p-2 rounded-lg bg-slate-50">اختلاف گردش<strong class="block">' + money(report.movementDifference) + '</strong></div>' +
+        '<div class="p-2 rounded-lg bg-slate-50">اختلاف مانده<strong class="block">' + money(report.closingDifference) + '</strong></div></div>' +
+        '<div class="grid grid-cols-2 md:grid-cols-6 gap-2 p-2 bg-slate-100 rounded-lg text-[10px] font-black"><span>کد حساب</span><span>نام حساب</span><span>گردش بدهکار</span><span>گردش بستانکار</span><span>مانده بدهکار</span><span>مانده بستانکار</span></div>' +
+        (rows || '<p class="text-center text-slate-400 p-4">در بازه انتخابی گردش یا مانده‌ای وجود ندارد.</p>') +
+        '<div class="grid grid-cols-2 md:grid-cols-6 gap-2 p-3 rounded-xl bg-holoo-950 text-amber-300 text-[11px] font-black tabular-nums"><span>جمع کل</span><span>—</span><span>' + money(totals.periodDebit) + '</span><span>' + money(totals.periodCredit) + '</span><span>' + money(totals.closingBalanceDebit) + '</span><span>' + money(totals.closingBalanceCredit) + '</span></div>' +
+        (warnings.length ? '<div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 space-y-1">' + warnings.map(w => '<p>' + escapeLedgerText(w) + '</p>').join('') + '</div>' : '<div class="p-2 rounded-lg bg-emerald-50 text-emerald-800">جمع گردش‌ها و مانده‌های بدهکار و بستانکار برابر است.</div>') +
+        '<p class="text-[10px] text-slate-500">گردش‌ها فقط مربوط به بازه انتخابی‌اند؛ مانده‌ها شامل تمام گردش‌های ثبت‌شده از ابتدای سوابق تا تاریخ پایان هستند. این گزارش صرفاً خواندنی است و هیچ سندی ایجاد یا اصلاح نمی‌کند.</p></div>';
+    }
+
     function renderAccountingModule() {
       const box = document.getElementById('accounting-panel-body');
       const bal = getAccountBalances();
@@ -5339,9 +5489,7 @@
           </div>`;
         }
       } else if (activeAccTab === 'trial') {
-        let sD = 0, sC = 0;
-        const rows = Object.values(bal).filter(b => b.debTurn > 0 || b.credTurn > 0).map(b => { sD += b.debBal; sC += b.credBal; return `<div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between"><span>${faNum(b.code)} - ${b.name}</span><strong class="tabular-nums">${b.debBal ? `${money(b.debBal)} بد` : `${money(b.credBal)} بس`}</strong></div>`; }).join('');
-        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-2"><div class="font-black text-sm">تراز آزمایشی ۴ ستونی</div>${rows}<div class="p-3 rounded-xl bg-holoo-950 text-amber-300 font-black flex justify-between tabular-nums"><span>جمع مانده (تراز):</span><span>${money(sD)} = ${money(sC)}</span></div></div>`;
+        renderTrialBalanceReport();
       } else if (activeAccTab === 'pnl') {
         renderProfitLossReport();
       } else if (activeAccTab === 'bs') {
