@@ -24,28 +24,36 @@ const sandbox = {
         { code: '3101', debit: 0, credit: 900 },
         { code: '3102', debit: 0, credit: 100 }
       ]),
-      voucher(2, '1404/12/29', 'بستن سود سال قبل', [
+      voucher(2, '1404/12/20', 'فروش سال قبل', [
+        { code: '1102', debit: 200, credit: 0 },
+        { code: '4101', debit: 0, credit: 200 }
+      ]),
+      voucher(3, '1404/12/21', 'هزینه سال قبل', [
+        { code: '6101', debit: 100, credit: 0 },
+        { code: '1102', debit: 0, credit: 100 }
+      ]),
+      voucher(4, '1404/12/29', 'بستن سود سال قبل', [
         { code: '4101', debit: 200, credit: 0 },
         { code: '6101', debit: 0, credit: 100 },
         { code: '3102', debit: 0, credit: 100 }
       ]),
-      voucher(3, '1405/01/02', 'فروش سال جاری', [
+      voucher(5, '1405/01/02', 'فروش سال جاری', [
         { code: '1102', debit: 500, credit: 0 },
         { code: '4101', debit: 0, credit: 500 }
       ]),
-      voucher(4, '1405/01/03', 'هزینه سال جاری', [
+      voucher(6, '1405/01/03', 'هزینه سال جاری', [
         { code: '6101', debit: 200, credit: 0 },
         { code: '1102', debit: 0, credit: 200 }
       ]),
-      voucher(5, '1405/01/04', 'سپرده جدید', [
+      voucher(7, '1405/01/04', 'سپرده جدید', [
         { code: '1301', debit: 50, credit: 0 },
         { code: '2106', debit: 0, credit: 50 }
       ]),
-      voucher(6, '1405/02/01', 'بعد از تاریخ ترازنامه', [
+      voucher(8, '1405/02/01', 'بعد از تاریخ ترازنامه', [
         { code: '1102', debit: 100, credit: 0 },
         { code: '4101', debit: 0, credit: 100 }
       ]),
-      voucher(7, '1405/13/01', 'تاریخ نامعتبر', [
+      voucher(9, '1405/13/01', 'تاریخ نامعتبر', [
         { code: '1102', debit: 25, credit: 0 },
         { code: '3101', debit: 0, credit: 25 }
       ])
