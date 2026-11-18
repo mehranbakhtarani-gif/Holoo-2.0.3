@@ -65,3 +65,30 @@ assert.match(html, /document\.querySelectorAll\('input'\)\.forEach\(input => for
 assert.match(html, /placeholder="۰۱\/۰۱\/۱۴۰۵"/);
 assert.match(html, /id === 'ast-dep-period'/);
 console.log('PASS: global date inputs normalize Persian/Arabic/English digits and separators to Jalali DD/MM/YYYY while preserving year-month period fields');
+
+assert.match(html, /function openJalaliCalendar\(input\)/, 'date fields must open the Jalali calendar');
+assert.match(html, /function chooseJalaliCalendarDay\(day\)/, 'calendar day selection must write the selected date');
+assert.match(html, /function changeJalaliCalendarMonth\(delta\)/, 'calendar must support month navigation');
+assert.match(html, /function addJalaliCalendarButton\(input\)/, 'date fields must receive a calendar button');
+assert.match(html, /انتخاب تاریخ شمسی/);
+assert.match(html, /observer\.observe\(document\.body, \{ childList: true, subtree: true \}\)/, 'dynamically rendered date fields must also receive calendar buttons');
+assert.match(html, /jalaliCalendarMonthLength/);
+assert.match(html, /selectJalaliCalendarToday/);
+assert.match(html, /jalali-calendar-trigger/);
+console.log('PASS: date fields expose a navigable Jalali calendar picker');
+
+const calendarStart = html.indexOf('    function jalaliCalendarYearDays(');
+const calendarEnd = html.indexOf('    function ensureJalaliCalendarOverlay()', calendarStart);
+assert.ok(calendarStart >= 0 && calendarEnd > calendarStart, 'calendar date helpers must exist');
+const calendarContext = { Math, Number, String, Date, Intl, jalaliDateOrdinal: () => 1, getTodayJalaliDate: () => '1405/01/01' };
+vm.createContext(calendarContext);
+vm.runInContext(html.slice(calendarStart, calendarEnd), calendarContext);
+assert.equal(calendarContext.jalaliCalendarMonthLength(1405, 1), 31);
+assert.equal(calendarContext.jalaliCalendarMonthLength(1405, 6), 31);
+assert.equal(calendarContext.jalaliCalendarMonthLength(1405, 7), 30);
+assert.equal(calendarContext.jalaliCalendarMonthLength(1404, 12), 29);
+assert.equal(calendarContext.jalaliCalendarMonthLength(1403, 12), 30);
+assert.deepEqual(JSON.parse(JSON.stringify(calendarContext.jalaliCalendarParts('02/01/1405'))), { year: 1405, month: 1, day: 2 });
+assert.deepEqual(JSON.parse(JSON.stringify(calendarContext.jalaliCalendarParts('1405/01/02'))), { year: 1405, month: 1, day: 2 });
+assert.equal(calendarContext.jalaliCalendarParts('32/01/1405'), null);
+console.log('PASS: Jalali calendar month lengths, leap Esfand, and date parsing');
