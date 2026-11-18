@@ -17,8 +17,8 @@ function buildCode39Svg(value) {
   const raw = String(value || '').trim().toUpperCase();
   if (!raw || !/^[0-9A-Z. $/+%-]+$/.test(raw)) return '';
   const encoded = '*' + raw + '*';
-  const unit = 2, height = 54, interCharacterGap = 2;
-  let x = 0, bars = '';
+  const unit = 2, height = 54, interCharacterGap = 2, quietZone = 10 * unit;
+  let x = quietZone, bars = '';
   for (let ci = 0; ci < encoded.length; ci++) {
     const pattern = CODE39_PATTERNS[encoded[ci]];
     if (!pattern) return '';
@@ -29,6 +29,7 @@ function buildCode39Svg(value) {
     }
     if (ci < encoded.length - 1) x += interCharacterGap;
   }
+  x += quietZone;
   return '<svg role="img" aria-label="Code 39 barcode ' + escapeBankReconcileText(raw) +
     '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + x + ' ' + height +
     '" width="100%" height="54"><rect width="' + x + '" height="' + height +
