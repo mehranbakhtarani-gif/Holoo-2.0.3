@@ -4951,13 +4951,40 @@
       saveState(); renderAll();
       showToast('تراکنش به سند موجود وصل شد؛ سند جدیدی ثبت نشد.');
     }
+    function getBankAccountBookBalances() {
+      const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+      const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
+      let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0;
+      (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach(line => {
+        if (String(line.code) !== '1102') return;
+        const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+        if (!Number.isFinite(debit) || !Number.isFinite(credit)) return;
+        const id = line.bankAccountId == null ? '' : String(line.bankAccountId);
+        const target = id ? byId.get(id) : null;
+        if (target) { target.debit += debit; target.credit += credit; }
+        else if (!id) { unassignedDebit += debit; unassignedCredit += credit; }
+        else { unknownDebit += debit; unknownCredit += credit; }
+      }));
+      return {
+        accounts: [...byId.values()].map(row => ({ ...row, net: row.debit - row.credit })),
+        unassignedNet: unassignedDebit - unassignedCredit,
+        unknownNet: unknownDebit - unknownCredit,
+        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit
+      };
+    }
     function renderReconcileModule() {
-      const bookBal = getAccountBalances()['1102']?.debBal || 0;
+      const bankBalances = getBankAccountBookBalances();
       const verified = (state.bankReconcileItems || []).filter(x => x.matched && x.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(x.linkedVoucherId)));
       const legacy = (state.bankReconcileItems || []).filter(x => x.matched && !x.linkedVoucherId).length;
       const pending = (state.bankReconcileItems || []).length - verified.length;
+      const bankRows = bankBalances.accounts.map(row => `
+        <div class="rounded-lg bg-white/10 p-2"><span class="block text-slate-300">${escapeBankReconcileText(row.account.name)}</span><strong class="tabular-nums">${money(row.net)}</strong></div>
+      `).join('');
+      const unassigned = bankBalances.unassignedNet || bankBalances.unknownNet
+        ? `<div class="rounded-lg bg-amber-900/30 p-2"><span class="block text-amber-200">گردش‌های بدون حساب مشخص / شناسه ناشناخته</span><strong class="tabular-nums">${money(bankBalances.unassignedNet + bankBalances.unknownNet)}</strong></div>`
+        : '';
       document.getElementById('reconcile-summary-bar').innerHTML = `
-        <div><span class="text-slate-400 block">مانده دفتری بانک (حساب ۱۱۰۲):</span><strong>${money(bookBal)}</strong></div>
+        <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${unassigned}</div></div>
         <div><span class="text-slate-400 block">تراکنش‌های وصل‌شده به سند:</span><strong class="text-emerald-300">${faNum(verified.length)}</strong></div>
         <div><span class="text-slate-400 block">نیازمند بررسی:</span><strong class="text-amber-300">${faNum(pending)} مورد</strong></div>
         <div><span class="text-slate-400 block">تطبیق‌های قدیمی بدون مرجع سند:</span><strong class="text-amber-300">${faNum(legacy)} مورد</strong></div>
@@ -5049,7 +5076,11 @@
       const bankAccountId = String(document.getElementById('bank-csv-account')?.value || '');
       if (!(state.bankAccounts || []).some(account => account.type === 'bank' && String(account.id) === bankAccountId)) { showToast('حساب بانکی صورتحساب را به‌درستی انتخاب کنید.', 'error'); return; }
       let added = 0, dup = 0, invalid = 0;
+      const normalizeDuplicateText = value => String(value || '').normalize('NFKC').replace(/[\\u200c\\s]+/g, ' ').trim().toLocaleLowerCase('fa');
+      const fingerprint = item => [String(item.bankAccountId == null ? 'legacy' : item.bankAccountId), bankTxDateKey(item.date) || String(item.date || ''), Number(item.amount), normalizeDuplicateText(item.desc)].join('|');
+      const seenFingerprints = new Set((state.bankReconcileItems || []).map(fingerprint));
       const seenRefs = new Set((state.bankReconcileItems || []).filter(x => String(x.ref || '').trim()).map(x => `${x.bankAccountId == null ? 'legacy' : String(x.bankAccountId)}::${String(x.ref).trim()}`));
+      let possibleDuplicates = 0;
       rows.forEach(parts => {
         if (!parts.some(value => String(value).trim())) return;
         if (parts.length < 4) { invalid++; return; }
@@ -5058,14 +5089,18 @@
         const amount = Number(String(amountRaw || '').trim().replace(/,/g, ''));
         if (!bankTxDateKey(date) || !desc || !ref || !Number.isFinite(amount) || amount === 0) { invalid++; return; }
         const scopedRef = `${bankAccountId}::${ref}`;
+        const candidate = { bankAccountId, date, desc, amount, ref };
+        const duplicateFingerprint = fingerprint(candidate);
         if (seenRefs.has(scopedRef) || seenRefs.has(`legacy::${ref}`)) { dup++; return; }
+        if (seenFingerprints.has(duplicateFingerprint)) { possibleDuplicates++; return; }
         seenRefs.add(scopedRef);
+        seenFingerprints.add(duplicateFingerprint);
         state.bankReconcileItems.unshift({ id: 'REC-' + createStableId('banktx'), date, desc, amount, ref, bankAccountId, matched: false, importedAt: new Date().toISOString() });
         added++;
       });
       if (!added && invalid) { showToast(`هیچ ردیف معتبری وارد نشد؛ ${faNum(invalid)} ردیف نامعتبر بود.`, 'error'); return; }
       saveState(); closeModal('modal-import-bank-csv'); renderReconcileModule();
-      showToast(`${faNum(added)} تراکنش وارد شد؛ ${faNum(dup)} تکراری و ${faNum(invalid)} نامعتبر کنار گذاشته شد.`);
+      showToast(`${faNum(added)} تراکنش وارد شد؛ ${faNum(dup)} شماره پیگیری تکراری، ${faNum(possibleDuplicates)} تکرار احتمالی (حساب/تاریخ/مبلغ/شرح)، و ${faNum(invalid)} ردیف نامعتبر کنار گذاشته شد.`);
     }
 
     let cfChartInst = null;
