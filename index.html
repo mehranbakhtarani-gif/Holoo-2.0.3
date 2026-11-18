@@ -3509,10 +3509,11 @@
     function submitWhTransfer() {
       const p = state.products.find(x => x.id === document.getElementById('tr-prod').value);
       const destWh = document.getElementById('tr-dest-wh').value;
-      const qty = Number(document.getElementById('tr-qty').value || 0);
+      const qty = Number(document.getElementById('tr-qty').value);
       const sourceWh = p?.warehouseId;
-      if (!p || !Number.isFinite(qty) || qty <= 0 || qty > Number(p.stock || 0)) {
-        showToast('مقدار انتقال نامعتبر است.', 'error'); return;
+      const sourceStock = Number(p?.stock);
+      if (!p || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(sourceStock) || qty > sourceStock) {
+        showToast('مقدار انتقال یا موجودی مبدأ معتبر نیست.', 'error'); return;
       }
       if (!destWh || !state.warehouses.some(w => w.id === destWh)) {
         showToast('انبار مقصد معتبر نیست.', 'error'); return;
@@ -3521,43 +3522,91 @@
         showToast('انبار مبدأ و مقصد نمی‌توانند یکسان باشند.', 'error'); return;
       }
 
-      const date = getTodayJalaliDate();
       const rootProductId = p.baseProductId || p.id;
       const destId = `${rootProductId}::${destWh}`;
       let destination = state.products.find(x =>
         x.warehouseId === destWh && (x.baseProductId || x.id) === rootProductId
       );
+      if (destination && (!Number.isFinite(Number(destination.stock)) || Number(destination.stock) < 0)) {
+        showToast('موجودی ثبت‌شده در انبار مقصد معتبر نیست؛ انتقال انجام نشد.', 'error'); return;
+      }
 
-      // کاهش موجودی مبدأ؛ موجودی کل شرکت تغییر نمی‌کند.
-      p.stock = Number(p.stock || 0) - qty;
-      p.kardex = p.kardex || [];
+      // Preflight FIFO on isolated copies so an invalid batch cannot leave a half-posted transfer.
+      let fifoPlan = null;
+      let sourceSimulation = null;
+      if (state.costingMethod === 'FIFO') {
+        try {
+          sourceSimulation = JSON.parse(JSON.stringify(p));
+          fifoPlan = consumeFifoStock(sourceSimulation, qty);
+          const allocatedQty = Array.isArray(fifoPlan?.allocations)
+            ? fifoPlan.allocations.reduce((sum, item) => sum + Number(item.quantity), 0)
+            : NaN;
+          if (!fifoPlan || !Array.isArray(fifoPlan.allocations) ||
+              !Number.isFinite(fifoPlan.totalCost) || !Number.isFinite(fifoPlan.unitCost) ||
+              !Number.isFinite(allocatedQty) || Math.abs(allocatedQty - qty) > 0.000001 ||
+              fifoPlan.allocations.some(item =>
+                !item.batchId || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0 ||
+                !Number.isFinite(Number(item.unitCost)) || Number(item.unitCost) < 0
+              )) {
+            throw new Error('مقادیر یا بهای تخصیص بچ‌ها معتبر نیست.');
+          }
+          if (destination) ensureProductBatches(JSON.parse(JSON.stringify(destination)));
+        } catch (error) {
+          showToast('کنترل بچ‌های مبدأ یا مقصد ناموفق بود؛ انتقال ثبت نشد. ' + (error?.message || ''), 'error');
+          return;
+        }
+      }
+
+      const date = getTodayJalaliDate();
+      const transferId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      const sourceName = getWhName(sourceWh), destinationName = getWhName(destWh);
+      // Commit only the already-validated simulated batch state; do not rerun a mutating FIFO operation.
+      if (state.costingMethod === 'FIFO') {
+        p.batches = sourceSimulation.batches;
+      }
+
+      // Source and destination must never share the same mutable batch array.
+      if (!destination) {
+        destination = {
+          ...p, id: destId, baseProductId: rootProductId, warehouseId: destWh,
+          stock: 0, kardex: [], batches: []
+        };
+        state.products.push(destination);
+      } else {
+        destination.batches = Array.isArray(destination.batches) ? destination.batches : [];
+      }
+
+      p.stock = sourceStock - qty;
+      p.kardex = Array.isArray(p.kardex) ? p.kardex : [];
       p.kardex.push({
-        date, doc: `حواله خروج انتقال به ${getWhName(destWh)}`,
+        date, doc: `حواله خروج انتقال ${transferId} به ${destinationName}`,
         inQty: 0, outQty: qty, bal: p.stock, price: p.buyPrice
       });
 
-      // در صورت نبود رکورد این کالا در مقصد، رکورد انبار مستقل بساز.
-      if (!destination) {
-        destination = {
-          ...p,
-          id: destId,
-          baseProductId: rootProductId,
-          warehouseId: destWh,
-          stock: 0,
-          kardex: []
-        };
-        state.products.push(destination);
+      if (state.costingMethod === 'FIFO') {
+        fifoPlan.allocations.forEach((allocation, index) => {
+          destination.batches.push({
+            id: `${allocation.batchId}::${transferId}::${index + 1}`,
+            lot: allocation.lot || 'TRANSFER',
+            receivedDate: date, productionDate: '', expiryDate: allocation.expiryDate || '',
+            quantity: allocation.quantity, remainingQty: allocation.quantity,
+            unitCost: allocation.unitCost, sourceType: 'warehouse_transfer',
+            sourceRef: transferId, sourceBatchId: allocation.batchId, warehouseId: destWh
+          });
+        });
       }
+
       destination.stock = Number(destination.stock || 0) + qty;
-      destination.kardex = destination.kardex || [];
+      destination.kardex = Array.isArray(destination.kardex) ? destination.kardex : [];
       destination.kardex.push({
-        date, doc: `حواله ورود انتقال از ${getWhName(sourceWh)}`,
-        inQty: qty, outQty: 0, bal: destination.stock, price: p.buyPrice
+        date, doc: `حواله ورود انتقال ${transferId} از ${sourceName}`,
+        inQty: qty, outQty: 0, bal: destination.stock,
+        price: state.costingMethod === 'FIFO' ? fifoPlan.unitCost : p.buyPrice
       });
 
-      addAudit(`انتقال ${qty} کیلوگرم ${p.name} از ${getWhName(sourceWh)} به ${getWhName(destWh)}`);
+      addAudit(`انتقال ${qty} کیلوگرم ${p.name} از ${sourceName} به ${destinationName}؛ ${transferId}`);
       saveState(); closeModal('modal-wh-transfer'); renderAll();
-      showToast('انتقال ثبت شد؛ موجودی هر دو انبار و کاردکس به‌روزرسانی شد ✔');
+      showToast('انتقال ثبت شد؛ موجودی و بچ‌های هر دو انبار و کاردکس به‌روزرسانی شد ✔');
     }
 
     function submitPhysicalStocktaking() {
