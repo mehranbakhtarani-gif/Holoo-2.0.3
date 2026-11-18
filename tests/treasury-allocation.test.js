@@ -40,7 +40,7 @@ function fixture({ amount, selectedIds = [], invoices, dir = 'receive', legacyVa
   const posted = [];
   let saves = 0;
   const save = load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    state, document, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); if (failPosting) throw new Error('simulated journal failure'); }, saveState() { saves++; },
+    state, document, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); if (failPosting) throw new Error('simulated journal failure'); return 1; }, saveState() { saves++; },
     closeModal() {}, renderAll() {}, showToast() {}, faNum: String
   });
   return { state, posted, get saves() { return saves; }, run: save };
