@@ -111,3 +111,5 @@ assert.deepEqual(rollbackProducts.map(product => product.stock), [5, 7]);
 assert.deepEqual(rollbackProducts.map(product => product.batches.length), [0, 0]);
 assert.equal(rollbackShipment.postedToWh, false);
 console.log('PASS: failed multi-item receipt rolls back every product and lot');
+
+// Regression coverage: import cost is recognized at registration, not again at physical receipt.
