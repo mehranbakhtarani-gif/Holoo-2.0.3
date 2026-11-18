@@ -3543,10 +3543,12 @@
         }
         shipment.postedToWh = true;
         shipment.receivedAt = receivedDate;
-        postVoucher('تحویل محموله وارداتی ' + shipment.id + ' به انبار', [
-          { code: '1103', partyId: null, desc: 'موجودی انبار از محموله ' + shipment.id, debit: shipment.totalLandedRial, credit: 0 },
-          { code: '1105', partyId: null, desc: 'خروج از موجودی در راه محموله ' + shipment.id, debit: 0, credit: shipment.totalLandedRial }
-        ], receivedDate, { type: 'import', id: shipment.id, event: 'warehouse_receipt' });
+        // The shipment registration voucher has already recognized the landed cost
+        // in inventory (1105) against the foreign supplier and import-expense payables.
+        // Warehouse receipt changes physical quantities and lot traceability only;
+        // posting another journal here would incorrectly debit trade receivables (1103)
+        // and credit inventory (1105), reversing the asset classification.
+
       } catch (error) {
         for (const snapshot of snapshots.values()) {
           snapshot.product.stock = snapshot.stock;
