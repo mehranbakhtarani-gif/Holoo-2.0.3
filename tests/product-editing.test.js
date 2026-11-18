@@ -25,6 +25,6 @@ assert.match(editBranch, /Object\.assign\(product, fields\)/);
 assert.match(editBranch, /saveState\(\)/);
 assert.doesNotMatch(editBranch, /postVoucher|stock\s*=|batches\s*=|kardex\s*=/, 'editing must not post vouchers or rewrite inventory history');
 assert.match(editBranch, /product\.id/);
-assert.match(editBranch, /item\\.barcode === barcode/);
+assert.ok(editBranch.includes('item.barcode === barcode'));
 assert.match(editBranch, /بارکد قبلاً/);
 console.log('PASS: product editing preserves identity and inventory history without posting accounting vouchers');
