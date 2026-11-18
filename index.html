@@ -6464,15 +6464,15 @@
       for (const [name, renderer] of renderers) {
         try { renderer(); }
         catch (error) {
-          failedModules.push(name);
+          const detail = error && error.message ? String(error.message) : String(error || 'خطای نامشخص');
+          failedModules.push(name + ' (' + detail.slice(0, 120) + ')');
           console.error('Holoo module rendering failed (' + name + '):', error);
         }
       }
       if (failedModules.length) {
-        // نام ماژول‌های معیوب را در رابط نشان بده تا خطای رندر قابل تشخیص باشد.
-        // جزئیات کامل خطا همچنان در کنسول باقی می‌ماند.
-        const failedLabel = failedModules.join('، ');
-        setCloudBadge('⚠️ خطای نمایش در بخش: ' + failedLabel, 'text-amber-300');
+        // نام ماژول و پیام خطای واقعی برای تشخیص دقیق‌تر نمایش داده می‌شود.
+        const failedLabel = failedModules.join('؛ ');
+        setCloudBadge('⚠️ خطای نمایش: ' + failedLabel, 'text-amber-300');
       }
     }
 
