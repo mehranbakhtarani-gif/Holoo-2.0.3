@@ -25,6 +25,7 @@ jobs:
           node tests/fifo-batch.test.js
           node tests/aging-report.test.js
           node tests/profit-loss-report.test.js
+          node tests/balance-sheet-report.test.js
           node tests/import-dashboard.test.js
           node tests/import-domain.test.js
           node tests/fx-commitment.test.js
