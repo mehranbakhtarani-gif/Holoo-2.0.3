@@ -537,9 +537,10 @@
                 <p class="text-xs text-slate-500">شناسایی تراکنش‌های تکراری، تطبیق خودکار و دستی با اسناد داخلی و ثبت کارمزد بانکی</p>
               </div>
               <div class="flex gap-2">
-                <button onclick="autoMatchBankTx()" class="touch-btn bg-emerald-600 text-white px-3 rounded-xl font-bold">✨ تطبیق خودکار هوشمند</button>
+                <button onclick="autoMatchBankTx()" class="touch-btn bg-emerald-600 text-white px-3 rounded-xl font-bold">🔎 پیشنهاد تطبیق دقیق</button>
                 <button onclick="openModal('modal-import-bank-csv')" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">📥 ورود CSV صورتحساب بانک</button>
               </div>
+              <p class="text-[11px] text-amber-700 bg-amber-50 rounded-lg p-2">تطبیق فقط با سند بانکی هم‌مبلغ و هم‌تاریخ پیشنهاد می‌شود؛ ثبت نهایی با تأیید شماست و هیچ سند حسابداری خودکار ساخته نمی‌شود.</p>
             </div>
             <div id="reconcile-summary-bar" class="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-900 text-white tabular-nums"></div>
             <div id="reconcile-tx-list" class="space-y-2"></div>
@@ -4160,48 +4161,110 @@
       b.textContent = `🧮 راس‌گیری وزنی چک‌های در جریان (${faNum(chks.length)} فقره به مبلغ ${money(sum)}): میانگین سررسید وزنی ${faNum(weightedDays)} روز آینده است.`;
     }
 
+    function bankTxDateKey(value) { return normalizeLedgerDate(value); }
+    function getBankReconciliationCandidates(item) {
+      const dateKey = bankTxDateKey(item.date);
+      const amount = Math.abs(Number(item.amount || 0));
+      if (!dateKey || !Number.isFinite(amount) || amount <= 0) return [];
+      const usedVoucherIds = new Set((state.bankReconcileItems || []).filter(x => x.id !== item.id && x.matched && x.linkedVoucherId).map(x => String(x.linkedVoucherId)));
+      return (state.vouchers || []).filter(v => {
+        if (usedVoucherIds.has(String(v.id)) || bankTxDateKey(v.date || v.operationDate) !== dateKey) return false;
+        let debit = 0, credit = 0;
+        (v.lines || []).filter(line => String(line.code) === '1102').forEach(line => {
+          debit += Number(line.debit || 0); credit += Number(line.credit || 0);
+        });
+        return Number(item.amount) > 0
+          ? Math.abs(debit - amount) < 0.01 && credit < 0.01
+          : Math.abs(credit - amount) < 0.01 && debit < 0.01;
+      }).map(v => ({ id: v.id, desc: v.desc || 'سند بانکی', date: v.date || v.operationDate }));
+    }
+    function confirmBankReconcileMatch(itemId, voucherId) {
+      const item = (state.bankReconcileItems || []).find(x => x.id === itemId);
+      const voucher = (state.vouchers || []).find(v => String(v.id) === String(voucherId));
+      if (!item || !voucher) { showToast('تراکنش یا سند انتخاب‌شده پیدا نشد.', 'error'); return; }
+      if ((state.bankReconcileItems || []).some(x => x.id !== itemId && x.matched && String(x.linkedVoucherId) === String(voucherId))) {
+        showToast('این سند قبلاً به تراکنش بانکی دیگری وصل شده است.', 'error'); return;
+      }
+      if (!getBankReconciliationCandidates(item).some(x => String(x.id) === String(voucherId))) {
+        showToast('مبلغ، جهت یا تاریخ سند با تراکنش بانکی یکسان نیست.', 'error'); return;
+      }
+      item.matched = true;
+      item.linkedVoucherId = voucher.id;
+      item.matchedAt = new Date().toISOString();
+      item.matchMethod = 'user_confirmed_exact';
+      saveState(); renderAll();
+      showToast('تراکنش به سند موجود وصل شد؛ سند جدیدی ثبت نشد.');
+    }
     function renderReconcileModule() {
       const bookBal = getAccountBalances()['1102']?.debBal || 0;
-      const matchedSum = state.bankReconcileItems.filter(x => x.matched).reduce((s, x) => s + x.amount, 0);
-      const unrecCount = state.bankReconcileItems.filter(x => !x.matched).length;
+      const verified = (state.bankReconcileItems || []).filter(x => x.matched && x.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(x.linkedVoucherId)));
+      const legacy = (state.bankReconcileItems || []).filter(x => x.matched && !x.linkedVoucherId).length;
+      const pending = (state.bankReconcileItems || []).length - verified.length;
       document.getElementById('reconcile-summary-bar').innerHTML = `
-        <div><span class="text-slate-400 block">مانده دفتری بانک:</span><strong>${money(bookBal)}</strong></div>
-        <div><span class="text-slate-400 block">تراکنش‌های تطبیق‌یافته:</span><strong class="text-emerald-300">${money(matchedSum)}</strong></div>
-        <div><span class="text-slate-400 block">تعداد تطبیق‌نیافته:</span><strong class="text-amber-300">${faNum(unrecCount)} مورد</strong></div>
-        <div><span class="text-slate-400 block">وضعیت مغایرت:</span><strong>${unrecCount === 0 ? 'صفر (تطبیق کامل) ✔' : 'نیاز به بررسی'}</strong></div>
+        <div><span class="text-slate-400 block">مانده دفتری بانک (حساب ۱۱۰۲):</span><strong>${money(bookBal)}</strong></div>
+        <div><span class="text-slate-400 block">تراکنش‌های وصل‌شده به سند:</span><strong class="text-emerald-300">${faNum(verified.length)}</strong></div>
+        <div><span class="text-slate-400 block">نیازمند بررسی:</span><strong class="text-amber-300">${faNum(pending)} مورد</strong></div>
+        <div><span class="text-slate-400 block">تطبیق‌های قدیمی بدون مرجع سند:</span><strong class="text-amber-300">${faNum(legacy)} مورد</strong></div>
       `;
-      document.getElementById('reconcile-tx-list').innerHTML = state.bankReconcileItems.map(r => `
-        <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
-          <div><strong>${r.desc}</strong> <span class="text-[10px] text-slate-400 tabular-nums">(${faNum(r.date)} | پیگیری: ${r.ref})</span></div>
-          <div class="flex items-center gap-2">
-            <strong class="tabular-nums ${r.amount >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(r.amount)}</strong>
-            <button onclick="toggleReconcileMatch('${r.id}')" class="px-2.5 py-1 rounded-lg font-bold ${r.matched ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-500 text-slate-950'}">${r.matched ? 'تطبیق‌شده ✔ (لغو)' : 'تطبیق دستی'}</button>
-          </div>
-        </div>
-      `).join('');
+      document.getElementById('reconcile-tx-list').innerHTML = (state.bankReconcileItems || []).map(r => {
+        const linked = r.matched && r.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(r.linkedVoucherId));
+        const candidates = linked ? [] : getBankReconciliationCandidates(r);
+        const actions = linked
+          ? `<div class="text-emerald-700 font-bold">وصل به سند #${faNum(r.linkedVoucherId)} <button onclick="toggleReconcileMatch('${r.id}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`
+          : candidates.length
+            ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">سندهای هم‌مبلغ و هم‌تاریخ؛ یکی را بررسی و تأیید کنید:</span>${candidates.map(v => `<button onclick="confirmBankReconcileMatch('${r.id}','${v.id}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید سند #${faNum(v.id)} — ${v.desc}</button>`).join('')}</div>`
+            : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع سند ندارد و نیازمند بازبینی است.' : 'سند دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>`;
+        return `
+          <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
+            <div><strong>${r.desc}</strong> <span class="text-[10px] text-slate-400 tabular-nums">(${faNum(r.date)} | پیگیری: ${r.ref})</span></div>
+            <div class="flex items-center gap-2"><strong class="tabular-nums ${r.amount >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${money(r.amount)}</strong></div>
+            ${actions}
+          </div>`;
+      }).join('');
     }
     function toggleReconcileMatch(id) {
-      const item = state.bankReconcileItems.find(x => x.id === id);
+      const item = (state.bankReconcileItems || []).find(x => x.id === id);
       if (!item) return;
-      item.matched = !item.matched;
-      if (item.matched && item.amount < 0) {
-        postVoucher(`ثبت کارمزد بانکی (${item.ref})`, [{ code: '6101', partyId: null, desc: item.desc, debit: Math.abs(item.amount), credit: 0 }, { code: '1102', partyId: null, desc: 'کسر کارمزد از بانک', debit: 0, credit: Math.abs(item.amount) }]);
+      if (!item.matched || !item.linkedVoucherId) {
+        showToast('این تراکنش تطبیق تأییدشده ندارد؛ برای اتصال، یکی از اسناد پیشنهادی را انتخاب کنید.', 'error'); return;
       }
+      item.matched = false;
+      delete item.linkedVoucherId; delete item.matchedAt; delete item.matchMethod;
       saveState(); renderAll();
+      showToast('اتصال بانکی لغو شد؛ سند حسابداری تغییری نکرد.');
     }
-    function autoMatchBankTx() { state.bankReconcileItems.forEach(x => x.matched = true); saveState(); renderReconcileModule(); showToast('تطبیق خودکار تراکنش‌های بانکی انجام شد ✨'); }
+    function autoMatchBankTx() {
+      let unique = 0, ambiguous = 0, missing = 0;
+      (state.bankReconcileItems || []).filter(x => !(x.matched && x.linkedVoucherId)).forEach(item => {
+        const candidates = getBankReconciliationCandidates(item);
+        if (candidates.length === 1) unique++;
+        else if (candidates.length > 1) ambiguous++;
+        else missing++;
+      });
+      renderReconcileModule();
+      showToast(`پیشنهادها آماده شد: ${faNum(unique)} مورد دارای یک سند دقیق، ${faNum(ambiguous)} مورد چندگزینه‌ای و ${faNum(missing)} مورد بدون تطبیق. هیچ موردی خودکار تأیید نشد.`);
+    }
     function parseBankCSV() {
-      const lines = document.getElementById('bank-csv-text').value.trim().split('\n');
-      let added = 0, dup = 0;
-      lines.forEach(line => {
-        const [date, desc, amtStr, ref] = line.split(',');
-        if (!ref) return;
-        if (state.bankReconcileItems.some(x => x.ref === ref.trim())) { dup++; return; }
-        state.bankReconcileItems.unshift({ id: 'REC-' + Date.now() + Math.random(), date: date.trim(), desc: desc.trim(), amount: Number(amtStr || 0), ref: ref.trim(), matched: false });
+      const input = document.getElementById('bank-csv-text').value.trim();
+      if (!input) { showToast('محتوای صورتحساب خالی است.', 'error'); return; }
+      let added = 0, dup = 0, invalid = 0;
+      const seenRefs = new Set((state.bankReconcileItems || []).map(x => String(x.ref || '').trim()).filter(Boolean));
+      input.split(/\r?\n/).forEach((line, index) => {
+        if (!line.trim()) return;
+        const parts = line.split(',');
+        if (parts.length < 4) { invalid++; return; }
+        const [dateRaw, descRaw, amountRaw, ...refParts] = parts;
+        const date = dateRaw.trim(), desc = descRaw.trim(), ref = refParts.join(',').trim();
+        const amount = Number(String(amountRaw).trim().replace(/,/g, ''));
+        if (!bankTxDateKey(date) || !desc || !ref || !Number.isFinite(amount) || amount === 0) { invalid++; return; }
+        if (seenRefs.has(ref)) { dup++; return; }
+        seenRefs.add(ref);
+        state.bankReconcileItems.unshift({ id: 'REC-' + createStableId('banktx'), date, desc, amount, ref, matched: false, importedAt: new Date().toISOString() });
         added++;
       });
+      if (!added && invalid) { showToast(`هیچ ردیف معتبری وارد نشد؛ ${faNum(invalid)} ردیف نامعتبر بود.`, 'error'); return; }
       saveState(); closeModal('modal-import-bank-csv'); renderReconcileModule();
-      showToast(`${faNum(added)} تراکنش جدید وارد شد (${faNum(dup)} تراکنش تکراری شناسایی و حذف شد).`);
+      showToast(`${faNum(added)} تراکنش وارد شد؛ ${faNum(dup)} تکراری و ${faNum(invalid)} نامعتبر کنار گذاشته شد.`);
     }
 
     let cfChartInst = null;
