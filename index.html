@@ -1069,7 +1069,8 @@
             </div>
             <div class="rounded-xl border border-slate-200 p-3 space-y-2">
               <h3 class="font-black text-sm">۵. کنترل‌های اتصال به عملیات ثبت‌شده</h3>
-              <div id="planner-reconciliation" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
+              <div><label class="block font-bold mb-1">اتصال دستی به پرونده واردات ثبت‌شده</label><select id="plan-import-id" onchange="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white"><option value="">بدون اتصال به پرونده واردات</option></select></div>
+              <div id="planner-reconciliation" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2"></div>
               <p class="text-[10px] text-amber-800 bg-amber-50 rounded-lg p-2">تعداد پرونده‌ها و تعهدات فقط شاخص وجود اطلاعات است؛ تا زمانی که شناسه پروژه و مبالغ با اسناد، پرداخت‌ها و حواله‌ها تطبیق داده نشده‌اند، این ارقام تأیید حسابداری محسوب نمی‌شوند.</p>
             </div>
             <div class="rounded-xl border border-slate-200 p-3 space-y-2">
@@ -7815,7 +7816,7 @@
     }
 
     function capitalPlanReadInputs() {
-      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv'];
+      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv','plan-import-id'];
       const data = {};
       ids.forEach(id => { const el = document.getElementById(id); data[id] = el ? (el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value.trim()) : ''; });
       return data;
@@ -7931,16 +7932,38 @@
       renderCapitalPlanReconciliation();
       renderCapitalPlanSavedList();
     }
-    function renderCapitalPlanReconciliation() {
+    function renderCapitalPlanReconciliation(input, calculation) {
       const el = document.getElementById('planner-reconciliation');
       if (!el) return;
       const imports = Array.isArray(state.imports) ? state.imports : [];
       const fx = Array.isArray(state.fxCommitments) ? state.fxCommitments : [];
       const activePlans = Array.isArray(state.capitalPlans) ? state.capitalPlans.filter(p => p.status !== 'archived') : [];
+      const select = document.getElementById('plan-import-id');
+      const desiredId = input && input['plan-import-id'] ? String(input['plan-import-id']) : (select ? String(select.value || '') : '');
+      if (select) {
+        select.innerHTML = '<option value="">بدون اتصال به پرونده واردات</option>' + imports.filter(x => x && x.status !== 'cancelled').map(x =>
+          '<option value="' + capitalPlanEscape(x.id) + '">' + capitalPlanEscape(x.id) + ' · ' + capitalPlanEscape(x.supplier || 'فروشنده نامشخص') + ' · ' + money(x.totalLandedRial || 0) + '</option>'
+        ).join('');
+        select.value = imports.some(x => String(x.id) === desiredId) ? desiredId : '';
+      }
+      const linked = imports.find(x => x && String(x.id) === desiredId && x.status !== 'cancelled');
+      const outstandingFx = linked ? Math.max(0, Number(linked.fxTotal || 0) - Number(linked.fxPaid || 0)) : 0;
       const tile = (label,value,note) => '<div class="rounded-xl bg-slate-50 border p-3"><div class="text-slate-500">' + label + '</div><div class="font-black text-lg tabular-nums">' + faNum(value) + '</div><div class="text-[10px] text-slate-500">' + note + '</div></div>';
-      el.innerHTML = tile('پرونده‌های واردات ثبت‌شده',imports.length,'نیازمند اتصال دستی به پروژه') +
+      const moneyTile = (label,value,note) => '<div class="rounded-xl bg-slate-50 border p-3"><div class="text-slate-500">' + label + '</div><div class="font-black text-sm tabular-nums">' + money(value) + '</div><div class="text-[10px] text-slate-500">' + note + '</div></div>';
+      let comparison = '';
+      if (linked) {
+        const actualCost = Number(linked.totalLandedRial || 0);
+        const plannedCost = calculation ? Number(calculation.landedCost || 0) : 0;
+        const variance = actualCost - plannedCost;
+        comparison = moneyTile('بهای ثبت‌شده پرونده منتخب',actualCost,linked.id + ' · ' + (linked.supplier || 'فروشنده نامشخص')) +
+          moneyTile('اختلاف واقعی با برآورد فعلی',variance,calculation ? 'مثبت = هزینه واقعی بیشتر از برآورد' : 'برای مقایسه، ابتدا ورودی‌های برنامه را معتبر کنید') +
+          tile('مانده ارزی پرونده منتخب',outstandingFx, (linked.currency || '') + ' · از ' + faNum(linked.fxTotal || 0) + ' ثبت‌شده');
+      } else {
+        comparison = '<div class="rounded-xl border border-dashed p-3 text-slate-500 text-[11px]">برای مقایسه مبلغ برآوردی با بهای تمام‌شده ثبت‌شده، یک پرونده واردات را از فهرست بالا انتخاب کنید.</div>';
+      }
+      el.innerHTML = tile('پرونده‌های واردات ثبت‌شده',imports.filter(x => x && x.status !== 'cancelled').length,'پرونده‌های غیرلغوشده') +
         tile('تعهدات ارزی ثبت‌شده',fx.length,'تعداد رکورد؛ نه مانده تأییدشده') +
-        tile('نسخه‌های برنامه فعال',activePlans.length,'شامل پیش‌نویس و تأییدشده');
+        tile('نسخه‌های برنامه فعال',activePlans.length,'شامل پیش‌نویس و تأییدشده') + comparison;
     }
     function renderCapitalPlanSavedList() {
       const el = document.getElementById('planner-saved-list');
@@ -7973,6 +7996,7 @@
     function loadCapitalPlan(id) {
       const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
       if (!plan || !plan.input) { showToast('نسخه برنامه پیدا نشد.', 'error'); return; }
+      renderCapitalPlanReconciliation(plan.input, plan.calculation || null);
       Object.keys(plan.input).forEach(key => { const el = document.getElementById(key); if (el) el.value = plan.input[key] == null ? '' : plan.input[key]; });
       addAudit('بارگذاری نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id});
       saveState();
