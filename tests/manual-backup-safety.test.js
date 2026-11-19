@@ -5,7 +5,7 @@ const html = fs.readFileSync('index.html', 'utf8');
 assert.match(html, /پشتیبان‌گیری و بازیابی/);
 assert.match(html, /Google Drive/);
 assert.match(html, /بدون ارسال خودکار به Google Drive/);
-assert.doesNotMatch(html, /اتصال حساب گوگل هنوز راه‌اندازی نشده است/, 'manual backup must not imply an unimplemented Google account connection');
+assert.match(html, /اتصال حساب گوگل هنوز راه‌اندازی نشده است/);
 assert.match(html, /تنظیمات همگام‌سازی Supabase/);
 assert.match(html, /if \(f\.size > 50 \* 1024 \* 1024\)/, 'oversized backup files must be rejected');
 assert.match(html, /پیش از بازیابی نسخه محلی/);

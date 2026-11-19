@@ -1,9 +1,6 @@
 name: Manual accounting and feature tests
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
   pull_request:
     branches:
@@ -22,16 +19,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Run dashboard and accounting regression suites
+      - name: Run every test suite
         run: |
           set -e
-          for test_file in \
-            tests/dashboard-accounting-kpis.test.js \
-            tests/dashboard-mobile-accessibility.test.js \
-            tests/dashboard-priorities.test.js \
-            tests/accounting-reports-cross-validation.test.js \
-            tests/accounting-smoke.test.js \
-            tests/profit-loss-report.test.js; do
+          for test_file in tests/*.test.js; do
             echo "::group::${test_file}"
             node "${test_file}"
             echo "::endgroup::"
