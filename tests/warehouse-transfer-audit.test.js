@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
   getWarehouseMovementAuditView,
+  buildWarehouseTransferReversalPlan,
   escapeAuditText
 } = require('../warehouse-audit-domain.js');
 
@@ -68,6 +69,79 @@ assert.equal(stocktake.verified, false, 'description/date match is never treated
 assert.equal(stocktake.voucherCandidates.length, 1);
 assert.match(stocktake.reason, /شناسه یکتای عملیات ندارد/);
 
+
+const reversalState = freezeDeep({
+  costingMethod: 'AVG',
+  products: [
+    { id: 'SRC', baseProductId: 'ROOT', warehouseId: 'A', stock: 13,
+      kardex: [{ date: '1405/08/28', doc: 'حواله خروج انتقال TR-200-abcd به ب', inQty: 0, outQty: 5, bal: 13 }], batches: [] },
+    { id: 'DST', baseProductId: 'ROOT', warehouseId: 'B', stock: 15,
+      kardex: [{ date: '1405/08/28', doc: 'حواله ورود انتقال TR-200-abcd از الف', inQty: 5, outQty: 0, bal: 15 }], batches: [] }
+  ],
+  warehouses: [{ id: 'A' }, { id: 'B' }],
+  vouchers: []
+});
+const reversalPlan = buildWarehouseTransferReversalPlan(reversalState, 'TR-200-abcd');
+assert.equal(reversalPlan.ok, true);
+assert.equal(reversalPlan.quantity, 5);
+assert.equal(reversalPlan.sourceProductId, 'SRC');
+assert.equal(reversalPlan.destinationProductId, 'DST');
+assert.equal(reversalPlan.fifo, false);
+assert.equal(reversalState.products[0].stock, 13, 'preflight must not mutate source stock');
+
+const laterMovementState = freezeDeep({
+  ...JSON.parse(JSON.stringify(reversalState)),
+  products: [
+    { ...JSON.parse(JSON.stringify(reversalState.products[0])), kardex: [
+      ...JSON.parse(JSON.stringify(reversalState.products[0].kardex)),
+      { date: '1405/08/29', doc: 'فروش بعدی', inQty: 0, outQty: 1, bal: 12 }
+    ], stock: 12 },
+    JSON.parse(JSON.stringify(reversalState.products[1]))
+  ]
+});
+const laterPlan = buildWarehouseTransferReversalPlan(laterMovementState, 'TR-200-abcd');
+assert.equal(laterPlan.ok, false);
+assert.match(laterPlan.reason, /گردش دیگری ثبت شده است/);
+
+const voucherState = freezeDeep({
+  ...JSON.parse(JSON.stringify(reversalState)),
+  vouchers: [{ id: 99, desc: 'سند انتقال TR-200-abcd', lines: [] }]
+});
+const voucherPlan = buildWarehouseTransferReversalPlan(voucherState, 'TR-200-abcd');
+assert.equal(voucherPlan.ok, false);
+assert.match(voucherPlan.reason, /سند حسابداری وابسته/);
+
+const fifoState = freezeDeep({
+  costingMethod: 'FIFO',
+  products: [
+    { id: 'FS', baseProductId: 'FR', warehouseId: 'A', stock: 5,
+      kardex: [{ date: '1405/08/28', doc: 'TR-300-abcd خروج', inQty: 0, outQty: 5, bal: 5 }],
+      batches: [{ id: 'FB-1', quantity: 10, remainingQty: 5 }] },
+    { id: 'FD', baseProductId: 'FR', warehouseId: 'B', stock: 5,
+      kardex: [{ date: '1405/08/28', doc: 'TR-300-abcd ورود', inQty: 5, outQty: 0, bal: 5 }],
+      batches: [{ id: 'FB-1::TR-300-abcd::1', sourceType: 'warehouse_transfer', sourceRef: 'TR-300-abcd',
+        sourceBatchId: 'FB-1', quantity: 5, remainingQty: 5 }] }
+  ],
+  vouchers: []
+});
+const fifoPlan = buildWarehouseTransferReversalPlan(fifoState, 'TR-300-abcd');
+assert.equal(fifoPlan.ok, true);
+assert.equal(fifoPlan.fifo, true);
+assert.equal(fifoPlan.fifoRestores.length, 1);
+assert.equal(fifoPlan.fifoRestores[0].sourceBatchId, 'FB-1');
+
+const consumedFifoState = freezeDeep({
+  ...JSON.parse(JSON.stringify(fifoState)),
+  products: [
+    JSON.parse(JSON.stringify(fifoState.products[0])),
+    { ...JSON.parse(JSON.stringify(fifoState.products[1])),
+      batches: [{ ...JSON.parse(JSON.stringify(fifoState.products[1].batches[0])), remainingQty: 4 }] }
+  ]
+});
+const consumedPlan = buildWarehouseTransferReversalPlan(consumedFifoState, 'TR-300-abcd');
+assert.equal(consumedPlan.ok, false);
+assert.match(consumedPlan.reason, /مصرف یا دست‌کاری شده/);
+
 assert.equal(
   escapeAuditText('<svg onload="alert(1)"> & \'audit\''),
   '&lt;svg onload=&quot;alert(1)&quot;&gt; &amp; &#39;audit&#39;'
@@ -78,5 +152,11 @@ assert.ok(html.includes('<script src="./warehouse-audit-domain.js"></script>'));
 assert.ok(html.includes('function renderWarehouseMovementAuditPanel(product, movement)'));
 assert.ok(html.includes('renderWarehouseMovementAuditPanel(p, k)'));
 assert.ok(html.includes("/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || ''))"), 'audit panel condition must use the transfer ID matcher');
-assert.ok(html.includes('اصلاح یا برگشت مستقیم تا پیاده‌سازی معکوس‌سازی اتمیک'));
+assert.ok(html.includes('function applyWarehouseTransferCorrection('));
+assert.ok(html.includes('warehouseTransferCorrections'));
+assert.ok(html.includes('reversalOf: plan.transferId'));
+assert.ok(html.includes('correctionOf: plan.transferId'));
+assert.ok(html.includes('سند حسابداری حواله قبلی دست‌نخورده می‌ماند.'));
+assert.ok(html.includes('window.confirm(confirmation)'));
+assert.ok(html.includes('if (!saveState())'));
 console.log('PASS: warehouse transfer and stocktake audit projections are read-only, escaped, and conservative');
