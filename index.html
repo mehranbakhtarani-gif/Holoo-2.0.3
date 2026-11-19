@@ -5772,6 +5772,33 @@
       return true;
     }
 
+    function getImportReceiptCorrectionBlockReason(shipment) {
+      if (!shipment) return 'محموله وارداتی پیدا نشد.';
+      if (!shipment.postedToWh) return 'این محموله هنوز به انبار تحویل نشده است؛ اصلاح رسیدی برای آن ثبت نشده.';
+      const items = HolooImportDomain.normalizeItems(shipment);
+      if (!items.length) return 'اقلام رسید قابل بازیابی نیست؛ اصلاح متوقف شد.';
+      const registrationVoucher = (state.vouchers || []).find(voucher => voucher.sourceType === 'import' && String(voucher.sourceId) === String(shipment.id) && (voucher.sourceEvent || 'default') === 'registration');
+      if (!registrationVoucher) return 'سند ثبت بهای تمام‌شده محموله پیدا نشد؛ اصلاح رسید بدون بررسی سند مالی مجاز نیست.';
+      const mismatches = [];
+      items.forEach(item => {
+        const product = (state.products || []).find(p => String(p.id) === String(item.productId));
+        if (!product) { mismatches.push(String(item.productId) + ': کالا پیدا نشد'); return; }
+        const qty = Number(item.quantityKg || 0);
+        const rows = (Array.isArray(product.kardex) ? product.kardex : []).filter(row => String(row.batchRef || '') === String(shipment.id) && String(row.sourceItemId || '') === String(item.id) && String(row.doc || '').includes(String(shipment.id)) && Number(row.inQty || 0) > 0);
+        const batches = (Array.isArray(product.batches) ? product.batches : []).filter(batch => String(batch.sourceType || '') === 'import' && String(batch.sourceRef || '') === String(shipment.id) && String(batch.sourceItemId || '') === String(item.id));
+        const rowQty = rows.reduce((sum, row) => sum + Number(row.inQty || 0), 0);
+        const batchQty = batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+        if (Math.abs(rowQty - qty) > 0.000001 || Math.abs(batchQty - qty) > 0.000001 || rows.length !== 1 || batches.length !== 1) mismatches.push(String(product.name || item.productId) + ': مقدار یا تعداد ردیف کاردکس/بچ با قلم محموله تطبیق ندارد');
+      });
+      if (mismatches.length) return 'ردیابی رسید کامل نیست: ' + mismatches.join('؛ ') + '؛ اصلاح متوقف شد تا سوابق انبار بازبینی شوند.';
+      return 'رسید محموله به موجودی، بچ‌های FIFO، کاردکس و بهای تمام‌شده میانگین متصل است؛ ممکن است بخشی از بچ‌ها در فروش یا انتقال مصرف شده باشند. مسیر معکوس‌سازی اتمیک و بررسی فروش‌های وابسته هنوز وجود ندارد؛ ویرایش یا حذف مستقیم رسید مسدود است. اصلاح امن باید تمام بچ‌های باقی‌مانده و مصرف‌شده، گردش‌های وابسته و اثرات مالی را با هم معکوس کند.';
+    }
+
+    function requestImportReceiptCorrection(importId) {
+      const shipment = (state.imports || []).find(item => String(item.id) === String(importId));
+      showToast('بررسی اصلاح رسید ' + String(importId) + ': ' + getImportReceiptCorrectionBlockReason(shipment), 'error');
+      return false;
+    }
     function updateImportStatus(importId, nextStatus) {
       const shipment = state.imports.find(x => x.id === importId);
       if (!shipment || !Object.prototype.hasOwnProperty.call(IMPORT_STATUS_LABELS, nextStatus)) return;
@@ -5837,6 +5864,7 @@
               <select aria-label="تغییر مرحله محموله" onchange="updateImportStatus('${m.id}', this.value)" class="touch-btn border rounded-lg px-2 bg-slate-50">
                 ${Object.entries(IMPORT_STATUS_LABELS).map(([value,label]) => `<option value="${value}" ${(m.status || 'registered') === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
+              ${m.postedToWh ? '<button type="button" onclick="requestImportReceiptCorrection(\'' + String(m.id).replace(/'/g, '') + '\')" class="touch-btn border border-amber-300 text-amber-800 rounded-lg px-3 py-2 font-bold">بررسی اصلاح رسید انبار</button>' : ''}
             </div>
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
             <div class="rounded-lg border px-2 py-1"><strong>بهای تمام‌شده و هزینه تخصیصی هر قلم</strong>${costRows}</div>
