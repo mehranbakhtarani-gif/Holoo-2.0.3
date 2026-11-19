@@ -11142,6 +11142,50 @@
         unverifiedProducts, relevantVouchers, invalidControlVouchers, details };
     }
 
+    function buildInventoryValueDiscrepancySources() {
+      const invoices = new Map((state.invoices || []).map(invoice => [String(invoice.id), invoice]));
+      const grouped = new Map();
+      (state.vouchers || []).forEach(voucher => {
+        const lines = (Array.isArray(voucher?.lines) ? voucher.lines : []).filter(line => String(line?.code || '').trim() === '1105');
+        if (!lines.length) return;
+        const sourceType = String(voucher.sourceType || 'manual');
+        const sourceId = String(voucher.sourceId || '');
+        const key = sourceType + ':' + sourceId;
+        if (!grouped.has(key)) grouped.set(key, { sourceType, sourceId, voucherIds: [], dates: [], debit: 0, credit: 0, descriptions: [], invoiceId: null, invoiceType: null, productLines: [] });
+        const item = grouped.get(key);
+        item.voucherIds.push(String(voucher.id ?? ''));
+        item.dates.push(String(voucher.date || voucher.operationDate || ''));
+        lines.forEach(line => {
+          const debit = Number(line.debit ?? 0), credit = Number(line.credit ?? 0);
+          if (Number.isFinite(debit) && debit >= 0) item.debit += debit;
+          if (Number.isFinite(credit) && credit >= 0) item.credit += credit;
+          if (line.desc) item.descriptions.push(String(line.desc));
+        });
+        if (sourceType === 'invoice') {
+          const invoice = invoices.get(sourceId);
+          if (invoice) {
+            item.invoiceId = String(invoice.id);
+            item.invoiceType = String(invoice.type || '');
+            item.productLines = (invoice.items || []).map(line => ({
+              productId: String(line.productId ?? ''),
+              productName: String((state.products || []).find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
+              quantity: Number(line.kg || 0), cogs: Number(line.costOfGoodsSold || 0), lot: String(line.lot || '')
+            }));
+          }
+        } else if (sourceType === 'invoice_return') {
+          item.invoiceId = String(voucher.sourceEvent || '');
+          const invoice = invoices.get(item.invoiceId);
+          item.invoiceType = invoice ? String(invoice.type || '') : '';
+          item.returnDescription = 'برگشت جزئی؛ برای ردیابی کالا باید ردیف‌های برگشت و تخصیص سری ساخت بررسی شوند.';
+        }
+      });
+      const labels = { invoice: 'فاکتور خرید/فروش', invoice_return: 'برگشت فاکتور', invoice_cancel: 'ابطال فاکتور', stocktake: 'انبارگردانی', import: 'محموله وارداتی', manual: 'سند دستی یا بدون منشأ' };
+      return [...grouped.values()].map(item => ({
+        ...item, label: labels[item.sourceType] || ('منشأ دیگر: ' + item.sourceType), net: item.debit - item.credit,
+        voucherIds: [...new Set(item.voucherIds)], dates: [...new Set(item.dates)], descriptions: [...new Set(item.descriptions)]
+      })).sort((a,b) => Math.abs(b.net) - Math.abs(a.net));
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -11181,6 +11225,17 @@
         '<div class="overflow-x-auto"><table class="w-full text-[10px] text-right"><thead><tr><th class="p-1">کالا</th><th class="p-1">انبار</th><th class="p-1">موجودی</th><th class="p-1">ارزش ریالی</th><th class="p-1">ارزش واحد</th></tr></thead><tbody>' +
         inventoryValueReconciliation.details.map(x=>'<tr><td class="p-1 border-t">'+escapeLedgerText(x.productName)+'</td><td class="p-1 border-t">'+escapeLedgerText(x.warehouseId || '—')+'</td><td class="p-1 border-t">'+(x.stock === null ? 'نامعتبر' : faNum(x.stock))+'</td><td class="p-1 border-t">'+(x.value === null ? 'نامشخص' : money(x.value))+'</td><td class="p-1 border-t">'+(x.unitValue === null ? '—' : money(x.unitValue))+'</td></tr>').join('') +
         '</tbody></table></div><p class="text-[10px]">گزارش فقط‌خواندنی است. اختلاف به‌صورت کل حساب ۱۱۰۵ محاسبه می‌شود؛ انتساب اختلاف به کالای مشخص بدون شناسه کالا در ردیف‌های دفترکل قابل اتکا نیست.</p></div>';
+      const inventoryValueSources = buildInventoryValueDiscrepancySources();
+      const inventoryValueSourcesPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ردیابی منشأ گردش حساب ۱۱۰۵</strong><p class="text-[10px] text-slate-500">گردش‌های حساب کنترل بر اساس منشأ سند گروه‌بندی شده‌اند؛ این فهرست برای تعیین مسیر بررسی است و به‌تنهایی انتساب قطعی اختلاف به کالا محسوب نمی‌شود.</p>' +
+        (inventoryValueSources.length ? '<div class="space-y-2">' + inventoryValueSources.map(item =>
+          '<div class="border rounded-lg p-2 space-y-1"><div class="flex flex-wrap justify-between gap-2"><b>'+escapeLedgerText(item.label)+'</b><span class="text-[10px]">شناسه منشأ: '+escapeLedgerText(item.sourceId || 'ثبت‌نشده')+'</span></div>' +
+          '<div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]"><span>بدهکار: <b>'+money(item.debit)+'</b></span><span>بستانکار: <b>'+money(item.credit)+'</b></span><span>خالص: <b>'+money(item.net)+'</b></span><span>شماره سند: <b>'+escapeLedgerText(item.voucherIds.join('، '))+'</b></span></div>' +
+          (item.invoiceId ? '<p class="text-[10px]">فاکتور مرتبط: '+escapeLedgerText(item.invoiceId)+' | نوع: '+escapeLedgerText(item.invoiceType || 'نامشخص')+'</p>' : '') +
+          (item.productLines.length ? '<div class="text-[10px]">اقلام فاکتور: '+item.productLines.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، بهای تمام‌شده '+money(line.cogs)+')').join('؛ ')+'</div>' : '') +
+          (item.returnDescription ? '<p class="text-[10px] text-amber-800">'+escapeLedgerText(item.returnDescription)+'</p>' : '') +
+          '<p class="text-[10px] text-slate-500">شرح: '+escapeLedgerText(item.descriptions.slice(0,3).join(' | ') || 'بدون شرح')+'</p></div>'
+        ).join('') + '</div>' : '<p class="text-xs text-slate-500">گردش ثبت‌شده‌ای برای حساب ۱۱۰۵ پیدا نشد.</p>') +
+        '<p class="text-[10px]">برای تطبیق قطعی هر کالا، شناسه کالا و شناسه سری ساخت باید در جزئیات سند و گردش انبار به‌صورت مشترک موجود باشد؛ گزارش از حدس‌زدن انتساب جلوگیری می‌کند.</p></div>';
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
@@ -11197,7 +11252,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuePanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
