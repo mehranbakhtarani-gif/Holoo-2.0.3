@@ -1666,6 +1666,7 @@
 
   <script src="./import-domain.js"></script>
   <script src="./warehouse-audit-domain.js"></script>
+  <script src="./warehouse-assignment-domain.js"></script>
   <script>
     // Shared HTML escaping helper used by HR, assets, approvals and bank reconciliation.
     window.escapeBankReconciliationText = function(value) {
@@ -4380,6 +4381,104 @@
       `).join('');
     }
 
+    function renderWarehouseAssignmentSection() {
+      const items = inspectProductsWithoutValidWarehouse(state.products, state.warehouses);
+      if (!items.length) return '';
+      const warehouseOptions = (state.warehouses || []).map(warehouse =>
+        '<option value="' + escapeKardexText(warehouse.id) + '">' + escapeKardexText(warehouse.name || warehouse.title || warehouse.id) + '</option>'
+      ).join('');
+      const cards = items.map(item => {
+        const product = (state.products || []).find(row => String(row && row.id) === String(item.productId));
+        const productId = escapeKardexText(item.productId);
+        const stock = product && Number.isFinite(Number(product.stock)) ? faNum(Number(product.stock)) : 'نامعتبر';
+        const currentWarehouse = item.warehouseId ? escapeKardexText(item.warehouseId) : 'ثبت‌نشده';
+        return '<article class="rounded-xl border border-slate-200 bg-white p-3 space-y-2" data-warehouse-assignment-card data-product-id="' + productId + '">' +
+          '<div class="flex flex-wrap items-start justify-between gap-2"><div><div class="font-black text-sm">' + escapeKardexText(item.productName) + '</div><div class="text-[10px] text-slate-500">کد کالا: ' + productId + ' | انبار فعلی: ' + currentWarehouse + '</div></div>' +
+          '<span class="rounded-full bg-amber-100 text-amber-900 px-2 py-1 text-[10px] font-bold">' + (item.reason === 'missing-warehouse' ? 'بدون شناسه انبار' : 'شناسه انبار نامعتبر') + '</span></div>' +
+          '<div class="text-[11px] text-slate-600">موجودی ثبت‌شده: ' + stock + ' KG</div>' +
+          '<label class="block text-[10px] font-bold text-slate-700">انبار مقصد' +
+          '<select class="touch-btn mt-1 w-full border rounded-xl bg-white px-3 font-bold" data-warehouse-assignment-target onchange="previewWarehouseAssignment(this)"><option value="">انتخاب انبار مقصد</option>' + warehouseOptions + '</select></label>' +
+          '<div data-warehouse-assignment-preview class="rounded-lg bg-slate-50 p-2 text-[10px] text-slate-600">ابتدا انبار مقصد را انتخاب کنید تا امکان اصلاح و اثر آن بررسی شود.</div>' +
+          '<button type="button" onclick="confirmWarehouseAssignment(this)" disabled class="touch-btn w-full rounded-xl bg-indigo-700 px-3 py-2 font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed">تأیید و ثبت انتساب</button>' +
+          '</article>';
+      }).join('');
+      return '<section class="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">' +
+        '<div><div class="font-black text-sm text-amber-950">کالاهای فاقد انبار معتبر — اصلاح کنترل‌شده</div>' +
+        '<p class="mt-1 text-[10px] text-amber-900">برای جلوگیری از تغییر تاریخچه، انتساب خودکار فقط برای کالای بدون موجودی، بدون کاردکس، بدون سری ساخت و بدون ارجاع در اسناد مجاز است. موارد فعال برای بررسی دستی مسدود می‌مانند.</p></div>' +
+        '<div class="space-y-2">' + cards + '</div></section>';
+    }
+
+    function previewWarehouseAssignment(select) {
+      const card = select && select.closest('[data-warehouse-assignment-card]');
+      if (!card) return;
+      const productId = String(card.dataset.productId || '');
+      const plan = HolooWarehouseAssignment.buildWarehouseAssignmentPlan(state, productId, select.value);
+      const preview = card.querySelector('[data-warehouse-assignment-preview]');
+      const button = card.querySelector('button[onclick="confirmWarehouseAssignment(this)"]');
+      if (!preview || !button) return;
+      button.disabled = !plan.ok;
+      if (plan.ok) {
+        preview.innerHTML = '<div class="font-bold text-emerald-800">پیش‌نمایش مجاز</div><div>انبار مقصد: ' + escapeKardexText(plan.targetWarehouseName) + '</div><div>تغییر فقط در شناسه انبار کالا انجام می‌شود؛ موجودی صفر می‌ماند و هیچ گردش انبار یا سند حسابداری ایجاد نمی‌شود.</div><div>ثبت سابقه حسابرسی با انبار قبلی و مقصد انجام می‌شود.</div>';
+        preview.className = 'rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-[10px] text-emerald-900 space-y-1';
+      } else {
+        preview.innerHTML = '<div class="font-bold text-amber-900">اصلاح از این مسیر مجاز نیست</div><ul class="list-disc pr-4 space-y-1">' +
+          plan.reasons.map(reason => '<li>' + escapeKardexText(reason) + '</li>').join('') + '</ul>';
+        preview.className = 'rounded-lg border border-amber-200 bg-amber-50 p-2 text-[10px] text-amber-900';
+      }
+    }
+
+    function confirmWarehouseAssignment(button) {
+      const card = button && button.closest('[data-warehouse-assignment-card]');
+      const select = card && card.querySelector('[data-warehouse-assignment-target]');
+      if (!card || !select) return;
+      const productId = String(card.dataset.productId || '');
+      const plan = HolooWarehouseAssignment.buildWarehouseAssignmentPlan(state, productId, select.value);
+      if (!plan.ok) {
+        previewWarehouseAssignment(select);
+        showToast('این اصلاح با وضعیت فعلی کالا ایمن نیست؛ جزئیات را بررسی کنید.', 'error');
+        return;
+      }
+      const accepted = confirm(
+        'انتساب کالا به انبار مقصد ثبت شود؟\n\nکالا: ' + plan.productName +
+        '\nانبار مقصد: ' + plan.targetWarehouseName +
+        '\nموجودی: صفر\nاثر حسابداری: ندارد\nگردش انبار جدید: ایجاد نمی‌شود\n\nسابقه حسابرسی ثبت خواهد شد.'
+      );
+      if (!accepted) return;
+      const rechecked = HolooWarehouseAssignment.buildWarehouseAssignmentPlan(state, productId, select.value);
+      if (!rechecked.ok) {
+        previewWarehouseAssignment(select);
+        showToast('وضعیت کالا تغییر کرده است؛ پیش‌نمایش را دوباره بررسی کنید.', 'error');
+        return;
+      }
+      const product = (state.products || []).find(row => String(row && row.id) === productId);
+      if (!product || !Array.isArray(state.auditLogs)) {
+        showToast('ساختار کالا یا دفتر حسابرسی معتبر نیست؛ اصلاح انجام نشد.', 'error');
+        return;
+      }
+      const hadWarehouseId = Object.prototype.hasOwnProperty.call(product, 'warehouseId');
+      const previousWarehouseId = product.warehouseId;
+      const previousAuditLogs = state.auditLogs.slice();
+      const operationId = createStableId('warehouse-assignment');
+      product.warehouseId = rechecked.targetWarehouseId;
+      addAudit('انتساب کنترل‌شده کالای «' + rechecked.productName + '» به انبار «' + rechecked.targetWarehouseName + '»', {
+        sourceType: 'warehouse_assignment',
+        sourceId: productId,
+        operationId,
+        previous: { warehouseId: previousWarehouseId == null ? null : String(previousWarehouseId), stock: Number(product.stock || 0) },
+        details: { productId, productName: rechecked.productName, targetWarehouseId: rechecked.targetWarehouseId, targetWarehouseName: rechecked.targetWarehouseName, inventoryMovement: false, accountingImpact: 'none' }
+      });
+      if (!saveState()) {
+        if (hadWarehouseId) product.warehouseId = previousWarehouseId;
+        else delete product.warehouseId;
+        state.auditLogs = previousAuditLogs;
+        showToast('ذخیره ناموفق بود؛ انتساب کالا و سابقه حسابرسی به وضعیت قبلی بازگردانده شد.', 'error');
+        return;
+      }
+      showToast('انتساب انبار با سابقه حسابرسی ثبت شد.');
+      renderAll();
+      openInventoryReconciliation();
+    }
+
     let latestInventoryReconciliation = null;
     function openInventoryReconciliation() {
       latestInventoryReconciliation = inspectInventoryReconciliation(state.products, state.warehouses);
@@ -4418,7 +4517,8 @@
       const aggregateSection = (report.warehouseSummaries || []).length
         ? '<section class="rounded-xl border bg-white p-3 space-y-2"><div class="font-black text-sm">جمع موجودی کالاهای پایه در سطح شرکت</div><p class="text-[10px] text-slate-500">هر کالای پایه فقط یک‌بار در هر انبار شمرده می‌شود؛ در صورت تکرار رکورد یا انبار نامعتبر، جمع آن کالا قطعی نمایش داده نمی‌شود.</p><div class="overflow-x-auto"><table class="w-full text-right text-xs"><thead><tr><th class="p-2">کالای پایه</th><th class="p-2">تفکیک انبار</th><th class="p-2">جمع شرکت</th></tr></thead><tbody>' + aggregateRows + '</tbody></table></div><div class="font-bold text-sm">جمع کل شرکت: ' + (report.companyTotalStock === null ? 'نیازمند رفع مغایرت' : faNum(report.companyTotalStock) + ' KG') + '</div></section>'
         : '';
-      list.innerHTML = aggregateSection + (!report.issues.length && !(report.unverified || []).length ? '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800"><div class="font-black text-sm">مغایرتی پیدا نشد</div><p class="mt-1">در مواردی که این گزارش بررسی کرده، موردی برای پیگیری ثبت نشده است.</p></div>' : '') + (report.issues.length ? `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 font-bold text-amber-900">مغایرت‌ها — ${faNum(report.issueCount)} مورد نیازمند بررسی</div>` + issueCards : '') + ((report.unverified || []).length ? `<div class="rounded-xl border border-orange-200 bg-orange-50 p-3 font-bold text-orange-900">اطلاعات ناکافی — ${faNum(report.unverifiedCount || report.unverified.length)} مورد که نتیجه قطعی درباره آن‌ها ممکن نیست</div>` + unverifiedCards : '');
+      const assignmentSection = renderWarehouseAssignmentSection();
+      list.innerHTML = assignmentSection + aggregateSection + (!report.issues.length && !(report.unverified || []).length ? '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800"><div class="font-black text-sm">مغایرتی پیدا نشد</div><p class="mt-1">در مواردی که این گزارش بررسی کرده، موردی برای پیگیری ثبت نشده است.</p></div>' : '') + (report.issues.length ? `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 font-bold text-amber-900">مغایرت‌ها — ${faNum(report.issueCount)} مورد نیازمند بررسی</div>` + issueCards : '') + ((report.unverified || []).length ? `<div class="rounded-xl border border-orange-200 bg-orange-50 p-3 font-bold text-orange-900">اطلاعات ناکافی — ${faNum(report.unverifiedCount || report.unverified.length)} مورد که نتیجه قطعی درباره آن‌ها ممکن نیست</div>` + unverifiedCards : '');
       openModal('modal-inventory-reconciliation');
     }
 
