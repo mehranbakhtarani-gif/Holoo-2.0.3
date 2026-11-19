@@ -170,7 +170,7 @@ begin
 
       if v_entity_type is null or v_entity_id is null or v_change_type is null
          or v_entity_type not in (
-        'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
+        'capitalPlans', 'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
         'fxCommitments', 'accountCatalog', 'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
         'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
       ) then
