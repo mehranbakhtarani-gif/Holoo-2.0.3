@@ -3209,25 +3209,35 @@
     }
 
     function buildDashboardAccountBalances() {
+      const fiscalYear = String(state.fiscalYear || '').trim();
+      const fiscalYearNumber = /^\d{4}$/.test(fiscalYear) ? Number(fiscalYear) : NaN;
+      const periodStart = Number.isFinite(fiscalYearNumber) ? jalaliDateOrdinal(fiscalYear + '/01/01') : null;
+      const nextYearStart = Number.isFinite(fiscalYearNumber) ? jalaliDateOrdinal(String(fiscalYearNumber + 1) + '/01/01') : null;
+      const periodEnd = nextYearStart === null ? null : nextYearStart - 1;
+      const validPeriod = periodStart !== null && periodEnd !== null && periodEnd >= periodStart;
       const map = {};
       CHART_ACCOUNTS.forEach(account => {
-        map[account.code] = { ...account, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0 };
+        map[account.code] = { ...account, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0 };
       });
-      const quality = { invalidDateVouchers: 0, invalidAmountVouchers: 0, invalidStructureVouchers: 0, unbalancedVouchers: 0 };
+      const quality = { invalidDateVouchers: 0, invalidAmountVouchers: 0, invalidStructureVouchers: 0, unbalancedVouchers: 0, invalidFiscalYear: !validPeriod };
       (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(voucher => {
         const rawDate = voucher?.date || voucher?.operationDate;
-        if (!rawDate || jalaliDateOrdinal(rawDate) === null) {
+        const dateOrdinal = rawDate ? jalaliDateOrdinal(rawDate) : null;
+        if (dateOrdinal === null) {
           quality.invalidDateVouchers++;
           return;
         }
+        if (!validPeriod || dateOrdinal > periodEnd) return;
         const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
-        if (lines.length < 2) quality.invalidStructureVouchers++;
-        if (!lines.length) return;
+        if (lines.length < 2) {
+          quality.invalidStructureVouchers++;
+          return;
+        }
         let debitTotal = 0, creditTotal = 0;
         const normalizedLines = [];
         for (const line of lines) {
           const code = String(line?.code || '').trim();
-          const debit = Number(line?.debit || 0), credit = Number(line?.credit || 0);
+          const debit = Number(line?.debit ?? 0), credit = Number(line?.credit ?? 0);
           if (!code || !Number.isFinite(debit) || !Number.isFinite(credit) ||
               debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
             quality.invalidAmountVouchers++;
@@ -3237,13 +3247,29 @@
           creditTotal += credit;
           normalizedLines.push({ code, debit, credit, name: line.accountName || line.name || code });
         }
-        if (Math.abs(debitTotal - creditTotal) > 0.000001) quality.unbalancedVouchers++;
+        if (!Number.isFinite(debitTotal) || !Number.isFinite(creditTotal) || debitTotal <= 0 || creditTotal <= 0) {
+          quality.invalidStructureVouchers++;
+          return;
+        }
+        if (Math.abs(debitTotal - creditTotal) > 0.000001) {
+          quality.unbalancedVouchers++;
+          return;
+        }
+        const inSelectedYear = dateOrdinal >= periodStart && dateOrdinal <= periodEnd;
         normalizedLines.forEach(line => {
           if (!map[line.code]) map[line.code] = {
-            code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0
+            code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0
           };
-          map[line.code].debTurn += line.debit;
-          map[line.code].credTurn += line.credit;
+          const account = map[line.code];
+          const accountClass = String(line.code).charAt(0);
+          // Balance-sheet accounts carry forward; income/expense accounts reset each fiscal year.
+          if (['4', '5', '6'].includes(accountClass) && !inSelectedYear) return;
+          account.debTurn += line.debit;
+          account.credTurn += line.credit;
+          if (inSelectedYear) {
+            account.periodDebTurn += line.debit;
+            account.periodCredTurn += line.credit;
+          }
         });
       });
       Object.values(map).forEach(account => {
@@ -3251,7 +3277,7 @@
         if (difference > 0) account.debBal = difference;
         else if (difference < 0) account.credBal = Math.abs(difference);
       });
-      return { balances: map, quality };
+      return { balances: map, quality, fiscalYear, periodStart, periodEnd };
     }
 
     // Backward-compatible single-ledger balance helper; never aggregates control accounts.
@@ -3314,63 +3340,76 @@
       const balanceAudit = buildDashboardAccountBalances();
       const bal = balanceAudit.balances;
       const liquidity = (bal['1101']?.debBal || 0) + (bal['1102']?.debBal || 0);
-      const sales = (bal['4101']?.credBal || 0) - (bal['4102']?.debBal || 0) - (bal['4103']?.debBal || 0);
-      const purchases = state.invoices.filter(i => i.type === 'purchase').reduce((s, i) => s + i.grandTotal, 0) + state.imports.reduce((s, m) => s + m.totalLandedRial, 0);
-      const invVal = bal['1105']?.debBal || 0;
+      const sales = (bal['4101']?.periodCredTurn || 0) - (bal['4102']?.periodDebTurn || 0) - (bal['4103']?.periodDebTurn || 0);
+      // 1105 debit turnover is the accounting source for purchases/imported inventory.
+      // Import landed cost is already posted to 1105, so adding shipment totals again double-counts it.
+      const purchases = bal['1105']?.periodDebTurn || 0;
+      const inventoryValues = (Array.isArray(state.products) ? state.products : []).map(getInventoryBookValue);
+      const inventoryValueVerified = inventoryValues.every(value => value !== null && Number.isFinite(value));
+      const invVal = inventoryValueVerified ? inventoryValues.reduce((sum, value) => sum + value, 0) : null;
       const receivables = (bal['1103']?.debBal || 0) + (bal['1104']?.debBal || 0);
-      const payables = (bal['2101']?.credBal || 0) + (bal['2102']?.credBal || 0) + (bal['2105']?.credBal || 0);
-      const netProfit = sales - ((bal['5101']?.debBal || 0) + (bal['6101']?.debBal || 0) + (bal['6102']?.debBal || 0) + (bal['6103']?.debBal || 0));
+      const payables = Object.entries(bal).reduce((sum, [code, account]) =>
+        code.startsWith('21') ? sum + (account.credBal || 0) : sum, 0);
+      const fxGain = (bal['4104']?.periodCredTurn || 0) - (bal['4104']?.periodDebTurn || 0);
+      const costOfSales = bal['5101']?.periodDebTurn || 0;
+      const operatingExpenses = ['6101', '6102', '6103', '6104'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0), 0);
+      const netProfit = sales + fxGain - costOfSales - operatingExpenses;
+      const inventoryValueText = invVal === null ? 'نیازمند تطبیق موجودی' : money(invVal);
+      const profitColor = netProfit < 0 ? 'text-rose-200' : 'text-emerald-100';
+      const fiscalYearLabel = balanceAudit.fiscalYear || 'نامعتبر';
 
       document.getElementById('dash-kpis').innerHTML = `
         <div class="bg-slate-900 text-white rounded-2xl p-3.5 border-r-4 border-r-emerald-400">
-          <span class="text-[11px] text-teal-200 block">وضعیت نقدینگی (بانک و صندوق)</span>
+          <span class="text-[11px] text-teal-200 block">وضعیت نقدینگی (بانک و صندوق) تا پایان سال مالی</span>
           <strong class="text-sm lg:text-base font-black tabular-nums mt-1 block">${money(liquidity)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-holoo-600">
-          <span class="text-[11px] text-slate-500 block">فروش خالص دوره</span>
+          <span class="text-[11px] text-slate-500 block">فروش خالص سال مالی ${faNum(fiscalYearLabel)}</span>
           <strong class="text-sm lg:text-base font-black text-holoo-900 tabular-nums mt-1 block">${money(sales)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-sky-600">
-          <span class="text-[11px] text-slate-500 block">خرید و محموله‌های وارداتی</span>
+          <span class="text-[11px] text-slate-500 block">خرید و ورود موجودی ثبت‌شده در سال مالی</span>
           <strong class="text-sm lg:text-base font-black text-sky-900 tabular-nums mt-1 block">${money(purchases)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-amber-500">
-          <span class="text-[11px] text-slate-500 block">ارزش موجودی انبارهای نساجی</span>
-          <strong class="text-sm lg:text-base font-black text-amber-900 tabular-nums mt-1 block">${money(invVal)}</strong>
+          <span class="text-[11px] text-slate-500 block">ارزش فعلی موجودی انبارها (بر اساس روش قیمت‌گذاری)</span>
+          <strong class="text-sm lg:text-base font-black text-amber-900 tabular-nums mt-1 block">${inventoryValueText}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-emerald-600">
-          <span class="text-[11px] text-slate-500 block">مطالبات و چک‌های دریافتی</span>
+          <span class="text-[11px] text-slate-500 block">مطالبات و چک‌های دریافتنی تا پایان سال مالی</span>
           <strong class="text-sm font-black text-emerald-700 tabular-nums mt-1 block">${money(receivables)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-rose-600">
-          <span class="text-[11px] text-slate-500 block">بدهی، چک پرداختی و تعهد ارزی</span>
+          <span class="text-[11px] text-slate-500 block">کل بدهی‌ها و تعهدات تا پایان سال مالی</span>
           <strong class="text-sm font-black text-rose-700 tabular-nums mt-1 block">${money(payables)}</strong>
         </div>
         <div class="md:col-span-2 bg-gradient-to-l from-emerald-800 to-holoo-900 text-white rounded-2xl p-3.5 flex items-center justify-between">
           <div>
-            <span class="text-[11px] text-emerald-200 block">سود (زیان) خالص دوره جاری</span>
-            <span class="text-[10px] text-emerald-100/90 block mt-0.5">گزارش بر پایه اسناد حسابداری</span>
-            <strong class="text-base lg:text-lg font-black tabular-nums mt-1 block">${money(netProfit)}</strong>
+            <span class="text-[11px] text-emerald-200 block">سود (زیان) خالص سال مالی ${faNum(fiscalYearLabel)}</span>
+            <span class="text-[10px] text-emerald-100/90 block mt-0.5">فروش خالص + سود تسعیر − بهای تمام‌شده − هزینه‌ها؛ فقط اسناد معتبر و متوازن</span>
+            <strong class="text-base lg:text-lg font-black tabular-nums mt-1 block ${profitColor}">${money(netProfit)}</strong>
           </div>
         </div>
       `;
 
       const alerts = [];
       const balanceQuality = balanceAudit.quality;
-      if (balanceQuality.invalidDateVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidDateVouchers) + ' سند با تاریخ نامعتبر از محاسبه شاخص‌های داشبورد کنار گذاشته شد.</div>');
-      if (balanceQuality.invalidAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidAmountVouchers) + ' سند دارای ردیف حساب/مبلغ نامعتبر از محاسبه شاخص‌های داشبورد کنار گذاشته شد.</div>');
-      if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند با ساختار ناقص در محاسبه شاخص‌ها لحاظ شده است.</div>');
-      if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن در محاسبه شاخص‌ها لحاظ شده است؛ اختلاف پنهان نشده است.</div>');
-      state.checks.filter(c => c.status === 'overdue' || c.status === 'in_progress').forEach(c => {
+      if (balanceQuality.invalidFiscalYear) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ سال مالی انتخاب‌شده معتبر نیست؛ شاخص‌های حسابداری تا اصلاح سال مالی محاسبه نمی‌شوند.</div>');
+      if (balanceQuality.invalidDateVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidDateVouchers) + ' سند با تاریخ نامعتبر از محاسبه شاخص‌های حسابداری کنار گذاشته شد.</div>');
+      if (balanceQuality.invalidAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidAmountVouchers) + ' سند دارای ردیف حساب/مبلغ نامعتبر از محاسبه شاخص‌ها کنار گذاشته شد.</div>');
+      if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند ناقص یا بدون جمع بدهکار و بستانکار معتبر از محاسبه شاخص‌ها کنار گذاشته شد.</div>');
+      if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن از محاسبه تمام شاخص‌های حسابداری کنار گذاشته شد.</div>');
+      if (!inventoryValueVerified) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ارزش کل موجودی نمایش داده نشد؛ حداقل یک کالا دارای مغایرت سری ساخت یا بهای تمام‌شده تأییدنشده است. گزارش تطبیق موجودی را اجرا کنید.</div>');
+      (Array.isArray(state.checks) ? state.checks : []).filter(c => c.status === 'overdue' || c.status === 'in_progress').forEach(c => {
         alerts.push(`<div class="p-2.5 rounded-xl ${c.status === 'overdue' ? 'bg-rose-50 border-rose-300 text-rose-950' : 'bg-amber-50 border-amber-200 text-amber-950'} border flex justify-between items-center">
-          <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(c.sayad.slice(-6))} (${faNum(c.dueDate)})</span>
+          <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(String(c.sayad || '').slice(-6))} (${faNum(c.dueDate)})</span>
           <strong class="tabular-nums">${money(c.amount)}</strong>
         </div>`);
       });
-      state.products.forEach(p => {
+      (Array.isArray(state.products) ? state.products : []).forEach(p => {
         const stagnantDays = getProductDaysSinceLastMovement(p);
         if (stagnantDays !== null && stagnantDays >= 60) {
-          alerts.push(`<div class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-950 flex justify-between"><span>🐢 کالای راکد (${faNum(stagnantDays)} روز بدون گردش): ${p.name}</span><strong class="tabular-nums">${faNum(p.stock)} KG</strong></div>`);
+          alerts.push(`<div class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-950 flex justify-between"><span>🐢 کالای راکد (${faNum(stagnantDays)} روز بدون گردش): ${escapeKardexText(p.name || '')}</span><strong class="tabular-nums">${faNum(p.stock)} KG</strong></div>`);
         }
       });
       document.getElementById('dash-alerts').innerHTML = alerts.length ? alerts.join('') : '<p class="text-emerald-700 font-bold">هیچ هشدار بحرانی وجود ندارد ✔</p>';
@@ -3378,14 +3417,17 @@
       const ctx = document.getElementById('dashChart');
       if (ctx && typeof Chart !== 'undefined') {
         if (dashChartInst) dashChartInst.destroy();
+        const chartValues = [liquidity, sales, purchases, invVal, netProfit].map(value =>
+          value === null ? null : (state.currency === 'IRT' ? Math.round(value / 10) : value)
+        );
         dashChartInst = new Chart(ctx, {
           type: 'bar',
           data: {
-            labels: ['نقدینگی', 'فروش خالص', 'خرید و واردات', 'ارزش انبار', 'سود خالص'],
+            labels: ['نقدینگی', 'فروش خالص سال مالی', 'خرید/ورود موجودی', 'ارزش فعلی انبار', 'سود یا زیان خالص'],
             datasets: [{
               label: state.currency === 'IRR' ? 'مبلغ (ریال)' : 'مبلغ (تومان)',
-              data: [liquidity, sales, purchases, invVal, Math.max(0, netProfit)].map(v => state.currency === 'IRT' ? Math.round(v / 10) : v),
-              backgroundColor: ['#0f172a', '#0f766e', '#0369a1', '#d97706', '#059669'],
+              data: chartValues,
+              backgroundColor: ['#0f172a', '#0f766e', '#0369a1', '#d97706', netProfit < 0 ? '#e11d48' : '#059669'],
               borderRadius: 8
             }]
           },
