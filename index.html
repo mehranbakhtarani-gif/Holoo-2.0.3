@@ -4865,7 +4865,35 @@
       showToast(`فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
     }
 
-        function renderInvoicesModule() {
+        function canCorrectInvoice(inv) {
+      if (!inv || inv.status !== 'active' || inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
+      if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
+      if ((inv.items || []).some(item => Number(item.returnedKg || 0) > 0)) return false;
+      const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => tx.kind !== 'party_credit' && (((tx.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0)) || Number(tx.allocInvId) === Number(inv.id)));
+      const hasActiveChequeAllocation = (state.checks || []).some(check => !check.allocationsReleasedAt && !['bounced','voided'].includes(check.status) && (check.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0));
+      return !hasTreasuryAllocation && !hasActiveChequeAllocation;
+    }
+
+    function openInvoiceCorrection(invId) {
+      const inv = (state.invoices || []).find(item => Number(item.id) === Number(invId));
+      if (!canCorrectInvoice(inv)) { showToast('اصلاح مستقیم این فاکتور مجاز نیست؛ تسویه، برگشت یا وابستگی فعال دارد. ابتدا وابستگی‌ها باید تعیین‌تکلیف شوند.', 'error'); return; }
+      openInvoiceForm(inv.type);
+      document.getElementById('inv-party').value = String(inv.partyId);
+      document.getElementById('inv-warehouse').value = String(inv.warehouseId);
+      document.getElementById('inv-pay-method').value = 'credit';
+      renderInvoiceSettlementAccounts();
+      document.getElementById('inv-due-date').value = inv.dueDate || getTodayJalaliDate();
+      document.getElementById('inv-salesperson').value = inv.salesperson || '';
+      document.getElementById('inv-commission-rate').value = String(Number(inv.commRate || 0));
+      document.getElementById('inv-vat-rate').value = String(Number(inv.vatRate || 0));
+      invDraft = { type: inv.type, correctionOfInvoiceId: Number(inv.id), lines: (inv.items || []).map(item => JSON.parse(JSON.stringify(item))) };
+      const banner = document.getElementById('invoice-correction-banner');
+      if (banner) { banner.classList.remove('hidden'); banner.textContent = 'در حال اصلاح فاکتور #' + faNum(inv.id) + '؛ با ثبت نسخه جدید، سند معکوس صادر و فاکتور قبلی به‌صورت تاریخی حفظ می‌شود.'; }
+      checkPartyCredit(); renderInvDraftLines();
+      document.getElementById('invoice-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showToast('پیش‌نویس اصلاح آماده است؛ تا زمان ثبت نهایی هیچ سندی تغییر نمی‌کند.', 'info');
+    }
+    function renderInvoicesModule() {
       document.getElementById('invoices-list-container').innerHTML = state.invoices.map(inv => `
         <div class="bg-white rounded-2xl p-4 border ${inv.status === 'cancelled' ? 'border-rose-300 opacity-65' : 'border-slate-200'} space-y-2 text-xs">
           <div class="flex flex-wrap justify-between items-center gap-2">
@@ -5080,9 +5108,9 @@
       showToast('برگشت جزئی ردیف‌ها ثبت، انبار اصلاح و سند حسابداری صادر شد ✔');
     }
 
-    function cancelInvoice(invId) {
+    function cancelInvoice(invId, options = {}) {
       const inv = state.invoices.find(i => i.id === invId);
-      if (!inv || inv.status === 'cancelled') return;
+      if (!inv || inv.status === 'cancelled') return false;
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
         if (tx.kind === 'party_credit') return false;
         if ((tx.allocations || []).some(allocation =>
@@ -5096,7 +5124,7 @@
       });
       if (Number(inv.paidAmount || 0) > 0 || hasTreasuryAllocation || hasActiveChequeAllocation) {
         showToast('این فاکتور سابقه دریافت، پرداخت یا تخصیص چک دارد؛ ابتدا تسویه مرتبط را تعیین‌تکلیف کنید.', 'error');
-        return;
+        return false;
       }
 
       const getInvoiceLineNetTotal = line => {
@@ -5113,7 +5141,7 @@
           : Math.round(invoiceNetSubtotal * Number(inv.vatRate || 0) / 100));
       if (!Number.isFinite(invoiceNetSubtotal) || invoiceNetSubtotal < 0 ||
           !Number.isFinite(invoiceVatAmount) || invoiceVatAmount < 0) {
-        showToast('مبلغ خالص یا مالیات فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        showToast('مبلغ خالص یا مالیات فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
       const invoiceVatRatio = invoiceNetSubtotal > 0 ? invoiceVatAmount / invoiceNetSubtotal : 0;
       const cancelPlan = [];
@@ -5127,14 +5155,14 @@
         if (!Number.isFinite(lineQty) || lineQty < 0 || !Number.isFinite(returnedQty) ||
             returnedQty < 0 || returnedQty > lineQty + 0.000001 ||
             !Number.isFinite(lineNetTotal) || lineNetTotal < 0) {
-          showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+          showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
         }
         const returnedBase = lineQty > 0 ? Math.round(lineNetTotal * returnedQty / lineQty) : 0;
         const remainingBase = Math.max(0, lineNetTotal - returnedBase);
         returnedVatAmount += Math.round(returnedBase * invoiceVatRatio);
         if (remainingQty > 0) {
           const product = state.products.find(entry => entry.id === item.productId);
-          if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return; }
+          if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return false; }
           cancelPlan.push({ item, product, quantity: remainingQty });
         }
         cancelBaseAmount += remainingBase;
@@ -5155,13 +5183,13 @@
         cancelAmount = cancelBaseAmount;
       }
       if (!Number.isFinite(cancelAmount) || !Number.isFinite(cancelBaseAmount) || !Number.isFinite(cancelVatAmount)) {
-        showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
 
       const cancelCogs = inv.type === 'sale' ? cancelPlan.reduce((sum, entry) =>
         sum + getReturnCostOfGoods(entry.item, entry.quantity, entry.product.buyPrice || 0), 0) : 0;
       if (!Number.isFinite(cancelCogs) || cancelCogs < 0) {
-        showToast('بهای تمام‌شده مانده فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        showToast('بهای تمام‌شده مانده فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
 
       // Validate every FIFO restoration/consumption on cloned products before posting or mutating state.
@@ -5182,7 +5210,7 @@
         }
       } catch (error) {
         showToast('کنترل موجودی یا بچ‌های FIFO برای ابطال ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
-        return;
+        return false;
       }
 
       const cancellationLines = inv.type === 'sale'
@@ -5219,7 +5247,7 @@
             { type: 'invoice_cancel', id: invId, event: 'cancel', deferSave: true });
         } catch (error) {
           showToast('صدور سند ابطال ناموفق بود؛ فاکتور و موجودی تغییر نکردند. ' + (error?.message || ''), 'error');
-          return;
+          return false;
         }
       }
 
@@ -5244,7 +5272,9 @@
       inv.status = 'cancelled';
       inv.cancelledCostOfGoodsSold = cancelCogs;
       inv.cancellationAmounts = { baseAmount: cancelBaseAmount, vatAmount: cancelVatAmount, totalAmount: cancelAmount };
-      saveState(); renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info');
+      if (!options.deferSave) saveState();
+      if (!options.silent) { renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info'); }
+      return true;
     }
 
         function printOfficialInvoice(invId) {
