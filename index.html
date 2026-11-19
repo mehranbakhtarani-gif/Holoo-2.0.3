@@ -2821,7 +2821,7 @@
       saveState(); renderAll();
       showToast(`واحد نمایش مبالغ به «${state.currency === 'IRR' ? 'ریال' : 'تومان'}» تغییر کرد.`);
     }
-    function changeFiscalYear(yr) { const normalized = normalizeAccountingDate(yr); if (!/^14\\d{2}$/.test(normalized)) { showToast('سال مالی باید یک سال شمسی معتبر چهاررقمی باشد.', 'error'); return; } const previous = String(state.fiscalYear || ''); state.fiscalYear = normalized; addAudit('تغییر سال مالی به ' + normalized, { mode: 'manual', previous: { fiscalYear: previous }, details: { fiscalYear: normalized, actor: state.activeRole || 'mehran' } }); if (!saveState()) { state.fiscalYear = previous; showToast('ذخیره تغییر سال مالی ناموفق بود.', 'error'); return; } renderAll(); }
+    function changeFiscalYear(yr) { const normalized = normalizeAccountingDate(yr); if (!/^14\d{2}$/.test(normalized)) { showToast('سال مالی باید یک سال شمسی معتبر چهاررقمی باشد.', 'error'); return; } const previous = String(state.fiscalYear || ''); state.fiscalYear = normalized; addAudit('تغییر سال مالی به ' + normalized, { mode: 'manual', previous: { fiscalYear: previous }, details: { fiscalYear: normalized, actor: state.activeRole || 'mehran' } }); if (!saveState()) { state.fiscalYear = previous; showToast('ذخیره تغییر سال مالی ناموفق بود.', 'error'); return; } renderAll(); }
     function changeUserRole(r) {
       const assignedActor = localStorage.getItem(DEVICE_ACTOR_LOCK_KEY);
       if (isDeviceActorLocked()) {
@@ -10724,7 +10724,7 @@
 
     function buildFiscalYearClosePreview(year) {
       const fiscalYear = normalizeAccountingDate(year);
-      if (!/^14\\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
+      if (!/^14\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
       const from = fiscalYear + '/01/01';
       const to = getFiscalYearEndDate(fiscalYear);
       if (jalaliDateOrdinal(from) === null || jalaliDateOrdinal(to) === null) throw new Error('تقویم سال مالی انتخاب‌شده معتبر نیست.');
@@ -10835,7 +10835,7 @@
         }
         const validation = inspectTrialBalanceVoucher(voucher);
         if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) throw new Error('سند اختتامیه صادرشده از کنترل توازن عبور نکرد.');
-        if ((voucher.lines || []).some(line => !/^[456]\\d*$/.test(String(line.code || '')) && String(line.code || '') !== '3102')) {
+        if ((voucher.lines || []).some(line => !/^[456]\d*$/.test(String(line.code || '')) && String(line.code || '') !== '3102')) {
           throw new Error('سند اختتامیه شامل حسابی خارج از حساب‌های نتیجه‌دار و سود انباشته است.');
         }
         voucher.locked = true;
