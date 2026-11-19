@@ -3392,7 +3392,7 @@
     }
 
     function getAccountingPeriodBounds(type, yearValue, periodValue) {
-      const year = Number(yearValue), period = Number(periodValue);
+      const year = Number(normalizeAccountingDate(yearValue)), period = Number(normalizeAccountingDate(periodValue));
       if (!Number.isInteger(year) || year < 1300 || year > 1600) throw new Error('سال شمسی معتبر نیست.');
       let startMonth, endMonth;
       if (type === 'month') {
@@ -3444,8 +3444,8 @@
     function lockAccountingPeriod() {
       if (state.activeRole !== 'mehran') { showToast('فقط کاربر مهران مجاز به بستن یا بازکردن دوره مالی است.', 'error'); return; }
       const type = document.getElementById('period-lock-type')?.value || 'month';
-      const year = String(document.getElementById('period-lock-year')?.value || '').trim();
-      const value = String(document.getElementById('period-lock-value')?.value || '').trim();
+      const year = normalizeAccountingDate(document.getElementById('period-lock-year')?.value || '');
+      const value = normalizeAccountingDate(document.getElementById('period-lock-value')?.value || '');
       let bounds;
       try { bounds = getAccountingPeriodBounds(type, year, value); }
       catch (error) { showToast(error.message, 'error'); return; }
