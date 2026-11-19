@@ -749,6 +749,10 @@
                 </select>
               </div>
               <div>
+                <label class="block font-bold mb-1">تاریخ سند / فاکتور (شمسی)</label>
+                <input type="text" id="inv-date" value="1405/08/29" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50 tabular-nums" placeholder="1405/08/29" />
+              </div>
+              <div>
                 <label class="block font-bold mb-1">تاریخ سررسید تسویه</label>
                 <input type="text" id="inv-due-date" value="1405/09/30" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50 tabular-nums" />
               </div>
@@ -921,6 +925,7 @@
               <button onclick="setAccTab('trial')" id="acc-tab-trial" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">⚖️ تراز آزمایشی</button>
               <button onclick="setAccTab('pnl')" id="acc-tab-pnl" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">📈 سود و زیان</button>
               <button onclick="setAccTab('bs')" id="acc-tab-bs" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🏛️ ترازنامه</button>
+              <button onclick="setAccTab('periods')" id="acc-tab-periods" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🗓️ قفل ماهانه / فصلی</button>
               <button onclick="setAccTab('yearend')" id="acc-tab-yearend" class="acc-nav touch-btn px-3 rounded-xl font-bold bg-slate-100 text-slate-700">🔒 بستن سال مالی</button>
             </div>
           </div>
@@ -6178,6 +6183,7 @@
       const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
       document.getElementById('invoice-form-card').classList.remove('hidden');
       document.getElementById('inv-type-badge').textContent = type === 'sale' ? 'فاکتور فروش رسمی' : 'فاکتور خرید کالا';
+      const invoiceDateInput = document.getElementById('inv-date'); if (invoiceDateInput) invoiceDateInput.value = getTodayJalaliDate();
       const nextNo = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
       document.getElementById('inv-next-no').textContent = faNum(nextNo);
       document.getElementById('inv-party').innerHTML = (state.parties || []).map(p => `<option value="${escapeLedgerText(p.id)}">${escapeLedgerText(p.name || 'بدون نام')}</option>`).join('');
@@ -6442,9 +6448,14 @@
         showToast('جمع مبالغ فاکتور معتبر نیست؛ از ثبت جلوگیری شد.', 'error'); return;
       }
       const id = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
-      const date = getTodayJalaliDate();
+      const date = normalizeAccountingDate(document.getElementById('inv-date')?.value || getTodayJalaliDate());
+      const dueDate = normalizeAccountingDate(document.getElementById('inv-due-date')?.value || '');
+      if (jalaliDateOrdinal(date) === null) { showToast('تاریخ فاکتور باید یک تاریخ شمسی معتبر باشد.', 'error'); return; }
+      if (jalaliDateOrdinal(dueDate) === null || jalaliDateOrdinal(dueDate) < jalaliDateOrdinal(date)) { showToast('تاریخ سررسید باید معتبر و مساوی یا بعد از تاریخ فاکتور باشد.', 'error'); return; }
+      const blockedPeriod = getAccountingPeriodLockForDate(date);
+      if (blockedPeriod) { showToast('ثبت فاکتور در ' + blockedPeriod.label + ' ممنوع است؛ دوره قفل شده است.', 'error'); return; }
       const invoice = {
-        id, type, date, dueDate: document.getElementById('inv-due-date').value, partyId, warehouseId,
+        id, type, date, dueDate: dueDate, partyId, warehouseId,
         payMethod, ...(settlementAccount ? { bankAccountId: settlementAccount.id } : {}),
         salesperson: salespersonName, salespersonPartyId: salespersonParty?.id || null, commRate, commAmount,
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
@@ -10741,7 +10752,9 @@
     function renderAccountingModule() {
       const box = document.getElementById('accounting-panel-body');
       const bal = getAccountBalances();
-      if (activeAccTab === 'yearend') {
+      if (activeAccTab === 'periods') {
+        renderPeriodLockModule();
+      } else if (activeAccTab === 'yearend') {
         renderFiscalYearCloseModule();
       } else if (activeAccTab === 'chart') {
         const rows = (state.accountCatalog || []).slice().sort((a, b) => a.code.localeCompare(b.code)).map(a => {
