@@ -4484,7 +4484,13 @@
         const key = normalizeLedgerDate(k.date);
         return !!key && jalaliDateOrdinal(k.date) !== null && key >= fromKey && key <= toKey;
       });
-      const movementRows = filteredMovements.map(k => {
+      const movementRows = filteredMovements.slice().sort((a, b) => {
+        const aDate = jalaliDateOrdinal(a?.date), bDate = jalaliDateOrdinal(b?.date);
+        if (aDate === null && bDate === null) return 0;
+        if (aDate === null) return 1;
+        if (bDate === null) return -1;
+        return aDate - bDate;
+      }).map(k => {
         const docMatch = String(k.doc || '').match(/#(\d+)/);
         const invoice = docMatch
           ? (state.invoices || []).find(inv => String(inv.id) === String(docMatch[1]))
