@@ -1313,6 +1313,43 @@
     </div>
   </div>
 
+  <!-- Modal: Audited Warehouse Transfer Correction -->
+  <div id="modal-warehouse-transfer-correction" class="hidden fixed inset-0 bg-slate-950/75 z-[80] flex items-center justify-center p-3">
+    <div class="bg-white rounded-3xl w-full max-w-xl max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-3 text-xs shadow-2xl">
+      <div class="flex items-center justify-between gap-3 border-b pb-3">
+        <div><h3 class="font-black text-sm text-indigo-950">✏️ اصلاح حسابرسی‌شده حواله انبار</h3><p class="text-[10px] text-slate-500 mt-1">برگشت دوطرفه و حواله جایگزین در یک عملیات</p></div>
+        <button type="button" onclick="closeModal('modal-warehouse-transfer-correction')" class="w-9 h-9 rounded-xl bg-slate-100 font-bold">✕</button>
+      </div>
+      <input type="hidden" id="wh-correction-product-id" />
+      <input type="hidden" id="wh-correction-movement-index" />
+      <input type="hidden" id="wh-correction-transfer-id" />
+      <div id="wh-correction-summary" class="rounded-2xl border border-indigo-100 bg-indigo-50 p-3 space-y-1 text-indigo-950"></div>
+      <div class="space-y-1">
+        <label for="wh-correction-reason" class="block font-bold text-slate-700">علت اصلاح <span class="text-rose-600">*</span></label>
+        <textarea id="wh-correction-reason" rows="3" maxlength="1000" required placeholder="علت اصلاح حواله را دقیق و قابل پیگیری بنویسید..." class="w-full border border-slate-300 rounded-xl p-3 text-xs focus:ring-2 focus:ring-indigo-300 outline-none"></textarea>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="space-y-1">
+          <label for="wh-correction-destination" class="block font-bold text-slate-700">انبار مقصد جدید <span class="text-rose-600">*</span></label>
+          <select id="wh-correction-destination" class="w-full border border-slate-300 rounded-xl p-3 bg-white font-bold"></select>
+        </div>
+        <div class="space-y-1">
+          <label for="wh-correction-quantity" class="block font-bold text-slate-700">مقدار حواله جایگزین (کیلوگرم) <span class="text-rose-600">*</span></label>
+          <input id="wh-correction-quantity" type="number" min="0.001" step="any" inputmode="decimal" class="w-full border border-slate-300 rounded-xl p-3 font-bold tabular-nums" />
+          <p id="wh-correction-available" class="text-[10px] text-slate-500"></p>
+        </div>
+      </div>
+      <label class="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950 leading-5">
+        <input id="wh-correction-confirm" type="checkbox" class="mt-1 shrink-0" />
+        <span>برگشت حواله اصلی و ثبت حواله جایگزین را با اطلاعات بالا تأیید می‌کنم. گردش قبلی و سند حسابداری آن حذف یا بازنویسی نمی‌شود.</span>
+      </label>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeModal('modal-warehouse-transfer-correction')" class="flex-1 touch-btn rounded-xl border border-slate-300 bg-white py-3 font-bold text-slate-700">انصراف</button>
+        <button type="button" onclick="submitWarehouseTransferCorrection()" class="flex-[2] touch-btn rounded-xl bg-indigo-700 py-3 font-extrabold text-white">✔ تأیید و ثبت اصلاح دوطرفه</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Stocktaking & Adjustment -->
   <div id="modal-stock-adjust" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-lg max-h-[85dvh] overflow-y-auto p-4 space-y-3 text-xs">
@@ -4105,7 +4142,7 @@
         showToast('گردش انبار پیدا نشد؛ هیچ تغییری انجام نشد.', 'error');
         return;
       }
-      const match = String(movement.doc || '').match(/TR-\d+-[a-z0-9]+/i);
+      const match = String(movement.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
       if (!match) {
         showToast('اصلاحیه انبارگردانی یا گردش فاقد شناسه یکتا از این مسیر قابل برگشت نیست.', 'warning');
         return;
@@ -4115,57 +4152,89 @@
         showToast('برگشت حواله مسدود شد: ' + plan.reason, 'error');
         return;
       }
-
-      const reason = window.prompt('علت اصلاح حواله ' + plan.transferId + ' را وارد کنید (الزامی):', '');
-      if (reason === null) return;
-      if (!String(reason).trim()) {
-        showToast('برای اصلاح حواله ثبت علت الزامی است؛ هیچ تغییری انجام نشد.', 'error');
-        return;
-      }
-
-      const eligibleWarehouses = (state.warehouses || []).filter(item => item && String(item.id) !== plan.sourceWarehouseId);
+      const eligibleWarehouses = (state.warehouses || []).filter(item =>
+        item && String(item.id) !== String(plan.sourceWarehouseId)
+      );
       if (!eligibleWarehouses.length) {
         showToast('انبار مقصد جایگزین در دسترس نیست.', 'error');
         return;
       }
-      const defaultChoice = Math.max(0, eligibleWarehouses.findIndex(item => String(item.id) === plan.destinationWarehouseId));
-      const warehouseChoices = eligibleWarehouses.map((item, index) =>
-        (index + 1) + '. ' + String(item.name || item.title || item.id) + ' [' + String(item.id) + ']'
-      ).join('\n');
-      const selectedChoice = window.prompt(
-        'انبار مقصد جدید را با شماره انتخاب کنید:\n' + warehouseChoices,
-        String(defaultChoice + 1)
-      );
-      if (selectedChoice === null) return;
-      const selectedIndex = Number(String(selectedChoice).trim()) - 1;
-      if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= eligibleWarehouses.length) {
-        showToast('انتخاب انبار مقصد معتبر نیست؛ هیچ تغییری انجام نشد.', 'error');
-        return;
-      }
-      const replacementWarehouseId = String(eligibleWarehouses[selectedIndex].id);
-      const qtyInput = window.prompt('مقدار حواله جایگزین (کیلوگرم):', String(plan.quantity));
-      if (qtyInput === null) return;
-      const replacementQty = Number(String(qtyInput).trim().replace(/,/g, ''));
-      if (!Number.isFinite(replacementQty) || replacementQty <= 0) {
-        showToast('مقدار حواله جایگزین معتبر نیست؛ هیچ تغییری انجام نشد.', 'error');
-        return;
-      }
-      const replacementWarehouse = eligibleWarehouses[selectedIndex];
-      const confirmation = [
-        'اصلاح حواله به‌صورت یک عملیات واحد ثبت می‌شود:',
-        'برگشت: ' + plan.transferId + ' (' + plan.quantity + ' کیلوگرم)',
-        'مبدأ: ' + String((state.warehouses || []).find(item => String(item.id) === plan.sourceWarehouseId)?.name || plan.sourceWarehouseId),
-        'مقصد جدید: ' + String(replacementWarehouse.name || replacementWarehouse.title || replacementWarehouseId),
-        'مقدار جدید: ' + replacementQty + ' کیلوگرم',
-        'علت: ' + String(reason).trim(),
-        'سند حسابداری حواله قبلی دست‌نخورده می‌ماند.'
-      ].join('\n');
-      if (!window.confirm(confirmation)) return;
 
+      const sourceWarehouse = (state.warehouses || []).find(item => String(item.id) === String(plan.sourceWarehouseId));
+      const originalDestination = (state.warehouses || []).find(item => String(item.id) === String(plan.destinationWarehouseId));
+      const destinationSelect = document.getElementById('wh-correction-destination');
+      destinationSelect.innerHTML = eligibleWarehouses.map(item =>
+        '<option value="' + escapeKardexText(item.id) + '">' +
+        escapeKardexText(item.name || item.title || item.id) + '</option>'
+      ).join('');
+      destinationSelect.value = eligibleWarehouses.some(item => String(item.id) === String(plan.destinationWarehouseId))
+        ? String(plan.destinationWarehouseId) : String(eligibleWarehouses[0].id);
+
+      document.getElementById('wh-correction-product-id').value = String(productId);
+      document.getElementById('wh-correction-movement-index').value = String(movementIndex);
+      document.getElementById('wh-correction-transfer-id').value = plan.transferId;
+      document.getElementById('wh-correction-reason').value = '';
+      document.getElementById('wh-correction-quantity').value = String(plan.quantity);
+      document.getElementById('wh-correction-quantity').max = String(Number(plan.sourceCurrentStock) + Number(plan.quantity));
+      document.getElementById('wh-correction-confirm').checked = false;
+      document.getElementById('wh-correction-summary').innerHTML =
+        '<div><strong>شناسه حواله اصلی:</strong> ' + escapeKardexText(plan.transferId) + '</div>' +
+        '<div><strong>مبدأ:</strong> ' + escapeKardexText(sourceWarehouse?.name || plan.sourceWarehouseId) + '</div>' +
+        '<div><strong>مقصد قبلی:</strong> ' + escapeKardexText(originalDestination?.name || plan.destinationWarehouseId) + '</div>' +
+        '<div><strong>مقدار قابل برگشت:</strong> ' + faNum(plan.quantity) + ' کیلوگرم</div>' +
+        '<div class="mt-1 text-[10px] text-indigo-800">بررسی اولیه وابستگی‌ها موفق بود. هنگام ثبت، همه کنترل‌ها دوباره اجرا می‌شوند.</div>';
+      document.getElementById('wh-correction-available').textContent =
+        'حداکثر قابل حواله پس از برگشت: ' + faNum(Number(plan.sourceCurrentStock) + Number(plan.quantity)) + ' کیلوگرم';
+      openModal('modal-warehouse-transfer-correction');
+    }
+
+    function submitWarehouseTransferCorrection() {
+      const productId = document.getElementById('wh-correction-product-id').value;
+      const movementIndex = Number(document.getElementById('wh-correction-movement-index').value);
+      const transferId = document.getElementById('wh-correction-transfer-id').value;
+      const reason = document.getElementById('wh-correction-reason').value.trim();
+      const destinationId = document.getElementById('wh-correction-destination').value;
+      const quantity = Number(String(document.getElementById('wh-correction-quantity').value).trim().replace(/,/g, ''));
+      const confirmed = document.getElementById('wh-correction-confirm').checked;
+      if (!reason) {
+        showToast('ثبت علت اصلاح الزامی است.', 'error');
+        document.getElementById('wh-correction-reason').focus();
+        return;
+      }
+      if (!destinationId) {
+        showToast('انبار مقصد جایگزین را انتخاب کنید.', 'error');
+        return;
+      }
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        showToast('مقدار حواله جایگزین معتبر نیست.', 'error');
+        document.getElementById('wh-correction-quantity').focus();
+        return;
+      }
+      if (!confirmed) {
+        showToast('برای ثبت اصلاح، تأیید نهایی را فعال کنید.', 'warning');
+        return;
+      }
+      const product = (state.products || []).find(item => String(item.id) === String(productId));
+      const movement = product && Array.isArray(product.kardex) ? product.kardex[movementIndex] : null;
+      const match = movement && String(movement.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+      if (!match || String(match[0]) !== String(transferId)) {
+        showToast('ردیف حواله از زمان بازشدن فرم تغییر کرده است؛ فرم را دوباره باز کنید.', 'error');
+        return;
+      }
+      const freshPlan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferId);
+      if (!freshPlan.ok) {
+        showToast('کنترل نهایی مانع اصلاح شد: ' + freshPlan.reason, 'error');
+        closeModal('modal-warehouse-transfer-correction');
+        return;
+      }
       const result = applyWarehouseTransferCorrection(
-        plan.transferId, replacementWarehouseId, replacementQty, String(reason).trim(), String(productId)
+        transferId, destinationId, quantity, reason, productId
       );
-      if (!result.ok) showToast('اصلاح حواله انجام نشد: ' + result.reason, 'error');
+      if (!result.ok) {
+        showToast('اصلاح حواله انجام نشد: ' + result.reason, 'error');
+        return;
+      }
+      closeModal('modal-warehouse-transfer-correction');
     }
 
     function applyWarehouseTransferCorrection(transferId, replacementWarehouseId, replacementQty, reason, focusProductId) {
