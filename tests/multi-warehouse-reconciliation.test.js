@@ -75,4 +75,27 @@ test('keeps separate base products as separate company totals', () => {
   assert.equal(result.companyTotalStock, 12);
 });
 
-console.log('PASS: 7 multi-warehouse reconciliation tests');
+
+test('separates products with missing and unknown warehouse references without mutating records', () => {
+  const source = [
+    { id: 'P1', name: 'بدون انبار' },
+    { id: 'P2', name: 'انبار حذف‌شده', warehouseId: 'GONE' },
+    { id: 'P3', name: 'کالای معتبر', warehouseId: 'A' }
+  ];
+  const before = JSON.stringify(source);
+  const start = html.indexOf('    function inspectProductsWithoutValidWarehouse(');
+  const finish = html.indexOf('    function inspectWarehouseProductTopology(', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(finish, -1);
+  const localSandbox = {};
+  vm.createContext(localSandbox);
+  vm.runInContext(html.slice(start, finish) + String.fromCharCode(10) + 'this.inspect = inspectProductsWithoutValidWarehouse;', localSandbox);
+  const result = localSandbox.inspect(source, warehouses);
+  assert.deepEqual(Array.from(result, item => ({ productId: item.productId, reason: item.reason, warehouseId: item.warehouseId })), [
+    { productId: 'P1', reason: 'missing-warehouse', warehouseId: null },
+    { productId: 'P2', reason: 'unknown-warehouse', warehouseId: 'GONE' }
+  ]);
+  assert.equal(JSON.stringify(source), before, 'inspection must not mutate source products');
+});
+
+console.log('PASS: 8 multi-warehouse reconciliation tests');
