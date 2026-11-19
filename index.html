@@ -5082,7 +5082,9 @@
     function resolveInvoiceWarehouseProduct(productId, warehouseId, products, allowCreate = false) {
       const source = (products || []).find(item => String(item.id) === String(productId)) ||
         (products || []).find(item => String(item.baseProductId || item.id) === String(productId));
-      if (!source || !warehouseId) return { product: null, created: false };
+      if (!source) return { product: null, created: false };
+      // Legacy invoices without a persisted warehouse keep their original exact product link.
+      if (!warehouseId) return { product: source, created: false };
       const rootId = String(source.baseProductId || source.id);
       const target = (products || []).find(item =>
         String(item.warehouseId) === String(warehouseId) &&
