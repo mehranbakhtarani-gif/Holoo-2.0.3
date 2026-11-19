@@ -4,12 +4,19 @@ const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
 
-function extract(startMarker, endMarker, sandbox, exportName) {
+function extract(startMarker, endMarker, sandbox, exportName, includeBankOpeningHelper = false) {
   const start = html.indexOf(startMarker);
   const end = html.indexOf(endMarker, start);
   assert.ok(start >= 0 && end > start, `missing source block: ${startMarker}`);
+  let source = html.slice(start, end);
+  if (includeBankOpeningHelper) {
+    const helperStart = html.indexOf('    function isBankOpeningVoucher(voucher)', end);
+    const helperEnd = html.indexOf('    function getBankAccountBookBalances()', helperStart);
+    assert.ok(helperStart > end && helperEnd > helperStart, 'bank opening voucher classifier must exist');
+    source += html.slice(helperStart, helperEnd);
+  }
   vm.createContext(sandbox);
-  vm.runInContext(html.slice(start, end) + `; this.${exportName} = ${exportName};`, sandbox);
+  vm.runInContext(source + `; this.${exportName} = ${exportName};`, sandbox);
   return sandbox[exportName];
 }
 
@@ -28,7 +35,7 @@ const state = {
   ]
 };
 const balanceSandbox = { state };
-const getBalances = extract('    function getBankAccountBookBalances()', '    function renderReconcileModule()', balanceSandbox, 'getBankAccountBookBalances');
+const getBalances = extract('    function getBankAccountBookBalances()', '    function renderReconcileModule()', balanceSandbox, 'getBankAccountBookBalances', true);
 const balances = getBalances();
 assert.equal(balances.accounts.find(x => x.account.id === 'BANK-A').net, 600);
 assert.equal(balances.accounts.find(x => x.account.id === 'BANK-B').net, -40);
