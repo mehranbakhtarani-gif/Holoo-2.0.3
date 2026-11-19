@@ -52,6 +52,12 @@ assert.match(html, /const openTimer = setTimeout\(/);
 assert.match(html, /باز کردن حافظه محلی بیش از حد طول کشید/);
 assert.match(html, /db\.onversionchange = \(\) => db\.close\(\)/);
 assert.match(html, /async function fetchWithTimeout\(/);
+// Modern Supabase publishable keys are not JWTs and must not be sent as Bearer tokens.
+assert.match(html, /function cloudAuthHeaders\(extra = \{\}\)/);
+assert.match(html, /startsWith\('sb_publishable_'\)/);
+assert.match(html, /headers: cloudAuthHeaders\(/);
+assert.doesNotMatch(html, /'Authorization': `Bearer \$\{cloudConfig\.key\}`/);
+assert.doesNotMatch(html, /'Authorization': 'Bearer ' \+ cloudConfig\.key/);
 assert.match(html, /مهلت پاسخ Supabase تمام شد/);
 assert.match(html, /در حال آماده‌سازی حافظه محلی/);
 assert.match(html, /new Promise\(resolve => setTimeout\(\(\) => resolve\(false\), 15000\)\)/);
