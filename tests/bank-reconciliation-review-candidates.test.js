@@ -15,14 +15,17 @@ const state = {
     { id: 2, date: '1405/08/15', desc: 'واریز بانکی با مبلغ متفاوت', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2400000000, credit: 0 }] },
     { id: 3, date: '1405/08/16', desc: 'واریز با مبلغ برابر در روز دیگر', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2500000000, credit: 0 }] },
     { id: 4, date: '1405/08/15', desc: 'جهت مخالف', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 0, credit: 2500000000 }] },
-    { id: 5, date: '1405/08/15', desc: 'بانک — افتتاحیه', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2500000000, credit: 0 }] },
+    { id: 5, date: '1405/08/15', desc: 'افتتاحیه بانک الف', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2500000000, credit: 0 }] },
     { id: 6, date: '1405/08/15', desc: 'حساب بانکی دیگر', lines: [{ code: 'BANK-A', bankAccountId: 'BANK-B', debit: 2500000000, credit: 0 }] },
     { id: 99, date: '1405/08/15', desc: 'قبلاً به تراکنش دیگری وصل شده', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2500000000, credit: 0 }] }
   ]
 };
 const sandbox = { state, CHART_ACCOUNTS: [{ code: '1103', name: 'حساب دریافتنی' }, { code: '2101', name: 'حساب پرداختنی' }], bankTxDateKey: value => String(value || '') };
 vm.createContext(sandbox);
-vm.runInContext(html.slice(start, end) + '; this.getBankReconciliationReviewCandidates = getBankReconciliationReviewCandidates;', sandbox);
+const helperStart = html.indexOf('    function isBankOpeningVoucher(voucher)');
+const helperEnd = html.indexOf('    function getBankAccountBookBalances()', helperStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, 'bank opening voucher classifier must exist');
+vm.runInContext(html.slice(helperStart, helperEnd) + html.slice(start, end) + '; this.getBankReconciliationReviewCandidates = getBankReconciliationReviewCandidates;', sandbox);
 
 const item = { id: 'SAT-9910', date: '1405/08/15', amount: 2500000000, bankAccountId: 'BANK-A' };
 const result = Array.from(sandbox.getBankReconciliationReviewCandidates(item));
