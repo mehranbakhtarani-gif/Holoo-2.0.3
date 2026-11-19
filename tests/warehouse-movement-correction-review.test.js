@@ -22,4 +22,7 @@ assert.ok(html.includes('بررسی / اصلاح حواله'), 'transfer correct
 assert.ok(!html.includes('✏️ اصلاح حواله انتقال</button>'), 'stocktake rows must not show the transfer correction action');
 assert.ok(html.includes('جدول را به چپ و راست بکشید'), 'mobile users must be told the warehouse table scrolls horizontally');
 assert.ok(html.includes('flex flex-wrap items-start justify-between gap-2'), 'warehouse table heading must wrap on narrow screens');
+assert.ok(html.includes('label for="tr-prod"'), 'warehouse transfer product selector must have an explicit label');
+assert.ok(html.includes('id="tr-qty" value="500" min="0.001" step="any" inputmode="decimal"'), 'transfer quantity must expose decimal numeric input guidance');
+assert.ok(html.includes('max-h-[90dvh] overflow-y-auto p-4 space-y-3 text-xs'), 'warehouse transfer modal must scroll on short mobile screens');
 console.log('PASS: warehouse transfer correction is preflighted and unsafe dependencies remain blocked');
