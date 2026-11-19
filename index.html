@@ -6012,7 +6012,7 @@
                 ${Object.entries(IMPORT_STATUS_LABELS).map(([value,label]) => `<option value="${value}" ${(m.status || 'registered') === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
               ${m.postedToWh ? '<button type="button" onclick="requestImportReceiptCorrection(\'' + String(m.id).replace(/'/g, '') + '\')" class="touch-btn border border-amber-300 text-amber-800 rounded-lg px-3 py-2 font-bold">بررسی اصلاح رسید انبار</button>' : ''}
-              ${m.postedToWh && m.receiptSnapshot ? '<button type="button" onclick="requestImportReceiptReversal(\\'' + String(m.id).replace(/'/g, '') + '\\')" class="touch-btn border border-rose-300 text-rose-800 rounded-lg px-3 py-2 font-bold">برگشت امن رسید</button>' : ''}
+              ${m.postedToWh && m.receiptSnapshot ? '<button type="button" onclick="requestImportReceiptReversal(\'' + String(m.id).replace(/'/g, '') + '\')" class="touch-btn border border-rose-300 text-rose-800 rounded-lg px-3 py-2 font-bold">برگشت امن رسید</button>' : ''}
             </div>
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
             <div class="rounded-lg border px-2 py-1"><strong>بهای تمام‌شده و هزینه تخصیصی هر قلم</strong>${costRows}</div>
