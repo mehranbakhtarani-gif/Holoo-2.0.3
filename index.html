@@ -5889,7 +5889,7 @@
       (state.parties || []).forEach(p => getPartyLedgerControlCodes(p).forEach(code => codes.add(code)));
       const stats = new Map();
       codes.forEach(code => stats.set(code, { code, glOpening: 0, glPeriod: 0, subOpening: 0, subPeriod: 0 }));
-      let invalidDateVouchers = 0, invalidAmountVouchers = 0, unassignedLines = 0, mappingMismatchLines = 0;
+      let invalidDateVouchers = 0, invalidAmountVouchers = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0, includedVouchers = 0, unassignedLines = 0, mappingMismatchLines = 0;
       const unassignedDetails = [];
       (state.vouchers || []).forEach(voucher => {
         const rawDate = voucher.date || voucher.operationDate;
@@ -5898,6 +5898,10 @@
         const invalidLines = countInvalidReportVoucherLines(voucher);
         if (invalidLines) { invalidAmountVouchers++; return; }
         if (dateKey > to) return;
+        const validation = inspectTrialBalanceVoucher(voucher);
+        if (validation.invalidStructure) invalidStructureVouchers++;
+        if (validation.unbalanced) unbalancedVouchers++;
+        includedVouchers++;
         (voucher.lines || []).forEach((line, lineIndex) => {
           const code = String(line.code || '');
           if (!stats.has(code)) return;
@@ -5939,7 +5943,7 @@
         };
       }).filter(row => row.glOpening || row.glPeriod || row.subOpening || row.subPeriod);
       rows.sort((a,b) => a.code.localeCompare(b.code, 'en'));
-      return { rows, invalidDateVouchers, invalidAmountVouchers, unassignedLines, unassignedDetails, mappingMismatchLines,
+      return { rows, invalidDateVouchers, invalidAmountVouchers, invalidStructureVouchers, unbalancedVouchers, includedVouchers, unassignedLines, unassignedDetails, mappingMismatchLines,
         totals: rows.reduce((t,r) => {
           ['glOpening','glPeriod','subOpening','subPeriod','glClosing','subClosing','openingDifference','periodDifference','closingDifference'].forEach(k => t[k] += r[k]);
           return t;
@@ -6019,6 +6023,8 @@
         const warnings = [];
         if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر کنار گذاشته شد.');
         if (report.invalidAmountVouchers) warnings.push(faNum(report.invalidAmountVouchers) + ' سند دارای ردیف با کد حساب یا مبلغ نامعتبر کنار گذاشته شد.');
+        if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند ساختار ناقص دارد.');
+        if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن تا تاریخ گزارش وجود دارد.');
         if (report.unassignedLines) warnings.push(faNum(report.unassignedLines) + ' ردیف حساب کنترلی بدون طرف حساب معتبر وجود دارد.');
         if (report.mappingMismatchLines) warnings.push(faNum(report.mappingMismatchLines) + ' ردیف با کد حساب متفاوت از حساب کنترلی تعریف‌شده برای طرف حساب ثبت شده است.');
         const unassignedRows = (report.unassignedDetails || []).map(item =>
