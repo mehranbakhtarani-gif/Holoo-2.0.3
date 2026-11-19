@@ -54,6 +54,7 @@
       .mobile-bottom-nav { display: none !important; }
       .main-workspace { padding: 20px 24px 36px 24px; }
     }
+    @page { size: landscape; margin: 10mm; }
     @media print {
       html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
       .erp-layout, header, aside, nav, #toast-container, .no-print { display: none !important; }
@@ -73,6 +74,14 @@
       #print-area tr, #print-area .rounded-xl, #print-area .rounded-lg { break-inside:avoid; page-break-inside:avoid; }
       #print-area .print-filter-value { display:inline-block; border-bottom:1px dotted #64748b; padding:2px 5px; }
       #print-area .print-section-break { break-before:page; page-break-before:always; }
+      /* گزارش گردش طرف حساب: حذف عرض ثابت و اسکرول فقط در نسخه چاپی */
+      #print-area .party-ledger-print .print-overflow-visible { overflow:visible !important; width:100% !important; max-width:100% !important; }
+      #print-area .party-ledger-print .print-ledger-wide { min-width:0 !important; width:100% !important; max-width:100% !important; padding:0 !important; }
+      #print-area .party-ledger-print .print-ledger-grid { display:grid !important; grid-template-columns:7% 8% 7% 18% 18% 10% 10% 12% !important; width:100% !important; min-width:0 !important; gap:2px !important; padding:4px !important; font-size:7pt !important; }
+      #print-area .party-ledger-print .print-ledger-grid > * { min-width:0 !important; white-space:normal !important; overflow-wrap:anywhere !important; word-break:break-word !important; }
+      #print-area .party-ledger-print .print-ledger-grid { break-inside:avoid; page-break-inside:avoid; }
+      #print-area .party-ledger-print { direction:rtl !important; }
+      #print-area .party-ledger-print table { table-layout:fixed !important; }
     }
   
     /* Persian calendar date picker */
@@ -7927,6 +7936,11 @@
           el.replaceWith(replacement);
         });
         clone.querySelectorAll('[contenteditable="true"]').forEach(el => el.removeAttribute('contenteditable'));
+        // گردش طرف حساب در صفحه نمایش اسکرول افقی دارد؛ در چاپ باید تمام ستون‌ها در عرض کاغذ جا شوند.
+        clone.querySelectorAll('.overflow-x-auto').forEach(el => el.classList.add('print-overflow-visible'));
+        clone.querySelectorAll('[style*="grid-template-columns"]').forEach(el => el.classList.add('print-ledger-grid'));
+        clone.querySelectorAll('[class*="min-w-["]').forEach(el => el.classList.add('print-ledger-wide'));
+        if (clone.querySelector('.print-ledger-grid')) clone.classList.add('party-ledger-print');
         return clone.innerHTML;
       }).join('<div class="print-section-break"></div>');
       document.getElementById('print-title').textContent = title || 'گزارش هولو';
