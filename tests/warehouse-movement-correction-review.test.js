@@ -16,4 +16,8 @@ assert.ok(html.includes('id="modal-warehouse-transfer-correction"'));
 assert.ok(html.includes('submitWarehouseTransferCorrection()'));
 assert.ok(!html.includes('window.prompt(\'علت اصلاح حواله'));
 assert.ok(html.includes('بررسی اصلاح گردش انبار'));
+assert.ok(html.includes('const transferGroups = new Map()'), 'Kardex correction list must group paired rows by transfer ID');
+assert.ok(!html.includes("match(/TR-\\\\d"), 'transfer ID matcher must use a digit pattern, not a literal backslash');
+assert.ok(html.includes('بررسی / اصلاح حواله'), 'transfer correction action must be explicitly labeled');
+assert.ok(!html.includes('✏️ اصلاح حواله انتقال</button>'), 'stocktake rows must not show the transfer correction action');
 console.log('PASS: warehouse transfer correction is preflighted and unsafe dependencies remain blocked');
