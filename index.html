@@ -10808,6 +10808,10 @@
       const retainedEarningsAccount = (CHART_ACCOUNTS || []).find(account => String(account.code) === '3102');
       if (!retainedEarningsAccount) warnings.push('حساب سود (زیان) انباشته ۳۱۰۲ در سرفصل‌های حسابداری تعریف نشده است.');
       const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit);
+      if (carryForward.invalidDateVouchers) warnings.push(carryForward.invalidDateVouchers + ' سند در دفترکل تاریخ نامعتبر دارد؛ تا تعیین تکلیف تاریخ، بستن سال مجاز نیست.');
+      if (carryForward.invalidAmountLines) warnings.push(carryForward.invalidAmountLines + ' ردیف سند در دفترکل مبلغ نامعتبر دارد؛ تا اصلاح ردیف‌ها، بستن سال مجاز نیست.');
+      if (carryForward.invalidStructureVouchers) warnings.push(carryForward.invalidStructureVouchers + ' سند در دفترکل ساختار نامعتبر دارد؛ ابتدا ساختار سند اصلاح شود.');
+      if (carryForward.unbalancedVouchers) warnings.push(carryForward.unbalancedVouchers + ' سند در دفترکل نامتوازن است؛ ابتدا تراز اسناد اصلاح شود.');
       if (Math.abs(carryForward.difference) > 0.5) warnings.push('تراز انتقال مانده حساب‌های دائمی پس از اختتامیه متوازن نیست؛ اختلاف: ' + money(carryForward.difference));
       return { year: fiscalYear, from, to, alreadyClosed: false, rows, profit, blocked: warnings.length > 0, warnings, incomeSummary, carryForward, priorUnclosed };
     }
@@ -10855,11 +10859,17 @@
           voucher.locked = true;
           voucher.fiscalYearClose = { year, from: preview.from, to: preview.to, profit: preview.profit, carryForwardDifference: preview.carryForward.difference, actor: state.activeRole || 'mehran', closedAt: new Date().toISOString() };
         }
+        const freshPreview = buildFiscalYearClosePreview(year);
+        if (freshPreview.alreadyClosed || freshPreview.blocked || Math.abs(Number(freshPreview.profit) - Number(preview.profit)) > 0.5 || Math.abs(Number(freshPreview.carryForward?.difference || 0)) > 0.5) {
+          throw new Error('کنترل نهایی اختتامیه با پیش‌نمایش اولیه یکسان نیست؛ عملیات برای جلوگیری از ثبت بر مبنای اطلاعات تغییرکرده متوقف شد.');
+        }
         const closureRecord = {
           year, from: preview.from, to: preview.to, status: 'closed',
           closeMode: noJournalNeeded ? 'no_result_activity' : 'journal',
           voucherId, profit: preview.profit, actor: state.activeRole || 'mehran',
-          closedAt: new Date().toISOString(), carryForward: preview.carryForward
+          closedAt: new Date().toISOString(), carryForward: preview.carryForward,
+          reconciliation: { balanced: Math.abs(Number(preview.carryForward?.difference || 0)) <= 0.5, difference: Number(preview.carryForward?.difference || 0), accountCount: Number(preview.carryForward?.accountCount || 0), ledgerVoucherCount: (state.vouchers || []).filter(v => normalizeLedgerDate(v.date || v.operationDate) && normalizeLedgerDate(v.date || v.operationDate) <= normalizeLedgerDate(preview.to)).length },
+          auditVersion: 2
         };
         state.fiscalYearClosures = (state.fiscalYearClosures || []).filter(item => normalizeAccountingDate(item.year) !== year);
         state.fiscalYearClosures.push(closureRecord);
