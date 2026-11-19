@@ -46,7 +46,7 @@ assert.ok(html.includes('cancelInvoice(Number(invDraft.correctionOfInvoiceId), {
 assert.ok(html.includes('correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId)'));
 assert.ok(html.includes('correctedByInvoiceId = Number(id)'));
 assert.ok(html.includes('sourceType: \'invoice_correction\''));
-assert.ok(html.includes('if (!options.deferSave) saveState()'));
+assert.ok(html.includes('if (!options.deferSave && !saveState())'));
 assert.ok(html.includes('return true;'));
 assert.ok(html.includes('✏️ اصلاح حسابرسی‌شده'));
 
