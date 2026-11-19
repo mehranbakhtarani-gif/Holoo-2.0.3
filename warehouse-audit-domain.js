@@ -139,7 +139,8 @@
     const related = [];
     products.forEach(product => {
       (Array.isArray(product && product.kardex) ? product.kardex : []).forEach((movement, index) => {
-        if (movement && String(movement.doc || '').includes(id)) related.push({ product, movement, index });
+        if (movement && !movement.reversalOf && !movement.correctionOf &&
+            String(movement.doc || '').includes(id)) related.push({ product, movement, index });
       });
     });
     const outgoing = related.filter(row => Number(row.movement.outQty || 0) > 0 && Number(row.movement.inQty || 0) === 0);
