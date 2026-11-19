@@ -563,11 +563,11 @@
           <section id="dashboard-period-filter" class="bg-white rounded-2xl border border-slate-200 p-3 flex flex-wrap items-end gap-3" aria-label="بازه گزارش داشبورد">
             <div class="min-w-[140px] flex-1">
               <label for="dash-period-from" class="block text-[11px] font-bold text-slate-600 mb-1">از تاریخ شمسی</label>
-              <input id="dash-period-from" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱" value="${escapeLedgerText(dashFromDate || String(state.fiscalYear || '1405') + '/01/01')}" onchange="dashFromDate=this.value.trim(); renderDashboard()" class="touch-btn w-full border border-slate-300 rounded-lg px-3 text-sm tabular-nums" />
+              <input id="dash-period-from" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱" value="" onchange="dashFromDate=this.value.trim(); renderDashboard()" class="touch-btn w-full border border-slate-300 rounded-lg px-3 text-sm tabular-nums" />
             </div>
             <div class="min-w-[140px] flex-1">
               <label for="dash-period-to" class="block text-[11px] font-bold text-slate-600 mb-1">تا تاریخ شمسی</label>
-              <input id="dash-period-to" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۹/۲۸" value="${escapeLedgerText(dashToDate || getTodayJalaliDate())}" onchange="dashToDate=this.value.trim(); renderDashboard()" class="touch-btn w-full border border-slate-300 rounded-lg px-3 text-sm tabular-nums" />
+              <input id="dash-period-to" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۹/۲۸" value="" onchange="dashToDate=this.value.trim(); renderDashboard()" class="touch-btn w-full border border-slate-300 rounded-lg px-3 text-sm tabular-nums" />
             </div>
             <button type="button" onclick="dashFromDate=String(state.fiscalYear || '1405')+'/01/01'; dashToDate=getTodayJalaliDate(); renderDashboard()" class="touch-btn bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg px-3 text-xs font-bold">سال مالی جاری تا امروز</button>
           </section>
@@ -3345,6 +3345,14 @@
         throw new Error('بازه نمودار داشبورد معتبر نیست.');
       }
       const months = new Map();
+      const firstYear = Number(from.slice(0, 4)), firstMonth = Number(from.slice(4, 6));
+      const lastYear = Number(to.slice(0, 4)), lastMonth = Number(to.slice(4, 6));
+      for (let year = firstYear, month = firstMonth; year < lastYear || (year === lastYear && month <= lastMonth); ) {
+        const monthKey = String(year).padStart(4, '0') + String(month).padStart(2, '0');
+        months.set(monthKey, { monthKey, revenue: 0, cogs: 0, expenses: 0, netProfit: 0 });
+        month++;
+        if (month > 12) { month = 1; year++; }
+      }
       (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(voucher => {
         const rawDate = voucher?.date || voucher?.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
@@ -3369,7 +3377,18 @@
     }
 
     function renderDashboard() {
-      const period = getDashboardPeriodRange();
+      let period;
+      try {
+        period = getDashboardPeriodRange();
+      } catch (error) {
+        const alertBox = document.getElementById('dash-alerts');
+        if (alertBox) alertBox.innerHTML = '<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900">' + escapeLedgerText(error.message || 'بازه گزارش نامعتبر است.') + '</div>';
+        return;
+      }
+      const fromInput = document.getElementById('dash-period-from');
+      const toInput = document.getElementById('dash-period-to');
+      if (fromInput) fromInput.value = period.from;
+      if (toInput) toInput.value = period.to;
       const balanceAudit = buildDashboardAccountBalances();
       const bal = balanceAudit.balances;
       const accountNet = code => dashboardAccountNetBalance(bal, code);

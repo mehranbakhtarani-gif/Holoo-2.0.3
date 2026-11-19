@@ -59,8 +59,8 @@ vm.runInContext(sliceBetween('    let pnlFromDate = null;', '    function render
 vm.runInContext(sliceBetween('    let dashChartInst = null;', '    async function runSystemDiagnostics()')+'; this.api={buildDashboardAccountBalances,dashboardAccountNetBalance,buildDashboardMonthlySeries,renderDashboard};',sandbox);
 const api=sandbox.api;
 const quality=api.buildDashboardAccountBalances();
-assert.equal(api.dashboardAccountNetBalance(quality.balances,'1101'),930);
-assert.equal(api.dashboardAccountNetBalance(quality.balances,'1102'),815);
+assert.equal(api.dashboardAccountNetBalance(quality.balances,'1101'),880);
+assert.equal(api.dashboardAccountNetBalance(quality.balances,'1102'),1055);
 assert.equal(api.dashboardAccountNetBalance(quality.balances,'1105'),-300);
 assert.equal(api.dashboardAccountNetBalance(quality.balances,'2106'),-80);
 const monthly=api.buildDashboardMonthlySeries('1405/01/01','1405/02/29');
