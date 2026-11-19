@@ -65,7 +65,7 @@ vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function 
 vm.runInContext(sliceBetween('    function buildDashboardAccountBalances()', '    // Backward-compatible single-ledger balance helper'),sandbox);
 vm.runInContext(sliceBetween('    function countInvalidReportVoucherLines(', '    function buildAccountLedger('),sandbox);
 vm.runInContext(sliceBetween('    let pnlFromDate = null;', '    function renderProfitLossReport()'),sandbox);
-vm.runInContext(sliceBetween('    let dashChartInst = null;', '    async function runSystemDiagnostics()')+'; this.api={buildDashboardAccountBalances,dashboardAccountNetBalance,buildDashboardMonthlySeries,renderDashboard};',sandbox);
+vm.runInContext(sliceBetween('    let dashChartInst = null;', '    async function runSystemDiagnostics()')+'; this.api={buildDashboardAccountBalances,dashboardAccountNetBalance,buildDashboardMonthlySeries,renderDashboard,toggleDashboardAlerts};',sandbox);
 const api=sandbox.api;
 const quality=api.buildDashboardAccountBalances();
 assert.equal(api.dashboardAccountNetBalance(quality.balances,'1101'),880);
