@@ -2632,7 +2632,7 @@
     if (!Array.isArray(state.parties)) state.parties = [];
     state.parties.forEach(p => {
       if (!p.subledgerId) p.subledgerId = 'PARTY-' + String(p.id || createStableId('party'));
-      if (!p.ledgerAccountCode) p.ledgerAccountCode = String(p.role || '').includes('تأمین') ? '2101' : '1103';
+      if (!p.ledgerAccountCode) p.ledgerAccountCode = isSupplierParty(p) ? '2101' : '1103';
       if (!p.accountingStatus) p.accountingStatus = 'active';
     });
 
@@ -3097,13 +3097,13 @@
       }
       if (id === 'modal-new-fx-commitment') {
         const select = document.getElementById('fxc-party');
-        const options = (state.parties || []).filter(p => String(p.role || '').includes('تأمین')).map(p => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+        const options = (state.parties || []).filter(isSupplierParty).map(p => '<option value="' + escapeLedgerText(p.id) + '">' + escapeLedgerText(p.name || 'بدون نام') + '</option>').join('');
         select.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
       }
       document.getElementById(id).classList.remove('hidden');
     }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-    function getPartyName(id) { return state.parties.find(p => p.id === id)?.name || '—'; }
+    function getPartyName(id) { return (state.parties || []).find(p => String(p.id) === String(id))?.name || '—'; }
     function getWhName(id) { return state.warehouses.find(w => w.id === id)?.name || 'انبار مرکزی'; }
 
     const DASHBOARD_SEARCH_ITEMS = [
@@ -3335,7 +3335,7 @@
     // Backward-compatible single-ledger balance helper; never aggregates control accounts.
     function getPartyNetBalance(partyId) {
       const party = (state.parties || []).find(p => String(p.id) === String(partyId));
-      return getPartyAccountNetBalance(partyId, party?.ledgerAccountCode || '1103');
+      return getPartyAccountNetBalance(partyId, party?.ledgerAccountCode || (isSupplierParty(party) ? '2101' : '1103'));
     }
 
     function getPartyAccountNetBalance(partyId, accountCode) {
@@ -5546,7 +5546,7 @@
       }
       const partyById = new Map((state.parties || []).map(p => [String(p.id), p]));
       const codes = new Set(['1103', '2101', '1107']);
-      (state.parties || []).forEach(p => codes.add(String(p.ledgerAccountCode || (String(p.role || '').includes('تأمین') ? '2101' : '1103'))));
+      (state.parties || []).forEach(p => getPartyLedgerControlCodes(p).forEach(code => codes.add(code)));
       const stats = new Map();
       codes.forEach(code => stats.set(code, { code, glOpening: 0, glPeriod: 0, subOpening: 0, subPeriod: 0 }));
       let invalidDateVouchers = 0, invalidAmountVouchers = 0, unassignedLines = 0, mappingMismatchLines = 0;
@@ -5734,8 +5734,8 @@
               || 'حساب ' + code,
             balance: getPartyAccountNetBalance(p.id, code)
           }))
-          .filter(item => item.code === String(p.ledgerAccountCode || '1103') || Math.abs(item.balance) > 0.000001);
-        const primaryAccountName = accountBalances.find(item => item.code === String(p.ledgerAccountCode || '1103'))?.name || 'حساب اصلی';
+           .filter(item => item.code === String(p.ledgerAccountCode || (isSupplierParty(p) ? '2101' : '1103')) || Math.abs(item.balance) > 0.000001);
+        const primaryAccountName = accountBalances.find(item => item.code === String(p.ledgerAccountCode || (isSupplierParty(p) ? '2101' : '1103')))?.name || 'حساب اصلی';
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between items-center">
@@ -5885,7 +5885,7 @@
       const b = document.getElementById('inv-credit-banner');
       if (!b) return;
       if (!p || invDraft.type !== 'sale') { b.classList.add('hidden'); return; }
-      const receivableBalance = getPartyAccountNetBalance(p.id, String(p.ledgerAccountCode || '1103'));
+      const receivableBalance = getPartyAccountNetBalance(p.id, String(p.ledgerAccountCode || (isSupplierParty(p) ? '2101' : '1103')));
       const storedCreditLimit = Number(p.creditLimit ?? 5000000000);
       const creditLimit = Number.isFinite(storedCreditLimit) && storedCreditLimit >= 0 ? storedCreditLimit : 5000000000;
       const rem = creditLimit - Math.max(0, Number.isFinite(receivableBalance) ? receivableBalance : 0);
@@ -6883,7 +6883,7 @@
       if (totalInput) totalInput.value = String(total);
     }
     function openImportModal() {
-      const options = (state.parties || []).filter(p => String(p.role || '').includes('تأمین')).map(p => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+      const options = (state.parties || []).filter(isSupplierParty).map(p => '<option value="' + escapeLedgerText(p.id) + '">' + escapeLedgerText(p.name || 'بدون نام') + '</option>').join('');
       const supplierSelect = document.getElementById('imp-supplier-party');
       supplierSelect.innerHTML = '<option value="">بدون اتصال به دفتر اشخاص</option>' + options;
       supplierSelect.onchange = () => { const party = (state.parties || []).find(p => String(p.id) === String(supplierSelect.value)); if (party) document.getElementById('imp-supplier').value = party.name; };
