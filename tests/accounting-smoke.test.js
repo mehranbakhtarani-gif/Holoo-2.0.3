@@ -162,10 +162,13 @@ test('opening balance labels include first-period inventory but exclude ordinary
 
 // 7. Inventory reconciliation evaluates kardex in chronological date order without mutating stored rows.
 test('kardex reconciliation sorts dated movements and preserves an earlier opening balance', () => {
-  const source = section('function inspectInventoryReconciliation(products, warehouses)', 'function ensureProductBatches(product)');
+  const source = section('function inspectInventoryReconciliation(products, warehouses, appState', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 15, tracked: 15, difference: 0 }; },
     inspectWarehouseProductTopology() { return { issues: [], checkedBaseProducts: 0, companyTotalStock: 0, summaries: [] }; },
+    inspectStocktakingAuditTrail() { return { issues: [], checkedOperations: 0, checkedItems: 0 }; },
+    inspectWarehouseTransferBatchLinks() { return { issues: [], checkedTransferBatchGroups: 0 }; },
+    inspectInventoryOperationAudit() { return { issues: [], checkedOperations: 0 }; },
     jalaliDateOrdinal(value) {
       const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
