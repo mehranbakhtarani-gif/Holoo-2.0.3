@@ -577,7 +577,7 @@
             </div>
             <button type="button" onclick="dashFromDate=String(state.fiscalYear || '1405')+'/01/01'; dashToDate=getTodayJalaliDate(); renderDashboard()" class="touch-btn min-h-[44px] bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg px-3 text-xs font-bold">سال مالی جاری تا امروز</button>
           </section>
-          <div id="dash-kpis" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3" aria-label="شاخص‌های مالی داشبورد" aria-live="polite" aria-atomic="true"></div>
+          <div id="dash-kpis" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3" aria-label="شاخص‌های مالی داشبورد" aria-live="polite" aria-atomic="true"></div>
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
             <section class="order-1 lg:order-2 bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs space-y-2.5 min-w-0" aria-label="هشدارهای داشبورد">
@@ -585,17 +585,17 @@
                 <h3 class="text-xs font-extrabold text-slate-800">هشدارهای مهم</h3>
                 <span id="dash-alert-count" class="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">۰ مورد</span>
               </div>
-              <div id="dash-alerts" class="space-y-2 text-xs max-h-80 overflow-y-auto" role="status" aria-live="polite" aria-relevant="additions text"></div>
+              <div id="dash-alert-severity" class="grid grid-cols-3 gap-1 text-[10px] font-bold" aria-live="polite"><span id="dash-alert-critical" class="rounded-lg bg-rose-50 text-rose-800 px-2 py-1 text-center">۰ بحرانی</span><span id="dash-alert-warning" class="rounded-lg bg-amber-50 text-amber-800 px-2 py-1 text-center">۰ هشدار</span><span id="dash-alert-info" class="rounded-lg bg-slate-100 text-slate-700 px-2 py-1 text-center">۰ عادی</span></div><div id="dash-alerts" class="space-y-2 text-xs max-h-[28rem] overflow-y-auto" role="status" aria-live="polite" aria-relevant="additions text"></div>
               <button id="dash-alert-toggle" type="button" onclick="toggleDashboardAlerts()" class="hidden min-h-[40px] w-full rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50">نمایش همه هشدارها</button>
             </section>
             <section class="order-2 lg:order-1 lg:col-span-2 bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs space-y-2 min-w-0">
               <h3 class="text-xs font-extrabold text-slate-800">روند ماهانه درآمد، بهای تمام‌شده، هزینه و سود (زیان)</h3>
-              <div class="h-64 sm:h-72 w-full min-w-0"><canvas id="dashChart" role="img" aria-label="نمودار روند ماهانه درآمد خالص، بهای تمام‌شده، هزینه‌ها و سود یا زیان خالص در بازه انتخابی"></canvas></div>
+              <div class="h-52 sm:h-60 w-full min-w-0"><canvas id="dashChart" role="img" aria-label="نمودار روند ماهانه درآمد خالص، بهای تمام‌شده، هزینه‌ها و سود یا زیان خالص در بازه انتخابی"></canvas></div><div id="dash-trend-insights" class="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-live="polite"></div>
             </section>
           </div>
 
           <section class="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs space-y-3" aria-label="دسترسی سریع به بخش‌ها">
-            <h3 class="text-xs font-extrabold text-slate-800">دسترسی سریع</h3>
+            <div class="flex items-center justify-between gap-2"><h3 class="text-xs font-extrabold text-slate-800">دسترسی سریع</h3><span class="text-[10px] font-bold text-slate-500">۱۴ میان‌بر از ۱۹ ماژول</span></div>
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 text-xs">
               <button type="button" onclick="navigateTo('invoices'); openInvoiceForm('sale')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-holoo-50 border border-holoo-200 font-bold text-holoo-950 hover:bg-holoo-100 text-right">ثبت فاکتور فروش</button>
               <button type="button" onclick="navigateTo('products')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-teal-50 border border-teal-200 font-bold text-teal-950 hover:bg-teal-100 text-right">کالا و نخ نساجی</button>
@@ -3528,7 +3528,7 @@
           <span class="text-[11px] text-slate-500 block">بدهی خالص و تعهدات</span>
           <strong class="text-sm font-black text-rose-700 tabular-nums mt-1 block">${money(payables)}</strong>
         </div>
-        <div class="md:col-span-2 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
+        <div class="col-span-2 sm:col-span-1 xl:col-span-1 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
           <div>
             <span class="text-[11px] text-emerald-100 block">سود (زیان) خالص بازه انتخابی</span>
             <span class="text-[10px] text-emerald-100/90 block mt-0.5">${faNum(period.from)} تا ${faNum(period.to)} · مطابق صورت سود و زیان</span>
@@ -3559,6 +3559,8 @@
       });
       const alertPriority = html => html.includes('bg-rose-') ? 0 : (html.includes('bg-amber-') ? 1 : 2);
       const orderedAlerts = alerts.slice().sort((a, b) => alertPriority(a) - alertPriority(b));
+      const severityCounts = { critical: orderedAlerts.filter(html => html.includes('bg-rose-')).length, warning: orderedAlerts.filter(html => html.includes('bg-amber-')).length, info: orderedAlerts.filter(html => !html.includes('bg-rose-') && !html.includes('bg-amber-')).length };
+      [['dash-alert-critical', severityCounts.critical, 'بحرانی'], ['dash-alert-warning', severityCounts.warning, 'هشدار'], ['dash-alert-info', severityCounts.info, 'عادی']].forEach(([id, count, label]) => { const node = document.getElementById(id); if (node) node.textContent = faNum(count) + ' ' + label; });
       const visibleAlerts = dashboardShowAllAlerts ? orderedAlerts : orderedAlerts.slice(0, 5);
       const alertCount = document.getElementById('dash-alert-count');
       if (alertCount) alertCount.textContent = faNum(orderedAlerts.length) + ' مورد';
@@ -3576,6 +3578,13 @@
         if (dashChartInst) dashChartInst.destroy();
         const monthly = buildDashboardMonthlySeries(period.from, period.to);
         const unitDivisor = state.currency === 'IRT' ? 10 : 1;
+        const trendBox = document.getElementById('dash-trend-insights');
+        if (trendBox) {
+          const latest = monthly[monthly.length - 1];
+          const previous = monthly.length > 1 ? monthly[monthly.length - 2] : null;
+          const metrics = [['درآمد ماه آخر', latest ? latest.revenue : 0, previous ? latest.revenue - previous.revenue : null], ['سود خالص ماه آخر', latest ? latest.netProfit : 0, previous ? latest.netProfit - previous.netProfit : null], ['هزینه ماه آخر', latest ? latest.expenses : 0, previous ? latest.expenses - previous.expenses : null], ['بهای تمام‌شده', latest ? latest.cogs : 0, previous ? latest.cogs - previous.cogs : null]];
+          trendBox.innerHTML = metrics.map(([label, value, delta]) => '<div class="rounded-xl bg-slate-50 border border-slate-200 p-2 min-w-0"><span class="block text-[10px] text-slate-500">' + label + '</span><strong class="block text-xs font-black tabular-nums mt-1">' + money(value) + '</strong><span class="block text-[10px] mt-1 ' + (delta === null ? 'text-slate-500' : delta > 0 ? 'text-emerald-700' : delta < 0 ? 'text-rose-700' : 'text-slate-500') + '">' + (delta === null ? 'بدون ماه مبنا' : (delta > 0 ? '▲ ' : delta < 0 ? '▼ ' : '— ') + money(Math.abs(delta)) + ' نسبت به ماه قبل') + '</span></div>').join('');
+        }
         dashChartInst = new Chart(ctx, {
           type: 'line',
           data: {
