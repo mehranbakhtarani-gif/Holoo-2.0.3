@@ -9973,8 +9973,8 @@
       };
       const totals = { operating: 0, investing: 0, financing: 0, fx: 0, unclassified: 0 };
       const details = [];
-      let openingCash = 0, periodCashChange = 0, invalidDateVouchers = 0, invalidAmountVouchers = 0;
-      let unbalancedVoucherCount = 0, voucherDebitCreditDifference = 0;
+      let openingCash = 0, periodCashChange = 0, invalidDateVouchers = 0, invalidAmountVouchers = 0, invalidStructureVouchers = 0;
+      let unbalancedVoucherCount = 0, voucherDebitCreditDifference = 0, includedVouchers = 0;
       (state.vouchers || []).forEach(voucher => {
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
@@ -9986,6 +9986,9 @@
           debitTotal += debit; creditTotal += credit;
         });
         if (invalid) { invalidAmountVouchers++; return; }
+        const structureValidation = inspectTrialBalanceVoucher(voucher);
+        if (structureValidation.invalidStructure) invalidStructureVouchers++;
+        includedVouchers++;
         if (dateKey >= from && dateKey <= to) {
           const diff = debitTotal - creditTotal;
           if (Math.abs(diff) > 0.000001) { unbalancedVoucherCount++; voucherDebitCreditDifference += diff; }
@@ -10021,7 +10024,7 @@
       const classifiedNetChange = Object.values(totals).reduce((sum,value) => sum + value, 0);
       return { fromDate, toDate, openingCash, periodCashChange, closingCash: openingCash + periodCashChange,
         totals, details, classifiedNetChange, reconciliationDifference: periodCashChange - classifiedNetChange,
-        invalidDateVouchers, invalidAmountVouchers, unbalancedVoucherCount, voucherDebitCreditDifference };
+        invalidDateVouchers, invalidAmountVouchers, invalidStructureVouchers, unbalancedVoucherCount, voucherDebitCreditDifference, includedVouchers };
     }
 
     function renderActualCashFlowReport() {
@@ -10169,7 +10172,7 @@
       }
 
       const accounts = new Map();
-      let totalDebit = 0, totalCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0, currentYearProfit = 0;
+      let totalDebit = 0, totalCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0, includedVouchers = 0, currentYearProfit = 0;
       (state.vouchers || []).forEach(voucher => {
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
@@ -10177,6 +10180,10 @@
         if (dateKey > asOf) return;
         const invalidLines = countInvalidReportVoucherLines(voucher);
         if (invalidLines) { invalidAmountLines += invalidLines; return; }
+        const validation = inspectTrialBalanceVoucher(voucher);
+        if (validation.invalidStructure) invalidStructureVouchers++;
+        if (validation.unbalanced) unbalancedVouchers++;
+        includedVouchers++;
         (voucher.lines || []).forEach(line => {
           const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
           totalDebit += debit;
@@ -10221,7 +10228,7 @@
         asOfDate, rows, assets, liabilities, equity, currentYearProfit,
         liabilitiesAndEquity, difference: assets - liabilitiesAndEquity,
         totalDebit, totalCredit, trialBalanceDifference: totalDebit - totalCredit,
-        invalidDateVouchers, invalidAmountLines,
+        invalidDateVouchers, invalidAmountLines, invalidStructureVouchers, unbalancedVouchers, includedVouchers,
         fiscalStart: String(state.fiscalYear || '1405') + '/01/01'
       };
     }
@@ -10288,7 +10295,7 @@
 
       const accounts = new Map();
       const voucherDetails = [];
-      let periodDebit = 0, periodCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0;
+      let periodDebit = 0, periodCredit = 0, invalidDateVouchers = 0, invalidAmountLines = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0, includedVouchers = 0;
       const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
 
       vouchers.forEach(voucher => {
@@ -10301,6 +10308,10 @@
         if (dateKey < from || dateKey > to) return;
         const invalidLines = countInvalidReportVoucherLines(voucher);
         if (invalidLines) { invalidAmountLines += invalidLines; return; }
+        const validation = inspectTrialBalanceVoucher(voucher);
+        if (validation.invalidStructure) invalidStructureVouchers++;
+        if (validation.unbalanced) unbalancedVouchers++;
+        includedVouchers++;
 
         let voucherDebit = 0, voucherCredit = 0;
         (voucher.lines || []).forEach(line => {
@@ -10362,7 +10373,7 @@
         fromDate, toDate, rows, revenue, cogs, grossProfit: revenue - cogs,
         expenses, netProfit: revenue - cogs - expenses,
         periodDebit, periodCredit, trialBalanceDifference: periodDebit - periodCredit,
-        invalidDateVouchers, invalidAmountLines
+        invalidDateVouchers, invalidAmountLines, invalidStructureVouchers, unbalancedVouchers, includedVouchers
       };
     }
 
