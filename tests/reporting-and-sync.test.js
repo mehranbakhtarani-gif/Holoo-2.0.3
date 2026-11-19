@@ -102,6 +102,62 @@ async function test(name, fn) { await fn(); passed.push(name); }
     assert.equal(storage.has('holoo_textile_import_erp_v2_cloud_outbox_v1'),false);
   });
 
+  await test('empty operation journal is supported and never requests a legacy snapshot write', async () => {
+    let fetchCalls = 0;
+    const storage = new Map();
+    const result = await load('pushOperationJournalToSupabase', {
+      listPendingOperations: async () => [],
+      cloudConfig: { url: 'https://demo.supabase.co', key: 'anon', recordId: 'main_company_state', table: 'holoo_sync' },
+      CLOUD_OUTBOX_KEY: 'outbox',
+      localStorage: { getItem: key => storage.get(key) || null },
+      fetch: async () => { fetchCalls++; throw new Error('unexpected network request'); }
+    })();
+    assert.equal(result.supported, true);
+    assert.equal(result.applied, 0);
+    assert.equal(result.outboxPending, false);
+    assert.equal(fetchCalls, 0);
+  });
+
+  await test('supported empty journal exits before legacy snapshot writes', async () => {
+    let fetchCalls = 0;
+    const storage = new Map();
+    const push = load('pushToSupabase', {
+      isDeviceActorLocked: () => true,
+      cloudConfig: { url: 'https://demo.supabase.co', key: 'anon' },
+      isSyncing: false, syncPending: false, syncRevision: 0, state: {},
+      localStorage: { getItem: key => storage.get(key) || null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value) },
+      STORE_KEY: 'store', LOCAL_UPDATED_KEY: 'updated', CLOUD_OUTBOX_KEY: 'outbox', CLOUD_BASELINE_KEY: 'baseline',
+      operationJournalBarrier: Promise.resolve(), operationJournalBlocked: false,
+      pushOperationJournalToSupabase: async () => ({ supported: true, applied: 0, outboxPending: false }),
+      renderCloudSyncStatus: async () => {}, setCloudBadge() {}, showToast() {}, scheduleCloudSync() {},
+      fetchWithTimeout: async () => { fetchCalls++; throw new Error('legacy snapshot path must not run'); },
+      cloudAuthHeaders: () => ({}), document: { getElementById: () => null }
+    });
+    assert.equal(await push(), true);
+    assert.equal(fetchCalls, 0);
+  });
+
+  await test('orphaned outbox blocks legacy snapshot fallback without changing cloud data', async () => {
+    let fetchCalls = 0, badge = '';
+    const storage = new Map([['outbox', 'pending']]);
+    const push = load('pushToSupabase', {
+      isDeviceActorLocked: () => true,
+      cloudConfig: { url: 'https://demo.supabase.co', key: 'anon' },
+      isSyncing: false, syncPending: false, syncRevision: 0, state: {},
+      localStorage: { getItem: key => storage.get(key) || null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value) },
+      STORE_KEY: 'store', LOCAL_UPDATED_KEY: 'updated', CLOUD_OUTBOX_KEY: 'outbox', CLOUD_BASELINE_KEY: 'baseline',
+      operationJournalBarrier: Promise.resolve(), operationJournalBlocked: false,
+      pushOperationJournalToSupabase: async () => ({ supported: true, applied: 0, outboxPending: true }),
+      renderCloudSyncStatus: async () => {}, setCloudBadge: value => { badge = value; }, showToast() {}, scheduleCloudSync() {},
+      fetchWithTimeout: async () => { fetchCalls++; throw new Error('legacy snapshot path must not run'); },
+      cloudAuthHeaders: () => ({}), document: { getElementById: () => null }
+    });
+    assert.equal(await push(), false);
+    assert.match(badge, /صف محلی بدون عملیات متناظر/);
+    assert.equal(fetchCalls, 0);
+    assert.equal(storage.get('outbox'), 'pending');
+  });
+
   await test('operation journal detects CAS conflict and preserves pending operation', async () => {
     const op={operationId:'op-2',companyRecordId:'main_company_state',payload:{local:true},entityChanges:[],rootChanges:{},actor:'ehsan',deviceId:'device-b',sequence:3,operationType:'state_snapshot',summary:'conflict test',createdAt:'2026-11-18T00:00:00Z'};
     let fetchCalls=0, conflictSaved=null, acknowledged=0, badge='';
