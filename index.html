@@ -6583,7 +6583,7 @@
       state.invoices.unshift(invoice);
       try {
         postVoucher(type === 'sale' ? `صدور فاکتور فروش #${id}` : `ثبت فاکتور خرید #${id}`,
-          voucherLines, date, { type: 'invoice', id, deferSave: true, ...(settlementAccount?.type === 'bank' ? { bankAccountId: settlementAccount.id } : {}) });
+          voucherLines, date, { type: 'invoice', id, deferSave: true, ...(settlementAccount?.type === 'bank' ? { bankAccountId: settlementAccount.id } : (settlementAccount?.type === 'cash' ? { cashAccountId: settlementAccount.id } : {})) });
       } catch (error) {
         state.invoices = state.invoices.filter(entry => entry !== invoice);
         state.vouchers = (state.vouchers || []).filter(voucher =>
@@ -8856,7 +8856,7 @@
         ? [{ code: '2101', partyId: credit.partyId, desc: 'تسویه نقدی اعتبار مشتری', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bank.name, debit: 0, credit: amount }]
         : [{ code: accountCode, partyId: null, desc: bank.name, debit: amount, credit: 0 }, { code: '1107', partyId: credit.partyId, desc: 'تسویه پیش‌پرداخت تأمین‌کننده از محل وجه دریافتی', debit: 0, credit: amount }];
       const refundId = createStableId('credit_refund');
-      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId, deferSave: true, ...(bank.type === 'bank' ? { bankAccountId: bank.id } : {}) });
+      const voucherId = postVoucher(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', lines, undefined, { type: 'party_credit_refund', id: credit.id, event: refundId, deferSave: true, ...(bank.type === 'bank' ? { bankAccountId: bank.id } : { cashAccountId: bank.id }) });
       if (voucherId === null || voucherId === undefined || voucherId === false) { showToast('صدور سند تسویه ناموفق بود؛ مانده‌ها تغییر نکرد.', 'error'); return; }
       bank.balance = Number(bank.balance || 0) + (direction === 'receive' ? amount : -amount);
       credit.remainingAmount = Math.max(0, remaining - amount);
@@ -8865,7 +8865,7 @@
         id: refundId, kind: 'party_credit_refund', dir: direction, partyId: credit.partyId,
         amount, method: bank.type === 'cash' ? 'صندوق نقدی' : 'حواله بانکی',
         allocInv: '—', desc: isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده',
-        sourceCreditId: credit.id
+        ...(bank.type === 'bank' ? { bankAccountId: bank.id } : { cashAccountId: bank.id }), sourceCreditId: credit.id
       });
       addAudit(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', { mode: 'manual', sourceType: 'party_credit_refund' });
       saveState(); closeModal('modal-party-credit-refund'); renderAll();
@@ -8899,7 +8899,7 @@
       const code = type === 'bank' ? '1102' : '1101';
       const voucher = (state.vouchers || []).find(item => item.sourceType === 'treasury' && String(item.sourceId) === String(tx.id) && (item.sourceEvent || 'default') === 'posted');
       const line = (voucher?.lines || []).find(item => String(item.code) === code && (Number(item.debit || 0) > 0 || Number(item.credit || 0) > 0));
-      const accountId = tx.bankAccountId || line?.bankAccountId;
+      const accountId = tx.bankAccountId || line?.bankAccountId || tx.cashAccountId || line?.cashAccountId;
       const accounts = (state.bankAccounts || []).filter(item => item.type === type);
       if (accountId) return accounts.find(item => String(item.id) === String(accountId)) || null;
       return accounts.length === 1 ? accounts[0] : null;
@@ -8995,14 +8995,14 @@
         const lines = dir === 'receive'
           ? [{ code: accountCode, partyId: null, desc: accountLive.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }]
           : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: accountLive.name, debit: 0, credit: amount }];
-        const replacementVoucherId = postVoucher('تراکنش اصلاحی خزانه (' + accountLive.name + ')', lines, getTodayJalaliDate(), { type: 'treasury_correction', id: correctionId, event: 'replacement', mode: 'manual', deferSave: true, ...(method === 'bank' ? { bankAccountId: accountLive.id } : {}) });
+        const replacementVoucherId = postVoucher('تراکنش اصلاحی خزانه (' + accountLive.name + ')', lines, getTodayJalaliDate(), { type: 'treasury_correction', id: correctionId, event: 'replacement', mode: 'manual', deferSave: true, ...(method === 'bank' ? { bankAccountId: accountLive.id } : { cashAccountId: accountLive.id }) });
         oldAccount.balance = Number(oldAccount.balance || 0) + (original.dir === 'receive' ? -Number(original.amount || 0) : Number(original.amount || 0));
         newAccount.balance = Number(newAccount.balance || 0) + (dir === 'receive' ? amount : -amount);
         const replacementTxId = createStableId('TR-CORR');
         original.correctedByTxId = replacementTxId; original.reversalVoucherId = reversalVoucherId; original.correctionCompletedAt = new Date().toISOString();
         const replacementVoucher = state.vouchers.find(item => Number(item.id) === Number(replacementVoucherId)); if (replacementVoucher) replacementVoucher.correctsTxId = String(txId);
         const reversalVoucher = state.vouchers.find(item => Number(item.id) === Number(reversalVoucherId)); if (reversalVoucher) reversalVoucher.reversesTxId = String(txId);
-        state.treasuryTxs.unshift({ id: replacementTxId, date: getTodayJalaliDate(), dir, partyId, method: method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی', bankAccountId: accountLive.id, amount, allocInv: '—', allocInvId: null, allocations: [], desc, correctsTxId: String(txId), voucherId: replacementVoucherId, reversalVoucherId });
+        state.treasuryTxs.unshift({ id: replacementTxId, date: getTodayJalaliDate(), dir, partyId, method: method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی', ...(method === 'bank' ? { bankAccountId: accountLive.id } : { cashAccountId: accountLive.id }), amount, allocInv: '—', allocInvId: null, allocations: [], desc, correctsTxId: String(txId), voucherId: replacementVoucherId, reversalVoucherId });
         addAudit('اصلاح تراکنش خزانه ' + txId + ' با تراکنش جایگزین ' + replacementTxId, { mode: 'manual', sourceType: 'treasury_correction', sourceId: correctionId, previous: { txId: String(txId), amount: Number(originalLive.amount || 0), dir: originalLive.dir }, note: 'تراکنش اولیه حفظ شد؛ سند معکوس و تراکنش جایگزین در یک عملیات ثبت شدند.' });
         if (!saveState()) throw new Error('ذخیره محلی اصلاح خزانه ناموفق بود؛ سندها و مانده حساب‌ها بازگردانده شدند.');
         closeModal('modal-treasury-correction'); renderAll();
