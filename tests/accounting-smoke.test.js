@@ -326,5 +326,33 @@ test('inventory valuation reconciles to GL control account 1105 and withholds un
   assert.equal(unverifiedBuild().status, 'unverified');
 });
  
+test('inventory control ledger drilldown groups 1105 movements by source and links invoice product lines', () => {
+  const source = section('function buildInventoryValueDiscrepancySources()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildInventoryValueDiscrepancySources', {
+    state: {
+      products: [{ id: 'P1', name: 'کالای نمونه' }],
+      invoices: [{ id: 42, type: 'purchase', items: [{ productId: 'P1', kg: 8, costOfGoodsSold: 0, lot: 'LOT-42' }] }],
+      vouchers: [
+        { id: 100, sourceType: 'invoice', sourceId: '42', date: '1405/01/01', lines: [{ code: '1105', debit: 800, credit: 0, desc: 'خرید کالا' }] },
+        { id: 101, sourceType: 'invoice_return', sourceId: 'RET-1', sourceEvent: '42', date: '1405/01/02', lines: [{ code: '1105', debit: 0, credit: 100, desc: 'برگشت خرید' }] },
+        { id: 102, sourceType: 'stocktake', sourceId: 'STK-1', date: '1405/01/03', lines: [{ code: '1105', debit: 50, credit: 0, desc: 'اضافه انبار' }] },
+        { id: 103, date: '1405/01/04', lines: [{ code: '1105', debit: 20, credit: 0, desc: 'سند دستی' }] }
+      ]
+    }
+  });
+  const rows = build();
+  assert.equal(rows.length, 4);
+  const invoice = rows.find(row => row.sourceType === 'invoice');
+  assert.equal(invoice.invoiceId, '42');
+  assert.equal(invoice.productLines[0].productId, 'P1');
+  assert.equal(invoice.productLines[0].productName, 'کالای نمونه');
+  assert.equal(invoice.net, 800);
+  const returned = rows.find(row => row.sourceType === 'invoice_return');
+  assert.equal(returned.invoiceId, '42');
+  assert.equal(returned.net, -100);
+  assert.equal(rows.find(row => row.sourceType === 'stocktake').net, 50);
+  assert.equal(rows.find(row => row.sourceType === 'manual').net, 20);
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
