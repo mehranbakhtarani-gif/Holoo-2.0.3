@@ -81,7 +81,7 @@ test('correction form carries purchase type and original lines into draft', () =
   const document = { getElementById(id) { if (!elements.has(id)) elements.set(id, { value: '', textContent: '', classList: { remove() {}, add() {} }, scrollIntoView() {} }); return elements.get(id); } };
   const testContext = {
     state, document, invDraft: null, canCorrectInvoice: inv => inv.type === 'purchase', openInvoiceForm(type) { values.type = type; },
-    renderInvoiceSettlementAccounts() {}, getTodayJalaliDate() { return '1405/09/02'; },
+    renderInvoiceSettlementAccounts() {}, renderInvoiceProductOptions() {}, getTodayJalaliDate() { return '1405/09/02'; },
     checkPartyCredit() {}, renderInvDraftLines() {}, showToast() {}, faNum: String
   };
   const open = load(extract('openInvoiceCorrection', 'function renderInvoicesModule'), 'openInvoiceCorrection', testContext);
