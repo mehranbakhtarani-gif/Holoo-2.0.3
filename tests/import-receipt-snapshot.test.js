@@ -122,6 +122,38 @@ assert.equal(getReceiptReversalBlockReason(
   reversalShipment, [postedProduct], [], [registrationVoucher]
 ), null, 'a pristine, snapshot-backed receipt is eligible for physical reversal');
 
+const legacyBefore = {
+  id: 'REV-LEGACY-P', stock: 20, buyPrice: 100, lastMoveDays: 4,
+  kardex: [{ doc: 'LEGACY-OPEN', inQty: 20, outQty: 0, bal: 20 }],
+  batches: []
+};
+const legacyShipment = {
+  id: 'IMP-LEGACY-REV',
+  postedToWh: true,
+  items: [{ id: 'LEGACY-ITEM', productId: 'REV-LEGACY-P', quantityKg: 10, landedCostRial: 1200 }]
+};
+legacyShipment.receiptSnapshot = createReceiptSnapshot(legacyShipment, [legacyBefore], {
+  schemaVersion: 1, snapshotId: 'LEGACY-REV-SNAPSHOT', capturedAt: '2026-11-19T08:20:00.000Z',
+  receivedDate: '1405/08/28', previousStatus: 'cleared', actor: 'mehran',
+  deviceId: 'device-reversal-test', costingMethod: 'AVG'
+});
+const legacyPostedProduct = {
+  ...JSON.parse(JSON.stringify(legacyBefore)),
+  stock: 30, buyPrice: 107, lastMoveDays: 0,
+  kardex: [
+    ...JSON.parse(JSON.stringify(legacyBefore.kardex)),
+    { date: '1405/08/28', doc: 'تحویل محموله IMP-LEGACY-REV به انبار', inQty: 10, outQty: 0, bal: 30, price: 120, batchRef: 'IMP-LEGACY-REV', sourceItemId: 'LEGACY-ITEM' }
+  ],
+  batches: [
+    { id: 'LEGACY-REV-LEGACY-P', lot: 'LEGACY', receivedDate: '0000/00/00', productionDate: '', expiryDate: '', quantity: 20, remainingQty: 20, unitCost: 100, sourceType: 'legacy_opening', sourceRef: 'legacy-stock' },
+    { id: 'LEGACY-REV-BATCH', quantity: 10, remainingQty: 10, unitCost: 120, sourceType: 'import', sourceRef: 'IMP-LEGACY-REV', sourceItemId: 'LEGACY-ITEM' }
+  ]
+};
+assert.equal(getReceiptReversalBlockReason(
+  legacyShipment, [legacyPostedProduct], [],
+  [{ id: 'V-LEGACY-REV', sourceType: 'import', sourceId: 'IMP-LEGACY-REV', sourceEvent: 'registration' }]
+), null, 'the one-time legacy opening batch created during receipt is accounted for safely');
+
 const changedStock = JSON.parse(JSON.stringify(postedProduct));
 changedStock.stock += 1;
 assert.match(getReceiptReversalBlockReason(
