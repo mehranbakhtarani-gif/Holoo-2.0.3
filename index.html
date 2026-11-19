@@ -5779,7 +5779,7 @@
       if (!items.length) return 'اقلام رسید قابل بازیابی نیست؛ اصلاح متوقف شد.';
       const registrationVoucher = (state.vouchers || []).find(voucher => voucher.sourceType === 'import' && String(voucher.sourceId) === String(shipment.id) && (voucher.sourceEvent || 'default') === 'registration');
       if (!registrationVoucher) return 'سند ثبت بهای تمام‌شده محموله پیدا نشد؛ اصلاح رسید بدون بررسی سند مالی مجاز نیست.';
-      const issues = [], sourceBatchIds = new Set(), productsWithReceipt = new Set();
+      const issues = [], sourceBatchIds = new Set();
       let consumedQty = 0, transferDescendants = 0, untrackedLaterMovements = 0;
       items.forEach(item => {
         const product = (state.products || []).find(p => String(p.id) === String(item.productId));
@@ -5794,7 +5794,7 @@
           sourceBatchIds.add(String(batch.id));
           const remaining = Number(batch.remainingQty);
           if (!Number.isFinite(remaining) || remaining < -0.000001 || remaining > Number(batch.quantity || 0) + 0.000001) issues.push(String(product.name || item.productId) + ': مانده بچ وارداتی نامعتبر است');
-          else { /* Net consumption is calculated across the full transfer lineage below. */ }
+
         });
         if (rows.length === 1) {
           const later = (product.kardex || []).slice(rows[0].index + 1).filter(row => Number(row.inQty || 0) > 0 || Number(row.outQty || 0) > 0);
@@ -5811,10 +5811,9 @@
           if (parentId && descendants.has(parentId) && !descendants.has(String(entry.batch.id))) { descendants.add(String(entry.batch.id)); transferDescendants++; grew = true; }
         });
       }
-      consumedQty = allBatches.filter(entry => descendants.has(String(entry.batch.id))).reduce((sum, entry) => {
-        const quantity = Number(entry.batch.quantity || 0), remaining = Number(entry.batch.remainingQty || 0);
-        return sum + (Number.isFinite(quantity) && Number.isFinite(remaining) ? Math.max(0, quantity - remaining) : 0);
-      }, 0);
+      const originalQty = allBatches.filter(entry => sourceBatchIds.has(String(entry.batch.id))).reduce((sum, entry) => sum + Math.max(0, Number(entry.batch.quantity || 0)), 0);
+      const lineageRemaining = allBatches.filter(entry => descendants.has(String(entry.batch.id))).reduce((sum, entry) => sum + Math.max(0, Number(entry.batch.remainingQty || 0)), 0);
+      consumedQty = Math.max(0, originalQty - lineageRemaining);
       const invoiceIds = new Set();
       (state.invoices || []).forEach(invoice => (invoice.items || []).forEach(line => (line.fifoAllocations || []).forEach(allocation => {
         if (descendants.has(String(allocation.batchId || ''))) invoiceIds.add(String(invoice.id));
