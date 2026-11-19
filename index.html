@@ -5412,7 +5412,7 @@
         const stock = Number(product.stock);
         const unitCost = Number(product.buyPrice ?? 0);
         if (!Number.isFinite(stock) || stock < 0) throw new Error('موجودی سیستمی کالای «' + String(product.name || id) + '» معتبر نیست.');
-        if (!Number.isFinite(unitCost) || unitCost < 0) throw new Error('بهای کالا «' + String(product.name || id) + '» معتبر نیست.');
+        if (state.costingMethod !== 'FIFO' && (!Number.isFinite(unitCost) || unitCost < 0)) throw new Error('بهای کالا «' + String(product.name || id) + '» معتبر نیست.');
       });
       entries.forEach(entry => {
         const id = String(entry?.productId ?? '');
@@ -6685,7 +6685,7 @@
         });
       }
 
-      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount, inventoryCost: x.inventoryCost, batchAllocations: x.returnedBatchAllocations || x.purchaseReturnAllocations || [] })), createdAt: new Date().toISOString(), partyCreditAmount }];
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount, inventoryCost: x.inventoryCost, batchAllocations: x.returnedBatchAllocations || x.purchaseReturnAllocations || [] })), createdAt: new Date().toISOString(), actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, partyCreditAmount }];
       if (partyCreditAmount > 0) {
         state.treasuryTxs = state.treasuryTxs || [];
         state.treasuryTxs.unshift({
