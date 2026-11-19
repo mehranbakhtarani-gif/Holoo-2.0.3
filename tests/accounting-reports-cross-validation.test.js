@@ -49,13 +49,13 @@ const CHART_ACCOUNTS = [
 ];
 const sandbox = {
   state, CHART_ACCOUNTS,
+  normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
   getInvoiceReturnedAmount: inv => (inv.returnRefs || []).reduce((s,r)=>s+Number(r.amount||0),0),
   getPartyName: id => state.parties.find(p=>String(p.id)===String(id))?.name || '—',
   agingBucket: days => days <= 0 ? 'سررسید نشده' : days <= 30 ? '۱ تا ۳۰ روز' : days <= 60 ? '۳۱ تا ۶۰ روز' : days <= 90 ? '۶۱ تا ۹۰ روز' : 'بیش از ۹۰ روز',
   saveState(){}, renderAll(){}, showToast(){}
 };
 vm.createContext(sandbox);
-vm.runInContext(sliceBetween('    function normalizeAccountingDate(', '    function getAccountingPeriodBounds(') + '; this.normalizeAccountingDate = normalizeAccountingDate;', sandbox);
 vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()'), sandbox);
 vm.runInContext(sliceBetween('    function buildAgingRows(', '    function renderAgingSummary('), sandbox);
 vm.runInContext(sliceBetween('    function escapeBankReconciliationText(', '    function renderReconcileModule('), sandbox);
