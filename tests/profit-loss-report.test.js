@@ -53,7 +53,7 @@ const voucherValidationStart = html.indexOf('    function inspectTrialBalanceVou
 const voucherValidationEnd = html.indexOf('    function ', voucherValidationStart + 10);
 assert.notEqual(voucherValidationStart, -1, 'trial balance voucher validation helper must exist');
 assert.notEqual(voucherValidationEnd, -1, 'trial balance voucher validation helper must have an end');
-vm.runInContext(html.slice(voucherValidationStart, voucherValidationEnd), sandbox);
+vm.runInContext(html.slice(voucherValidationStart, voucherValidationEnd) + '; this.inspectTrialBalanceVoucher = inspectTrialBalanceVoucher;', sandbox);
 vm.runInContext(html.slice(start, end) + '; this.api = { normalizeLedgerDate, buildProfitLossReport };', sandbox);
 const { buildProfitLossReport } = sandbox.api;
 
