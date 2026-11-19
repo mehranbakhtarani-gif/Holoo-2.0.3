@@ -145,7 +145,8 @@
       outline-offset: 3px;
     }
     .holoo-motion-enter {
-      animation: holoo-content-enter 460ms var(--holoo-ease-emphasized) both;
+      animation: holoo-content-enter var(--holoo-motion-duration,460ms) var(--holoo-ease-emphasized) both;
+      animation-delay: var(--holoo-motion-delay,0ms);
       will-change: opacity, transform;
     }
     @keyframes holoo-content-enter {
@@ -8490,39 +8491,76 @@
   <script src="./operational-tools.js"></script>
 
   <script>
-    /* Small, delegated motion controller: no dependencies and no accounting-data hooks. */
+    /* Object-level motion: lightweight, delegated and isolated from accounting state. */
     (() => {
       const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (reduced) return;
-      const enter = (node) => {
-        if (!(node instanceof HTMLElement) || node.dataset.holooMotion === '1') return;
-        if (node.matches('script,style,template,table,tbody,thead,tr,td,th,input,textarea,select,option')) return;
+
+      const motionSelector = [
+        '.bg-white.rounded-lg',
+        '.bg-white.rounded-xl',
+        '.bg-white.rounded-2xl',
+        'button',
+        '[role="button"]',
+        '.touch-btn',
+        '[data-holoo-object]'
+      ].join(',');
+
+      const enter = (node, order = 0) => {
+        if (!(node instanceof HTMLElement) || node.dataset.holooMotion === '1') return false;
+        if (!node.matches(motionSelector)) return false;
         node.dataset.holooMotion = '1';
+        node.style.setProperty('--holoo-motion-delay', Math.min(order, 5) * 34 + 'ms');
+        node.style.setProperty('--holoo-motion-duration',
+          node.matches('button,[role="button"],.touch-btn') ? '260ms' : '420ms');
         node.classList.add('holoo-motion-enter');
-        node.addEventListener('animationend', () => {
+
+        const finish = (event) => {
+          if (event.target !== node) return;
           node.classList.remove('holoo-motion-enter');
           node.style.willChange = '';
-        }, { once: true });
+          node.style.removeProperty('--holoo-motion-delay');
+          node.style.removeProperty('--holoo-motion-duration');
+          node.removeEventListener('animationend', finish);
+          node.removeEventListener('animationcancel', finish);
+        };
+        node.addEventListener('animationend', finish);
+        node.addEventListener('animationcancel', finish);
+        return true;
       };
+
+      const scan = (root) => {
+        if (!(root instanceof Element)) return;
+        let order = 0;
+        if (enter(root, order)) order++;
+        root.querySelectorAll(motionSelector).forEach((node) => {
+          if (enter(node, order)) order++;
+        });
+      };
+
       const start = () => {
         const workspace = document.querySelector('.main-workspace');
         if (workspace) {
           const observer = new MutationObserver((records) => {
             for (const record of records) {
               record.addedNodes.forEach((node) => {
-                if (node.nodeType === 1) enter(node);
+                if (node.nodeType === 1) scan(node);
               });
             }
           });
-          observer.observe(workspace, { childList: true });
+          observer.observe(workspace, { childList: true, subtree: true });
+          scan(workspace);
         }
+
         document.addEventListener('pointerdown', (event) => {
-          const target = event.target.closest('button,[role="button"],.touch-btn');
+          const origin = event.target instanceof Element ? event.target : null;
+          const target = origin && origin.closest('button,[role="button"],.touch-btn');
           if (target && !target.disabled) target.classList.add('holoo-pressing');
         }, { passive: true });
+
         const release = (event) => {
-          const target = event.target && event.target.closest
-            ? event.target.closest('button,[role="button"],.touch-btn') : null;
+          const origin = event.target instanceof Element ? event.target : null;
+          const target = origin && origin.closest('button,[role="button"],.touch-btn');
           if (target) target.classList.remove('holoo-pressing');
           document.querySelectorAll('.holoo-pressing').forEach((el) => el.classList.remove('holoo-pressing'));
         };
@@ -8532,6 +8570,7 @@
           if (document.hidden) document.querySelectorAll('.holoo-pressing').forEach((el) => el.classList.remove('holoo-pressing'));
         });
       };
+
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
       else start();
     })();
