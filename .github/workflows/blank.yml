@@ -55,4 +55,5 @@ jobs:
           node tests/multi-device-concurrency.test.js
           node tests/editability-controls.test.js
           node tests/invoice-correction.test.js
+          node tests/treasury-check-correction.test.js
           node tests/full-fiscal-period.integration.test.js
