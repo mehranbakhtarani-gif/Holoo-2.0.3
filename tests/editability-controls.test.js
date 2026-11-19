@@ -61,7 +61,7 @@ assert.ok(html.includes('original.correctedByVoucherId = replacementId'));
 assert.ok(html.includes('reversalVoucherId = reversalId'));
 assert.ok(html.includes("sourceType: 'manual_voucher_correction'"));
 assert.ok(html.includes('state = before;'));
-assert.ok(html.includes("inv.type !== 'sale'"));
+assert.ok(html.includes("!['sale', 'purchase'].includes(inv.type)"));
 assert.ok(html.includes("sourceType: 'invoice_correction'"));
 assert.ok(html.includes('ابطال پورسانت پرداختنی فاکتور'));
 assert.ok(html.includes('برگشت هزینه پورسانت فاکتور'));
