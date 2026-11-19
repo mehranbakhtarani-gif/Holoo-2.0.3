@@ -2603,7 +2603,10 @@
         return false;
       }
       const journalWrite = writeLocalMirror(JSON.parse(snapshot), operation);
-      operationJournalBarrier = Promise.all([operationJournalBarrier, journalWrite.catch(() => {})]);
+      operationJournalBarrier = Promise.all([operationJournalBarrier, journalWrite.catch(e => {
+        operationJournalBlocked = true;
+        return undefined;
+      })]);
       journalWrite.then(() => {
         operationJournalBlocked = false;
         lastSavedState = JSON.parse(snapshot);
