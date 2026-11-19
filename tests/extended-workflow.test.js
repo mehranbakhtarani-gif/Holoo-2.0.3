@@ -19,6 +19,11 @@ function load(source, name, context) {
   const helperStart = html.indexOf('function getReturnCostOfGoods(');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   if (helperStart >= 0 && helperEnd > helperStart) vm.runInContext(html.slice(helperStart, helperEnd), sandbox);
+  const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
+  const warehouseResolverEnd = html.indexOf('function renderInvoiceProductOptions(', warehouseResolverStart);
+  if (warehouseResolverStart >= 0 && warehouseResolverEnd > warehouseResolverStart) {
+    vm.runInContext(html.slice(warehouseResolverStart, warehouseResolverEnd), sandbox);
+  }
   vm.runInContext(source + `; this.__testFn = ${name};`, sandbox);
   return sandbox.__testFn;
 }
@@ -80,7 +85,7 @@ test('opening stock creates kardex entry and accounting voucher', () => {
 
 // Invoice lifecycle with isolated in-memory state. No live database or user data is touched.
 function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAccountId = null) {
-  const product = { id: 'TX-101', name: 'کالای آزمایشی', stock: 100, buyPrice: 10, kardex: [] };
+  const product = { id: 'TX-101', name: 'کالای آزمایشی', warehouseId: 'WH1', stock: 100, buyPrice: 10, kardex: [] };
   const state = {
     fiscalYear: '1405', invoices: [], products: [product],
     bankAccounts,
@@ -253,7 +258,7 @@ test('failed purchase invoice journal leaves invoice, stock, average cost and ba
 });
 
 test('sales invoice rechecks available stock before any live mutation',()=>{
-  const product={id:'TX-LOW',name:'کالای کم‌موجودی',stock:2,buyPrice:10,kardex:[]};
+  const product={id:'TX-LOW',name:'کالای کم‌موجودی',warehouseId:'WH1',stock:2,buyPrice:10,kardex:[]};
   const state={fiscalYear:'1405',invoices:[],products:[product],bankAccounts:[],costingMethod:'FIFO'};
   const values={'inv-party':'P-LOW','inv-warehouse':'WH1','inv-pay-method':'credit','inv-settlement-account':'',
     'inv-vat-rate':'0','inv-commission-rate':'0','inv-due-date':'1405/09/01','inv-salesperson':'آزمایشی'};
@@ -274,8 +279,8 @@ test('sales invoice rechecks available stock before any live mutation',()=>{
 // Unpaid invoice cancellation must reverse stock exactly once and post a reversal.
 test('unpaid sales invoice cancellation restores stock and marks invoice cancelled', () => {
   const state = {
-    invoices: [{ id: 1001, type: 'sale', status: 'active', paidAmount: 0, partyId: 'P1', grandTotal: 100, items: [{ productId: 'TX-1', kg: 5, returnedKg: 0 }] }],
-    products: [{ id: 'TX-1', stock: 5 }]
+    invoices: [{ id: 1001, type: 'sale', status: 'active', warehouseId: 'WH1', paidAmount: 0, partyId: 'P1', grandTotal: 100, items: [{ productId: 'TX-1', kg: 5, returnedKg: 0 }] }],
+    products: [{ id: 'TX-1', warehouseId: 'WH1', stock: 5 }]
   };
   const posted = [];
   const cancel = load(extractFunction('cancelInvoice', 'function printOfficialInvoice('), 'cancelInvoice', {
