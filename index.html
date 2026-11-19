@@ -97,6 +97,98 @@
     /* Numeric Jalali dates must read left-to-right even inside the RTL Persian interface. */
     input[data-jalali-calendar-ready="1"] { direction:ltr !important; unicode-bidi:isolate; text-align:center; }
     @media(max-width:480px) { #jalali-calendar-panel { padding:14px; } #jalali-calendar-panel .jc-day { min-height:38px; } }
+
+    /* Holoo motion system — iOS-inspired, lightweight and accounting-safe */
+    :root {
+      --holoo-motion-fast: 160ms;
+      --holoo-motion-standard: 280ms;
+      --holoo-motion-emphasized: 420ms;
+      --holoo-ease-standard: cubic-bezier(.2,.75,.25,1);
+      --holoo-ease-emphasized: cubic-bezier(.22,1,.36,1);
+      --holoo-motion-shadow: 0 14px 34px rgba(15,23,42,.10);
+    }
+    @media (hover:hover) and (prefers-reduced-motion:no-preference) {
+      .main-workspace .bg-white.rounded-xl,
+      .main-workspace .bg-white.rounded-lg,
+      .main-workspace [class*="shadow"].rounded-xl,
+      .main-workspace [class*="shadow"].rounded-lg {
+        transition: transform var(--holoo-motion-standard) var(--holoo-ease-standard),
+                    box-shadow var(--holoo-motion-standard) var(--holoo-ease-standard),
+                    border-color var(--holoo-motion-fast) ease;
+      }
+      .main-workspace .bg-white.rounded-xl:hover,
+      .main-workspace .bg-white.rounded-lg:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--holoo-motion-shadow);
+      }
+    }
+    button, [role="button"], .touch-btn, a {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    button, [role="button"], .touch-btn {
+      transition: transform var(--holoo-motion-fast) var(--holoo-ease-standard),
+                  box-shadow var(--holoo-motion-standard) var(--holoo-ease-standard),
+                  filter var(--holoo-motion-fast) ease,
+                  background-color var(--holoo-motion-fast) ease,
+                  border-color var(--holoo-motion-fast) ease;
+    }
+    .holoo-pressing { transform: scale(.975) !important; filter: brightness(.97); }
+    button:focus-visible, [role="button"]:focus-visible, a:focus-visible {
+      outline: 3px solid rgba(20,184,166,.55);
+      outline-offset: 3px;
+    }
+    .holoo-motion-enter {
+      animation: holoo-content-enter 460ms var(--holoo-ease-emphasized) both;
+      will-change: opacity, transform;
+    }
+    @keyframes holoo-content-enter {
+      from { opacity: 0; transform: translate3d(0,12px,0) scale(.992); }
+      to { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+    }
+    [id^="modal-"]:not(.hidden), [id$="-modal"]:not(.hidden), [role="dialog"]:not([hidden]) {
+      animation: holoo-overlay-enter 220ms ease-out both;
+    }
+    [id^="modal-"]:not(.hidden) > div,
+    [id$="-modal"]:not(.hidden) > div,
+    [role="dialog"]:not([hidden]) > div {
+      animation: holoo-dialog-enter 360ms var(--holoo-ease-emphasized) both;
+    }
+    @keyframes holoo-overlay-enter { from { opacity:0; } to { opacity:1; } }
+    @keyframes holoo-dialog-enter {
+      from { opacity:0; transform:translate3d(0,14px,0) scale(.975); }
+      to { opacity:1; transform:translate3d(0,0,0) scale(1); }
+    }
+    .mobile-bottom-nav a, .mobile-bottom-nav button,
+    .desktop-sidebar a, .desktop-sidebar button {
+      transition: color var(--holoo-motion-fast) ease,
+                  background-color var(--holoo-motion-fast) ease,
+                  transform var(--holoo-motion-fast) var(--holoo-ease-standard);
+    }
+    .mobile-bottom-nav a:active, .mobile-bottom-nav button:active,
+    .desktop-sidebar a:active, .desktop-sidebar button:active { transform:scale(.96); }
+    input, select, textarea {
+      transition: border-color var(--holoo-motion-fast) ease,
+                  box-shadow var(--holoo-motion-fast) ease,
+                  background-color var(--holoo-motion-fast) ease;
+    }
+    input:focus, select:focus, textarea:focus {
+      box-shadow: 0 0 0 3px rgba(20,184,166,.13);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+      .holoo-motion-enter { animation: none !important; }
+    }
+    @media (max-width: 640px) {
+      .main-workspace { scroll-behavior: smooth; }
+      .glass-header { backdrop-filter: saturate(150%) blur(18px); -webkit-backdrop-filter: saturate(150%) blur(18px); }
+    }
+
 </style>
 </head>
 <body>
@@ -8127,5 +8219,54 @@
   
   </script>
   <script src="./operational-tools.js"></script>
+
+  <script>
+    /* Small, delegated motion controller: no dependencies and no accounting-data hooks. */
+    (() => {
+      const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) return;
+      const enter = (node) => {
+        if (!(node instanceof HTMLElement) || node.dataset.holooMotion === '1') return;
+        if (node.matches('script,style,template,table,tbody,thead,tr,td,th,input,textarea,select,option')) return;
+        node.dataset.holooMotion = '1';
+        node.classList.add('holoo-motion-enter');
+        node.addEventListener('animationend', () => {
+          node.classList.remove('holoo-motion-enter');
+          node.style.willChange = '';
+        }, { once: true });
+      };
+      const start = () => {
+        const workspace = document.querySelector('.main-workspace');
+        if (workspace) {
+          const observer = new MutationObserver((records) => {
+            for (const record of records) {
+              record.addedNodes.forEach((node) => {
+                if (node.nodeType === 1) enter(node);
+              });
+            }
+          });
+          observer.observe(workspace, { childList: true });
+        }
+        document.addEventListener('pointerdown', (event) => {
+          const target = event.target.closest('button,[role="button"],.touch-btn');
+          if (target && !target.disabled) target.classList.add('holoo-pressing');
+        }, { passive: true });
+        const release = (event) => {
+          const target = event.target && event.target.closest
+            ? event.target.closest('button,[role="button"],.touch-btn') : null;
+          if (target) target.classList.remove('holoo-pressing');
+          document.querySelectorAll('.holoo-pressing').forEach((el) => el.classList.remove('holoo-pressing'));
+        };
+        document.addEventListener('pointerup', release, { passive: true });
+        document.addEventListener('pointercancel', release, { passive: true });
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) document.querySelectorAll('.holoo-pressing').forEach((el) => el.classList.remove('holoo-pressing'));
+        });
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+      else start();
+    })();
+  </script>
+
 </body>
 </html>
