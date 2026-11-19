@@ -304,12 +304,12 @@ test('sales invoice rechecks available stock before any live mutation',()=>{
 // Unpaid invoice cancellation must reverse stock exactly once and post a reversal.
 test('unpaid sales invoice cancellation restores stock and marks invoice cancelled', () => {
   const state = {
-    invoices: [{ id: 1001, type: 'sale', status: 'active', warehouseId: 'WH1', paidAmount: 0, partyId: 'P1', grandTotal: 100, items: [{ productId: 'TX-1', kg: 5, returnedKg: 0 }] }],
+    invoices: [{ id: 1001, type: 'sale', status: 'active', date: '1405/09/01', warehouseId: 'WH1', paidAmount: 0, partyId: 'P1', grandTotal: 100, items: [{ productId: 'TX-1', kg: 5, returnedKg: 0 }] }],
     products: [{ id: 'TX-1', warehouseId: 'WH1', stock: 5 }]
   };
   const posted = [];
   const cancel = load(extractFunction('cancelInvoice', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, restoreFifoAllocations(product, allocations, qty, fallbackCost, sourceRef) { product.batches = product.batches || []; product.batches.push({ id: 'RETURN-' + sourceRef, quantity: qty, remainingQty: qty, unitCost: fallbackCost }); return [{ batchId: 'RETURN-' + sourceRef, quantity: qty }]; }, consumeFifoStock() {}, postVoucher(...args) { posted.push(args); }, saveState() {}, renderAll() {}, showToast() {}, faNum: String
+    state, jalaliDateOrdinal(value) { return /^1405\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, restoreFifoAllocations(product, allocations, qty, fallbackCost, sourceRef) { product.batches = product.batches || []; product.batches.push({ id: 'RETURN-' + sourceRef, quantity: qty, remainingQty: qty, unitCost: fallbackCost }); return [{ batchId: 'RETURN-' + sourceRef, quantity: qty }]; }, consumeFifoStock() {}, postVoucher(...args) { posted.push(args); }, saveState() {}, renderAll() {}, showToast() {}, faNum: String
   });
   cancel(1001);
   assert.equal(state.invoices[0].status, 'cancelled');
