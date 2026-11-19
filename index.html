@@ -2978,7 +2978,13 @@
         user: roles[state.activeRole] || 'کاربر',
         actor: state.activeRole || 'mehran',
         deviceId: DEVICE_ID,
-        action
+        action,
+        ...(metadata.sourceId !== undefined ? { sourceId: metadata.sourceId } : {}),
+        ...(metadata.operationId !== undefined ? { operationId: metadata.operationId } : {}),
+        ...(metadata.previous !== undefined ? { previous: metadata.previous } : {}),
+        ...(metadata.note !== undefined ? { note: metadata.note } : {}),
+        ...(metadata.relatedVoucherIds !== undefined ? { relatedVoucherIds: metadata.relatedVoucherIds } : {}),
+        ...(metadata.details !== undefined ? { details: metadata.details } : {})
       });
       // لاگ‌ها append-only می‌مانند؛ فقط نمایش رابط محدود می‌شود.
     }
@@ -4842,6 +4848,8 @@
       const draft = JSON.parse(JSON.stringify(baseState));
       const originalState = state;
       let changes = 0;
+      const auditItems = [];
+      const relatedVoucherIds = [];
       state = draft;
       try {
         counts.forEach(count => {
@@ -4880,7 +4888,10 @@
             inQty: diff > 0 ? diff : 0,
             outQty: diff < 0 ? Math.abs(diff) : 0,
             bal: count.real,
-            price: unitCost
+            price: unitCost,
+            operationId,
+            sourceType: 'stocktake',
+            sourceId: count.productId
           });
 
           const lines = diff < 0
@@ -4892,16 +4903,51 @@
                 { code: '1105', partyId: null, desc: 'اضافه انبارگردانی ' + product.name, debit: valuation, credit: 0 },
                 { code: '3102', partyId: null, desc: product.name, debit: 0, credit: valuation }
               ];
-          postVoucher(
+          const voucherId = postVoucher(
             'سند مغایرت انبارگردانی: ' + product.name,
             lines,
             postingDate,
             { type: 'stocktake', id: operationId, event: count.productId, deferSave: true }
           );
+          if (voucherId === null || voucherId === undefined || voucherId === false) {
+            throw new Error('شماره سند مغایرت کالای «' + String(product.name || product.id) + '» ثبت نشد؛ انبارگردانی لغو شد.');
+          }
+          relatedVoucherIds.push(String(voucherId));
+          auditItems.push({
+            productId: String(product.id),
+            productName: String(product.name || ''),
+            warehouseId: product.warehouseId ?? null,
+            before: {
+              stock: current,
+              batches: JSON.parse(JSON.stringify(Array.isArray(baseState.products.find(item => String(item.id) === count.productId)?.batches) ? baseState.products.find(item => String(item.id) === count.productId).batches : []))
+            },
+            countedStock: count.real,
+            difference: diff,
+            valuation,
+            voucherId: String(voucherId),
+            fifoAllocations: fifoPlan && Array.isArray(fifoPlan.allocations) ? JSON.parse(JSON.stringify(fifoPlan.allocations)) : []
+          });
           changes++;
         });
-        if (changes) addAudit('ثبت انبارگردانی اتمیک؛ ' + changes + ' قلم کالا', { operationId, operationDate: postingDate, sourceType: 'stocktake' });
-        return { state: draft, changes, operationId };
+        if (changes) {
+          const auditPrevious = auditItems.map(item => ({
+            productId: item.productId,
+            productName: item.productName,
+            warehouseId: item.warehouseId,
+            stock: item.before.stock,
+            batches: item.before.batches
+          }));
+          addAudit('ثبت انبارگردانی اتمیک؛ ' + changes + ' قلم کالا', {
+            operationId,
+            sourceId: operationId,
+            operationDate: postingDate,
+            sourceType: 'stocktake',
+            previous: auditPrevious,
+            relatedVoucherIds: relatedVoucherIds.slice(),
+            details: auditItems
+          });
+        }
+        return { state: draft, changes, operationId, relatedVoucherIds, auditItems };
       } finally {
         state = originalState;
       }
@@ -9597,7 +9643,7 @@
       }).join('') : '<p class="text-slate-500 p-3">هنوز درخواست تأییدی ثبت نشده است.</p>';
 
       document.getElementById('audit-logs-list').innerHTML = (state.auditLogs || []).slice(0, 100).map(l => `
-        <div class="p-2 rounded-xl bg-slate-50 border flex justify-between gap-2"><span><strong>${window.escapeBankReconciliationText(l.user || 'کاربر')}:</strong> ${window.escapeBankReconciliationText(l.action || '')}<small class="block text-[9px] text-slate-400">${window.escapeBankReconciliationText(l.actor || '—')} · دستگاه ${window.escapeBankReconciliationText(l.deviceId ? String(l.deviceId).slice(-8) : 'قدیمی')} · ${l.operationMode === 'automatic' ? 'اتوماتیک' : (l.operationMode === 'manual' ? 'دستی' : 'قدیمی')}</small></span><span class="text-slate-400 tabular-nums shrink-0">${window.escapeBankReconciliationText(faNum(l.operationDate || l.time || ''))}</span></div>
+        <div class="p-2 rounded-xl bg-slate-50 border flex justify-between gap-2"><span><strong>${window.escapeBankReconciliationText(l.user || 'کاربر')}:</strong> ${window.escapeBankReconciliationText(l.action || '')}<small class="block text-[9px] text-slate-400">${window.escapeBankReconciliationText(l.actor || '—')} · دستگاه ${window.escapeBankReconciliationText(l.deviceId ? String(l.deviceId).slice(-8) : 'قدیمی')} · ${l.operationMode === 'automatic' ? 'اتوماتیک' : (l.operationMode === 'manual' ? 'دستی' : 'قدیمی')}</small>${l.operationId ? `<small class="block text-[9px] text-slate-500">شناسه عملیات: ${window.escapeBankReconciliationText(l.operationId)}</small>` : ''}${Array.isArray(l.details) && l.details.length ? `<small class="block text-[9px] text-slate-600">${l.details.map(item => `${window.escapeBankReconciliationText(item.productName || item.productId)}: ${faNum(item.before?.stock)} ← ${faNum(item.countedStock)} KG`).join(' · ')}</small>` : ''}${Array.isArray(l.relatedVoucherIds) && l.relatedVoucherIds.length ? `<small class="block text-[9px] text-holoo-700">اسناد مرتبط: ${l.relatedVoucherIds.map(id => `<button onclick="openVoucherFromLedger('${window.escapeBankReconciliationText(id)}')" class="underline font-bold">#${window.escapeBankReconciliationText(faNum(id))}</button>`).join('، ')}</small>` : ''}</span><span class="text-slate-400 tabular-nums shrink-0">${window.escapeBankReconciliationText(faNum(l.operationDate || l.time || ''))}</span></div>
       `).join('');
     }
     function saveApprovalReq() {
