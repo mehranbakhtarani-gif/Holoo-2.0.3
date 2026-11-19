@@ -4347,6 +4347,47 @@
       voucherEvents.forEach((count, eventId) => { if (count > 1) issues.push({ type: 'stocktake-audit', productId: '—', productName: 'انبارگردانی', message: 'برای یک قلم از عملیات انبارگردانی چند سند با شناسه رویداد یکسان ثبت شده است.', detail: eventId + ' | تعداد اسناد: ' + count }); });
       return { checkedOperations: operations.length, checkedItems, issueCount: issues.length, issues };
     }
+    function inspectInventoryOperationAudit(appState) {
+      const logs = Array.isArray(appState?.auditLogs) ? appState.auditLogs : [];
+      const products = Array.isArray(appState?.products) ? appState.products : [];
+      const issues = [];
+      const seenLogIds = new Set();
+      let checkedOperations = 0;
+      logs.forEach(log => {
+        if (!log || (!log.warehouseTransferCorrection && log.sourceType !== 'warehouse_transfer_correction')) return;
+        checkedOperations++;
+        const operation = log.warehouseTransferCorrection || {};
+        const operationId = String(operation.id || log.sourceId || log.operationId || '').trim();
+        const actor = String(log.actor || operation.actor || '').trim();
+        const deviceId = String(log.deviceId || operation.deviceId || '').trim();
+        const reason = String(operation.reason || log.note || '').trim();
+        const createdAt = String(log.createdAt || operation.createdAt || '').trim();
+        const logId = String(log.id || '').trim();
+        if (!logId || seenLogIds.has(logId)) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'شناسه سابقه حسابرسی اصلاح حواله مفقود یا تکراری است.', detail: logId || operationId || 'بدون شناسه' });
+        if (logId) seenLogIds.add(logId);
+        if (!operationId) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'شناسه یکتای عملیات اصلاح حواله ثبت نشده است.', detail: String(log.action || logId) });
+        if (!actor || !deviceId) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'کاربر یا شناسه دستگاه ثبت‌کننده اصلاح موجودی ناقص است.', detail: 'عملیات: ' + (operationId || 'نامشخص') + ' | کاربر: ' + (actor || 'ثبت‌نشده') + ' | دستگاه: ' + (deviceId || 'ثبت‌نشده') });
+        if (!createdAt || !Number.isFinite(Date.parse(createdAt))) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'زمان ثبت اصلاح حواله معتبر نیست.', detail: 'عملیات: ' + (operationId || 'نامشخص') });
+        if (!reason || reason.length < 3) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'علت اصلاح حواله ثبت نشده یا بیش از حد کوتاه است.', detail: 'عملیات: ' + (operationId || 'نامشخص') });
+        const originalId = String(operation.originalTransferId || '').trim();
+        const replacementId = String(operation.replacementTransferId || '').trim();
+        const qtyOriginal = Number(operation.originalQuantity);
+        const qtyReplacement = Number(operation.replacementQuantity);
+        if (!originalId || !replacementId || originalId === replacementId || !Number.isFinite(qtyOriginal) || qtyOriginal <= 0 || !Number.isFinite(qtyReplacement) || qtyReplacement <= 0) {
+          issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'شناسه حواله‌های اصلی/جایگزین یا مقادیر اصلاح معتبر نیستند.', detail: 'عملیات: ' + (operationId || 'نامشخص') });
+          return;
+        }
+        const linkedMovements = products.flatMap(product => (Array.isArray(product?.kardex) ? product.kardex : []).filter(row => String(row?.correctionId || '') === operationId || String(row?.correctionId || '') === String(operation.id || '')).map(row => ({ product, row })));
+        if (linkedMovements.length !== 4) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'تعداد گردش‌های کاردکس برگشت و حواله جایگزین باید چهار ردیف باشد.', detail: 'عملیات: ' + operationId + ' | ردیف‌های مرتبط: ' + linkedMovements.length });
+        const reversalRows = linkedMovements.filter(entry => String(entry.row.reversalOf || '') === originalId);
+        const replacementRows = linkedMovements.filter(entry => String(entry.row.correctionOf || '') === originalId);
+        if (reversalRows.length !== 2 || replacementRows.length !== 2) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'پیوند کاردکس با حواله اصلی و جایگزین کامل نیست.', detail: 'عملیات: ' + operationId + ' | برگشت: ' + reversalRows.length + ' | جایگزین: ' + replacementRows.length });
+        const linkedVouchers = Array.isArray(log.relatedVoucherIds) ? log.relatedVoucherIds : [];
+        if (linkedVouchers.some(id => !(appState.vouchers || []).some(voucher => String(voucher.id) === String(id)))) issues.push({ type: 'inventory-operation-audit', productId: '—', productName: 'اصلاح حواله انبار', message: 'یکی از اسناد مرتبط با اصلاح حواله در دفتر اسناد وجود ندارد.', detail: 'عملیات: ' + operationId });
+      });
+      return { checkedOperations, issues };
+    }
+
     function inspectInventoryReconciliation(products, warehouses) {
       const items = Array.isArray(products) ? products : [];
       const issues = [];
@@ -4357,6 +4398,8 @@
       const stocktakeAudit = inspectStocktakingAuditTrail(state);
       issues.push(...stocktakeAudit.issues);
       const transferBatchAudit = inspectWarehouseTransferBatchLinks(items);
+      const inventoryOperationAudit = inspectInventoryOperationAudit(state);
+      issues.push(...inventoryOperationAudit.issues);
       issues.push(...transferBatchAudit.issues);
       let checkedBatches = 0;
       let checkedMovements = 0;
@@ -4494,7 +4537,7 @@
           issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: invalidIdentity ? 'هویت کالای مبدأ و مقصد یا انبارهای متفاوت انتقال معتبر نیست.' : 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}${identityDetail}` });
         }
       });
-      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedStocktakeOperations: stocktakeAudit.checkedOperations, checkedStocktakeItems: stocktakeAudit.checkedItems, checkedTransferBatchGroups: transferBatchAudit.checkedTransferBatchGroups, checkedInvoiceKardexLines, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
+      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedStocktakeOperations: stocktakeAudit.checkedOperations, checkedStocktakeItems: stocktakeAudit.checkedItems, checkedTransferBatchGroups: transferBatchAudit.checkedTransferBatchGroups, checkedInvoiceKardexLines, checkedInventoryOperations: inventoryOperationAudit.checkedOperations, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
     }
 
     function ensureProductBatches(product) {
@@ -4994,6 +5037,7 @@
         ['اقلام انبارگردانی بررسی‌شده', report.checkedStocktakeItems || 0, 'border-slate-200 bg-slate-50'],
         ['گروه سری ساخت انتقالی بررسی‌شده', report.checkedTransferBatchGroups || 0, 'border-slate-200 bg-slate-50'],
         ['ردیف فاکتور تطبیق‌یافته با کاردکس', report.checkedInvoiceKardexLines || 0, 'border-slate-200 bg-slate-50'],
+        ['اصلاح حواله بررسی‌شده', report.checkedInventoryOperations || 0, 'border-slate-200 bg-slate-50'],
         ['کالاهای پایهٔ چندانباره', report.checkedBaseProducts || 0, 'border-slate-200 bg-slate-50']
       ].map(([label, value, style]) => `<div class="rounded-xl border p-3 ${style}"><div class="text-[10px] font-bold">${label}</div><strong class="text-xl tabular-nums">${faNum(value)}</strong></div>`).join('');
       const list = document.getElementById('inventory-reconciliation-list');
@@ -5008,6 +5052,7 @@
         'stocktake-audit': 'مغایرت سابقه حسابرسی انبارگردانی',
         'transfer-batch': 'مغایرت پیوند سری ساخت انتقال بین انبارها',
         'invoice-kardex': 'مغایرت گردش فاکتور با کاردکس',
+        'inventory-operation-audit': 'مغایرت سابقه اصلاح موجودی',
         'warehouse-product-identity': 'شناسه کالای پایه نامعتبر',
         'warehouse-product-reference': 'ارجاع به انبار نامعتبر',
         'warehouse-product-id-duplicate': 'شناسه رکورد کالا تکراری',
