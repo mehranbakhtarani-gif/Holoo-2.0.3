@@ -9244,6 +9244,80 @@
       }
     }
 
+    function buildCheckAuditSummary() {
+      const checks = Array.isArray(state.checks) ? state.checks : [];
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const treasuryTxs = Array.isArray(state.treasuryTxs) ? state.treasuryTxs : [];
+      const summary = {
+        total: checks.length, active: 0, missingIssueVoucher: 0, duplicateSayad: 0,
+        missingTreasuryLink: 0, invalidCheckData: 0, missingStatusVoucher: 0,
+        duplicateSourceEvents: 0, invalidVoucher: 0, allocationIssues: 0,
+        issues: []
+      };
+      const sayadCounts = new Map();
+      checks.forEach(check => {
+        const sayad = normalizeSayadId(check.sayad || '');
+        if (sayad) sayadCounts.set(sayad, (sayadCounts.get(sayad) || 0) + 1);
+      });
+      summary.duplicateSayad = [...sayadCounts.values()].filter(count => count > 1).reduce((sum, count) => sum + count, 0);
+      checks.forEach(check => {
+        const label = String(check.sayad || check.id || 'بدون شناسه');
+        const amount = Number(check.amount);
+        if (!['receive', 'pay'].includes(check.dir) || !Number.isFinite(amount) || amount <= 0 ||
+            jalaliDateOrdinal(check.issueDate) === null || jalaliDateOrdinal(check.dueDate) === null ||
+            !isValidSayadId(normalizeSayadId(check.sayad))) {
+          summary.invalidCheckData++;
+          summary.issues.push(label + ': اطلاعات پایه چک نامعتبر است.');
+        }
+        if (['in_progress', 'overdue'].includes(check.status)) summary.active++;
+        const sourceTx = treasuryTxs.filter(tx => String(tx.id) === String(check.sourceTxId) && tx.method === 'چک صیادی');
+        if (sourceTx.length !== 1) {
+          summary.missingTreasuryLink++;
+          summary.issues.push(label + ': گردش خزانه متناظر پیدا نشد یا شناسه آن تکراری است.');
+        }
+        const issued = vouchers.filter(v => v.sourceType === 'check' && String(v.sourceId) === String(check.id) && (v.sourceEvent || 'default') === 'issued');
+        if (issued.length !== 1) {
+          summary.missingIssueVoucher++;
+          summary.issues.push(label + ': سند صدور چک پیدا نشد یا بیش از یک سند صدور دارد.');
+        }
+        const events = vouchers.filter(v => v.sourceType === 'check' && String(v.sourceId) === String(check.id));
+        const eventCounts = new Map();
+        events.forEach(v => { const event = v.sourceEvent || 'default'; eventCounts.set(event, (eventCounts.get(event) || 0) + 1); });
+        if ([...eventCounts.values()].some(count => count > 1)) {
+          summary.duplicateSourceEvents++;
+          summary.issues.push(label + ': رویداد حسابداری تکراری برای چک ثبت شده است.');
+        }
+        const requiredEvent = ['cleared', 'bounced', 'voided'].includes(check.status) ? check.status : null;
+        const corrected = Boolean(check.correctedByCheckId && check.reversalVoucherId);
+        if (requiredEvent && !corrected && !events.some(v => (v.sourceEvent || 'default') === requiredEvent)) {
+          summary.missingStatusVoucher++;
+          summary.issues.push(label + ': سند متناظر با وضعیت نهایی چک وجود ندارد.');
+        }
+        if (events.some(v => {
+          const integrity = inspectTrialBalanceVoucher(v);
+          return integrity.invalidLines > 0 || integrity.invalidStructure || integrity.unbalanced ||
+            jalaliDateOrdinal(v.date || v.operationDate) === null;
+        })) {
+          summary.invalidVoucher++;
+          summary.issues.push(label + ': حداقل یکی از اسناد مرتبط، تاریخ/ساختار/مبلغ نامعتبر یا عدم توازن دارد.');
+        }
+        (Array.isArray(check.allocations) ? check.allocations : []).forEach(allocation => {
+          const invoice = (state.invoices || []).find(item => String(item.id) === String(allocation.invoiceId));
+          const allocated = Number(allocation.amount);
+          if (!invoice || !Number.isFinite(allocated) || allocated <= 0) {
+            summary.allocationIssues++;
+            summary.issues.push(label + ': تخصیص نامعتبر یا فاکتور مرتبطِ مفقود دارد.');
+          }
+        });
+      });
+      summary.issues = [...new Set(summary.issues)].slice(0, 30);
+      summary.issueCount = summary.missingIssueVoucher + summary.duplicateSayad + summary.missingTreasuryLink +
+        summary.invalidCheckData + summary.missingStatusVoucher + summary.duplicateSourceEvents +
+        summary.invalidVoucher + summary.allocationIssues;
+      return summary;
+    }
+
+
     function renderTreasuryModule() {
        computeCheckRas();
        const bookBalances = getBankAccountBookBalances();
@@ -9268,6 +9342,13 @@
         }).join('') || '<div class="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">هنوز حساب بانکی تعریف نشده است. برای شروع، «تعریف حساب بانکی» را انتخاب کنید.</div>'}
       `;
 
+      const checkAudit = buildCheckAuditSummary();
+      const checkAuditBox = document.getElementById('checks-list-container');
+      checkAuditBox.innerHTML = '<div class="mb-3 rounded-xl border ' + (checkAudit.issueCount ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50') + ' p-3 text-xs space-y-2">' +
+        '<div class="flex flex-wrap items-center justify-between gap-2"><strong>کنترل حسابرسی چک‌ها و اسناد دفترکل</strong><span class="font-black">' + (checkAudit.issueCount ? faNum(checkAudit.issueCount) + ' مورد نیازمند بررسی' : 'بدون مغایرت شناسایی‌شده') + '</span></div>' +
+        '<div class="grid grid-cols-2 md:grid-cols-4 gap-2"><span>کل چک‌ها: <b>' + faNum(checkAudit.total) + '</b></span><span>چک‌های باز: <b>' + faNum(checkAudit.active) + '</b></span><span>سند صدور مفقود/تکراری: <b>' + faNum(checkAudit.missingIssueVoucher) + '</b></span><span>گردش خزانه مفقود: <b>' + faNum(checkAudit.missingTreasuryLink) + '</b></span><span>شناسه صیادی تکراری: <b>' + faNum(checkAudit.duplicateSayad) + '</b></span><span>سند وضعیت نهایی مفقود: <b>' + faNum(checkAudit.missingStatusVoucher) + '</b></span><span>سند نامعتبر/نامتوازن: <b>' + faNum(checkAudit.invalidVoucher) + '</b></span><span>تخصیص نامعتبر: <b>' + faNum(checkAudit.allocationIssues) + '</b></span></div>' +
+        (checkAudit.issues.length ? '<details class="rounded-lg border border-amber-200 bg-white p-2"><summary class="cursor-pointer font-bold text-amber-900">مشاهده موارد نیازمند بررسی (' + faNum(checkAudit.issues.length) + ' مورد اول)</summary><ul class="mt-2 list-disc pr-5 space-y-1 text-amber-900">' + checkAudit.issues.map(issue => '<li>' + window.escapeBankReconcileText(issue) + '</li>').join('') + '</ul></details>' : '<p class="text-emerald-800">برای چک‌های ثبت‌شده، ارتباط سند صدور، گردش خزانه و رویدادهای نهایی بررسی شد.</p>') +
+        '<p class="text-[10px] text-slate-500">این گزارش فقط کنترل و هشدار است؛ هیچ چک یا سندی را تغییر نمی‌دهد.</p></div>';
       const statusLabels = { in_progress: 'در جریان', overdue: 'سررسیدشده', cleared: 'وصول‌شده ✔', bounced: 'برگشتی ❌', endorsed: 'واگذارشده', voided: 'باطل‌شده' };
       document.getElementById('checks-list-container').innerHTML = state.checks.map(c => `
         <div class="p-3 rounded-xl bg-slate-50 border space-y-1.5">
