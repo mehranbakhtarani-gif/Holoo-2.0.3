@@ -1615,7 +1615,7 @@
   </div>
 
   <div id="modal-kardex" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
-    <div class="bg-white rounded-3xl w-full max-w-lg max-h-[85dvh] overflow-y-auto p-4 space-y-2.5 text-xs">
+    <div class="bg-white rounded-3xl w-full max-w-5xl max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-3 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 id="kardex-modal-title" class="font-black text-sm">کاردکس گردش کالا</h3><button onclick="closeModal('modal-kardex')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
       <div class="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-50 border">
         <div><label for="kardex-from-date" class="block text-[10px] font-bold mb-1">از تاریخ (شمسی)</label><input id="kardex-from-date" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱" class="w-full border rounded-lg px-2 py-2 tabular-nums" /></div>
@@ -2270,7 +2270,12 @@
       { code: '6101', name: 'هزینه‌های عمومی، پورسانت و کارمزد بانکی' },
       { code: '6102', name: 'هزینه حقوق و دستمزد' },
       { code: '6103', name: 'هزینه استهلاک دارایی‌ها' },
-      { code: '6104', name: 'کسری انبارگردانی و زیان تسعیر ارز' }
+      { code: '6104', name: 'هزینه‌های تجمیعی تعدیلات قدیمی (کسری انبار و تسعیر)' },
+      { code: '6105', name: 'هزینه کسری انبارگردانی' },
+      { code: '6106', name: 'زیان تسعیر ارز' },
+      { code: '6107', name: 'زیان اختلاف بهای دفتری و برگشت خرید' },
+      { code: '4198', name: 'سود اختلاف بهای دفتری و برگشت خرید' },
+      { code: '4199', name: 'سایر درآمدها و سود اضافه انبارگردانی' }
     ];
 
     function buildAccountCatalog() {
@@ -2610,6 +2615,13 @@
     // Add the supplier-advance account to existing installations without replacing their custom chart.
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '1107')) state.accountCatalog.push({ id: 'SUB-1107', code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان', level: 'subsidiary', parentId: 'GL-11', system: true, active: true });
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '2106')) state.accountCatalog.push({ id: 'SUB-2106', code: '2106', name: 'بستانکاران هزینه‌های واردات', level: 'subsidiary', parentId: 'GL-21', system: true, active: true });
+    // Add new stocktake and purchase-return result accounts to existing charts without replacing custom accounts.
+    ['4198', '4199', '6105', '6106', '6107'].forEach(code => {
+      const account = CHART_ACCOUNTS.find(item => item.code === code);
+      if (account && !state.accountCatalog.some(item => item.level === 'subsidiary' && String(item.code) === code)) {
+        state.accountCatalog.push({ id: 'SUB-' + code, code, name: account.name, level: 'subsidiary', parentId: 'GL-' + code.slice(0, 2), system: true, active: true });
+      }
+    });
     if (!Array.isArray(state.fxCommitments)) state.fxCommitments = [];
     if (!Array.isArray(state.employees)) state.employees = [];
     if (!Array.isArray(state.payrollRuns)) state.payrollRuns = [];
@@ -3405,8 +3417,9 @@
         code.startsWith('21') ? sum + (account.credBal || 0) : sum, 0);
       const fxGain = (bal['4104']?.periodCredTurn || 0) - (bal['4104']?.periodDebTurn || 0);
       const costOfSales = bal['5101']?.periodDebTurn || 0;
-      const operatingExpenses = ['6101', '6102', '6103', '6104'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0), 0);
-      const netProfit = sales + fxGain - costOfSales - operatingExpenses;
+      const otherIncome = ['4198', '4199'].reduce((sum, code) => sum + (bal[code]?.periodCredTurn || 0) - (bal[code]?.periodDebTurn || 0), 0);
+      const operatingExpenses = ['6101', '6102', '6103', '6104', '6105', '6106', '6107'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0) - (bal[code]?.periodCredTurn || 0), 0);
+      const netProfit = sales + otherIncome + fxGain - costOfSales - operatingExpenses;
       const inventoryValueText = invVal === null ? 'نیازمند تطبیق موجودی' : money(invVal);
       const profitColor = netProfit < 0 ? 'text-rose-200' : 'text-emerald-100';
       const fiscalYearLabel = balanceAudit.fiscalYear || 'نامعتبر';
@@ -4253,7 +4266,7 @@
       return batch;
     }
 
-    function consumeFifoStock(product, quantity) {
+    function consumeFifoStock(product, quantity, options = {}) {
       const qty = Number(quantity || 0);
       if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار خروج موجودی معتبر نیست.');
       const reconciliation = inspectProductBatchReconciliation(product);
@@ -4262,7 +4275,9 @@
       }
       const batches = ensureProductBatches(product);
       const todayOrdinal = typeof currentJalaliOrdinal === 'function' ? currentJalaliOrdinal() : null;
-      const eligible = batches.filter(batch => isBatchEligibleForFifo(batch, todayOrdinal));
+      const eligible = options.includeExpired
+        ? batches.filter(batch => Number(batch.remainingQty || 0) > 0)
+        : batches.filter(batch => isBatchEligibleForFifo(batch, todayOrdinal));
       const available = eligible.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
       if (available + 0.000001 < qty) throw new Error('موجودی سری‌های ساخت منقضی‌نشده برای خروج FIFO کافی نیست.');
       const ordered = eligible.sort((a, b) => {
@@ -4325,6 +4340,55 @@
       const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: getTodayJalaliDate(), productionDate: '', expiryDate: '', quantity: qty, remainingQty: qty, unitCost: safeFallbackCost, sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
       batches.push(fallbackBatch);
       return [{ batchId: fallbackBatch.id, quantity: qty }];
+    }
+
+    function consumePurchaseReturnBatches(product, invoiceId, item, quantity) {
+      const qty = Number(quantity);
+      if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار برگشت خرید معتبر نیست.');
+      const stock = Number(product.stock);
+      if (!Number.isFinite(stock) || stock < qty) throw new Error('موجودی فعلی برای برگشت خرید کافی نیست.');
+      if (!Array.isArray(product.batches)) throw new Error('سری ساخت خرید اصلی در اطلاعات کالا موجود نیست؛ برگشت خودکار مسدود شد.');
+      const expectedLot = String(item?.lot || ('PUR-' + invoiceId + '-' + item?.productId));
+      const candidates = product.batches.filter(batch =>
+        batch && batch.sourceType === 'purchase' &&
+        String(batch.sourceRef || '') === String(invoiceId) &&
+        String(batch.lot || '') === expectedLot
+      );
+      if (!candidates.length) throw new Error('سری ساخت متناظر با فاکتور خرید اصلی پیدا نشد؛ از کسر کالاهای خرید دیگر جلوگیری شد.');
+      for (const batch of candidates) {
+        const remaining = Number(batch.remainingQty ?? batch.quantity ?? 0);
+        const unitCost = Number(batch.unitCost);
+        if (!Number.isFinite(remaining) || remaining < 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+          throw new Error('مقدار یا بهای سری ساخت خرید اصلی نامعتبر است.');
+        }
+      }
+      const available = candidates.reduce((sum, batch) => sum + Number(batch.remainingQty ?? batch.quantity ?? 0), 0);
+      if (available + 0.000001 < qty) {
+        throw new Error('موجودی باقی‌مانده از همان سری ساخت خرید برای برگشت کافی نیست؛ ابتدا گردش فروش/انتقال را بررسی کنید.');
+      }
+      const ordered = candidates.slice().sort((a, b) =>
+        String(a.receivedDate || '').localeCompare(String(b.receivedDate || '')) ||
+        String(a.id || '').localeCompare(String(b.id || ''))
+      );
+      let remaining = qty, totalCost = 0;
+      const allocations = [];
+      for (const batch of ordered) {
+        if (remaining <= 0.000001) break;
+        const batchRemaining = Number(batch.remainingQty ?? batch.quantity ?? 0);
+        const take = Math.min(remaining, batchRemaining);
+        if (take <= 0) continue;
+        batch.remainingQty = Math.max(0, batchRemaining - take);
+        totalCost += take * Number(batch.unitCost);
+        allocations.push({
+          batchId: String(batch.id), lot: String(batch.lot || ''),
+          quantity: take, unitCost: Number(batch.unitCost), expiryDate: batch.expiryDate || ''
+        });
+        remaining -= take;
+      }
+      if (remaining > 0.000001 || !Number.isFinite(totalCost)) {
+        throw new Error('تخصیص سری ساخت برای برگشت خرید کامل یا معتبر نیست.');
+      }
+      return { totalCost: Math.round(totalCost), unitCost: totalCost / qty, allocations };
     }
 
     // =========================================================================
@@ -4502,11 +4566,13 @@
         return;
       }
       rows.innerHTML = unassignedWarning + products.map(product => `
-        <div class="p-3 rounded-xl bg-slate-50 border flex justify-between items-center gap-3">
+        <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-3">
           <div class="min-w-0 flex-1"><strong class="block break-words">${escapeKardexText(product.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(product.stock)} KG</span><span class="block text-[10px] text-slate-400">کد کالا: ${escapeKardexText(product.id)} • ${escapeKardexText(getWhName(product.warehouseId))}</span></div>
-          <label class="w-28 shrink-0 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
+          <div class="flex flex-wrap gap-2 shrink-0"><label class="w-28 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
             <input type="number" inputmode="decimal" min="0" step="any" required id="st-real-${String(product.id).replace(/"/g, '&quot;')}" value="${Number(product.stock || 0)}" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
-          </label>
+          </label>${state.costingMethod === 'FIFO' ? `<label class="w-36 text-[10px] font-bold text-slate-600">فی اضافه‌موجودی (ریال)
+            <input type="number" inputmode="decimal" min="0.01" step="any" id="st-cost-${String(product.id).replace(/"/g, '&quot;')}" placeholder="فقط هنگام افزایش" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
+          </label>` : ''} </div>
         </div>
       `).join('');
     }
@@ -5044,112 +5110,176 @@
 
     function openKardexModal(id) {
       selectedKardexProductId = id;
-      const p = state.products.find(x => String(x.id) === String(id));
+      const p = (state.products || []).find(x => String(x.id) === String(id));
       if (!p) return;
-      document.getElementById('kardex-modal-title').textContent = `کاردکس گردش: ${p.name}`;
+      document.getElementById('kardex-modal-title').textContent = 'کاردکس گردش: ' + String(p.name || p.id);
       const fromValue = document.getElementById('kardex-from-date')?.value.trim() || '';
       const toValue = document.getElementById('kardex-to-date')?.value.trim() || '';
-      let fromKey = null, toKey = null;
+      let fromOrdinal = null, toOrdinal = null;
       if (fromValue || toValue) {
-        fromKey = normalizeLedgerDate(fromValue); toKey = normalizeLedgerDate(toValue);
-        if (!fromValue || !toValue || !fromKey || !toKey || fromKey > toKey || jalaliDateOrdinal(fromValue) === null || jalaliDateOrdinal(toValue) === null) {
+        const fromKey = normalizeLedgerDate(fromValue), toKey = normalizeLedgerDate(toValue);
+        fromOrdinal = jalaliDateOrdinal(fromValue); toOrdinal = jalaliDateOrdinal(toValue);
+        if (!fromValue || !toValue || !fromKey || !toKey || fromKey > toKey ||
+            fromOrdinal === null || toOrdinal === null || fromOrdinal > toOrdinal) {
           showToast('تاریخ شروع و پایان شمسی معتبر را وارد کنید؛ شروع نباید بعد از پایان باشد.', 'error'); return;
         }
       }
 
-      // This view is intentionally read-only: do not call ensureProductBatches here,
-      // because that helper may initialize or normalize product data.
-      const batches = Array.isArray(p.batches) ? p.batches : [];
-      const batchRows = batches.map(b => `
-        <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap justify-between gap-2">
-          <div><strong>سری ساخت ${escapeKardexText(b.lot || '—')}</strong><span class="block text-[10px] text-slate-500">ورود: ${escapeKardexText(b.receivedDate || '—')} | تولید: ${escapeKardexText(b.productionDate || '—')} | انقضا: ${escapeKardexText(b.expiryDate || '—')}</span></div>
-          <div class="text-left tabular-nums font-bold"><span>${faNum(b.remainingQty)} KG باقی‌مانده</span><span class="block text-[10px] text-slate-500">بهای واحد: ${money(b.unitCost || 0)}</span></div>
-        </div>
-      `).join('');
-
-      const batchSection = batches.length
-        ? `<section class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2"><div class="flex items-center justify-between gap-2"><strong class="text-sm text-indigo-950">سری ساخت‌های کالا</strong><span class="text-[10px] text-indigo-700">${faNum(batches.length)} مورد</span></div><div class="space-y-2">${batchRows}</div></section>`
-        : '';
-
+      // Read-only ledger view. Do not initialize or mutate historical batches here.
       const movements = Array.isArray(p.kardex) ? p.kardex : [];
-      const filteredMovements = movements.filter(k => {
-        if (!fromKey && !toKey) return true;
-        const key = normalizeLedgerDate(k.date);
-        return !!key && jalaliDateOrdinal(k.date) !== null && key >= fromKey && key <= toKey;
+      const validQty = value => {
+        const n = Number(value ?? 0);
+        return Number.isFinite(n) && n >= 0 ? n : null;
+      };
+      const ordered = movements.map((movement, index) => {
+        const inQty = validQty(movement?.inQty), outQty = validQty(movement?.outQty);
+        const balance = Number(movement?.bal), ordinal = jalaliDateOrdinal(movement?.date);
+        const valid = inQty !== null && outQty !== null && !(inQty > 0 && outQty > 0) &&
+          Number.isFinite(balance) && balance >= 0;
+        return { movement, index, inQty, outQty, balance, ordinal, valid,
+          delta: inQty !== null && outQty !== null ? inQty - outQty : null };
+      }).sort((a, b) => {
+        if (a.ordinal === null && b.ordinal === null) return a.index - b.index;
+        if (a.ordinal === null) return 1;
+        if (b.ordinal === null) return -1;
+        return a.ordinal - b.ordinal || a.index - b.index;
       });
-      const movementRows = filteredMovements.slice().sort((a, b) => {
-        const aDate = jalaliDateOrdinal(a?.date), bDate = jalaliDateOrdinal(b?.date);
-        if (aDate === null && bDate === null) return 0;
-        if (aDate === null) return 1;
-        if (bDate === null) return -1;
-        return aDate - bDate;
-      }).map(k => {
-        const docMatch = String(k.doc || '').match(/#(\d+)/);
-        const invoice = docMatch
-          ? (state.invoices || []).find(inv => String(inv.id) === String(docMatch[1]))
-          : null;
-        const invoiceLine = invoice && Array.isArray(invoice.items)
-          ? invoice.items.find(item => String(item.productId) === String(p.id))
-          : null;
-        const party = invoice
-          ? (state.parties || []).find(item => String(item.id) === String(invoice.partyId))
-          : null;
-        const isSale = invoice?.type === 'sale' || String(k.doc || '').includes('فروش');
-        const transactionPrice = invoiceLine && Number.isFinite(Number(invoiceLine.price))
-          ? `قیمت فروش: ${money(invoiceLine.price)} / کیلو`
-          : (k.price != null ? `فی ثبت‌شده: ${money(k.price)}` : 'قیمت: —');
-        const partyLabel = invoice
-          ? `${isSale ? 'مشتری' : 'تأمین‌کننده'}: ${escapeKardexText(party?.name || 'نامشخص')}`
-          : '';
-        const invoiceTotal = invoiceLine && invoiceLine.total != null
-          ? ` | مبلغ ردیف: ${money(invoiceLine.total)}`
-          : '';
-        return `
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-            <div class="flex flex-wrap justify-between gap-2">
-              <div><strong>${escapeKardexText(k.doc || 'گردش کالا')}</strong><span class="block text-[10px] text-slate-500">تاریخ: ${escapeKardexText(k.date || '—')} ${invoice ? `| شماره فاکتور: ${faNum(invoice.id)}` : ''}</span></div>
-              <div class="tabular-nums font-bold">${k.inQty ? `<span class="text-emerald-700">+${faNum(k.inQty)} ورود</span>` : `<span class="text-rose-700">-${faNum(k.outQty)} خروج</span>`}<span class="block text-[10px] text-slate-500">مانده: ${faNum(k.bal)} KG</span></div>
-            </div>
-            <div class="text-[11px] text-slate-700">${transactionPrice}${invoiceTotal}</div>
-            ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
-            ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
-            ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? renderWarehouseMovementAuditPanel(p, k) : ''}
-          </div>
-        `;
+      const periodRows = ordered.filter(row => row.ordinal !== null &&
+        (fromOrdinal === null || row.ordinal >= fromOrdinal) &&
+        (toOrdinal === null || row.ordinal <= toOrdinal));
+      const prior = fromOrdinal === null ? [] : ordered.filter(row => row.ordinal !== null && row.ordinal < fromOrdinal);
+      const firstValid = ordered.find(row => row.ordinal !== null && row.valid);
+      const lastPrior = prior.slice().reverse().find(row => row.valid);
+      let opening = null, openingBasis = '';
+      if (fromOrdinal !== null && lastPrior) {
+        opening = lastPrior.balance;
+        openingBasis = 'مانده ثبت‌شده پیش از شروع بازه';
+      } else if (firstValid) {
+        opening = firstValid.balance - firstValid.delta;
+        openingBasis = 'برآورد از اولین گردش ثبت‌شده؛ مانده افتتاحیه مستقل ثبت نشده است';
+      }
+      const totals = periodRows.reduce((sum, row) => {
+        if (!row.valid) sum.valid = false;
+        else { sum.inQty += row.inQty; sum.outQty += row.outQty; }
+        return sum;
+      }, { inQty: 0, outQty: 0, valid: true });
+      const closing = opening !== null && totals.valid ? opening + totals.inQty - totals.outQty : null;
+      const openingEstimated = !lastPrior && !!firstValid;
+      const currentBookValue = typeof getInventoryBookValue === 'function' ? getInventoryBookValue(p) : null;
+      const lastPeriod = periodRows.slice().reverse().find(row => row.valid);
+      const storedClosing = lastPeriod ? lastPeriod.balance : opening;
+      const latest = ordered.slice().reverse().find(row => row.valid);
+      const currentStock = Number(p.stock);
+      const stockMismatch = latest && Number.isFinite(currentStock) &&
+        Math.abs(latest.balance - currentStock) > 0.000001;
+      const balanceMismatch = closing !== null && storedClosing !== null &&
+        Math.abs(closing - storedClosing) > 0.000001;
+      const invalidCount = ordered.filter(row => !row.valid || row.ordinal === null).length;
+      const qtyText = value => value === null || !Number.isFinite(value) ? 'نیازمند تطبیق' : faNum(value) + ' KG';
+      const card = (label, value, note, cls) =>
+        '<div class="rounded-xl border p-3 min-w-0 ' + cls + '"><div class="text-[10px] font-bold">' + label +
+        '</div><strong class="block mt-1 text-sm sm:text-base tabular-nums break-words">' + value +
+        '</strong><div class="mt-1 text-[9px] opacity-75">' + (note || '') + '</div></div>';
+      const summary = '<section class="grid grid-cols-2 xl:grid-cols-5 gap-2">' +
+        card('مانده ابتدای بازه', qtyText(opening), openingBasis, 'bg-slate-50 border-slate-200 text-slate-800') +
+        card('جمع ورود دوره', qtyText(totals.valid ? totals.inQty : null), 'مجموع ورود در بازه انتخابی', 'bg-emerald-50 border-emerald-200 text-emerald-900') +
+        card('جمع خروج دوره', qtyText(totals.valid ? totals.outQty : null), 'مجموع خروج در بازه انتخابی', 'bg-rose-50 border-rose-200 text-rose-900') +
+        card('مانده پایان بازه', qtyText(closing), storedClosing === null ? 'مانده ثبت‌شده در دسترس نیست' : 'مانده ثبت‌شده: ' + qtyText(storedClosing), 'bg-teal-50 border-teal-200 text-teal-900') +
+        card('ارزش دفتری موجودی فعلی', currentBookValue === null ? 'نیازمند تطبیق' : money(currentBookValue), 'طبق روش قیمت‌گذاری جاری؛ تطبیق با دفتر کل جداگانه لازم است', 'bg-indigo-50 border-indigo-200 text-indigo-900') +
+        '</section>';
+
+      const invoiceInfo = movement => {
+        const match = String(movement?.doc || '').match(/#(\d+)/);
+        const invoice = match ? (state.invoices || []).find(item => String(item.id) === String(match[1])) : null;
+        const line = invoice && Array.isArray(invoice.items)
+          ? invoice.items.find(item => String(item.productId) === String(p.id)) : null;
+        const party = invoice ? (state.parties || []).find(item => String(item.id) === String(invoice.partyId)) : null;
+        return {
+          invoice, line,
+          party: invoice ? (invoice.type === 'sale' ? 'مشتری: ' : 'تأمین‌کننده: ') + escapeKardexText(party?.name || 'نامشخص') : '',
+          price: line && Number.isFinite(Number(line.price))
+            ? (invoice.type === 'sale' ? 'فی فروش: ' : 'فی خرید: ') + money(line.price)
+            : (movement?.price != null && Number.isFinite(Number(movement.price)) ? 'فی ثبت‌شده: ' + money(movement.price) : '—'),
+          amount: line && Number.isFinite(Number(line.total)) ? money(line.total) : '—'
+        };
+      };
+
+      let running = opening;
+      const rows = periodRows.map(row => {
+        if (running !== null) running = row.valid ? running + row.delta : null;
+        const m = row.movement;
+        const mismatch = running !== null && row.valid && Math.abs(running - row.balance) > 0.000001;
+        const info = invoiceInfo(m);
+        const audit = (/TR-\d+-[a-z0-9]+/i.test(String(m?.doc || '')) || /اصلاحیه انبارگردانی/.test(String(m?.doc || '')))
+          ? renderWarehouseMovementAuditPanel(p, m) : '';
+        return '<tr class="border-t border-slate-200 align-top">' +
+          '<td class="p-2 whitespace-nowrap tabular-nums">' + escapeKardexText(m?.date || '—') + '</td>' +
+          '<td class="p-2 min-w-[180px]"><strong class="block">' + escapeKardexText(m?.doc || 'گردش کالا') + '</strong>' +
+          (info.invoice ? '<span class="text-[10px] text-slate-500">فاکتور #' + faNum(info.invoice.id) + '</span>' : '') +
+          (info.party ? '<span class="block text-[10px] text-slate-600">' + info.party + '</span>' : '') +
+          (info.invoice?.salesperson ? '<span class="block text-[10px] text-slate-500">بازاریاب: ' + escapeKardexText(info.invoice.salesperson) + '</span>' : '') +
+          (audit ? '<details class="mt-1"><summary class="cursor-pointer text-[10px] font-bold text-indigo-700">جزئیات حسابرسی / انتقال</summary>' + audit + '</details>' : '') +
+          '</td><td class="p-2 text-left tabular-nums text-emerald-700">' + (row.inQty === null ? 'نامعتبر' : row.inQty ? '+' + faNum(row.inQty) : '—') + '</td>' +
+          '<td class="p-2 text-left tabular-nums text-rose-700">' + (row.outQty === null ? 'نامعتبر' : row.outQty ? '−' + faNum(row.outQty) : '—') + '</td>' +
+          '<td class="p-2 text-left font-bold tabular-nums">' + (running !== null && Number.isFinite(running) ? faNum(running) : row.valid ? faNum(row.balance) : 'نامعتبر') +
+          (mismatch ? '<span class="block text-[9px] text-amber-700">مانده ثبت‌شده: ' + faNum(row.balance) + '</span>' : '') +
+          '</td><td class="p-2 min-w-[120px] text-[10px]">' + info.price +
+          '<span class="block text-slate-500">مبلغ ردیف: ' + info.amount + '</span></td></tr>';
       }).join('');
+
+      const warnings = [];
+      if (invalidCount) warnings.push(faNum(invalidCount) + ' ردیف دارای تاریخ، مقدار یا مانده نامعتبر است.');
+      if (balanceMismatch) warnings.push('مانده محاسباتی با مانده ذخیره‌شده پایان بازه برابر نیست.');
+      if (stockMismatch) warnings.push('مانده آخرین گردش با موجودی فعلی کالا برابر نیست؛ گزارش تطبیق موجودی را اجرا کنید.');
+      if (opening === null) warnings.push('مانده ابتدای بازه قابل اتکا نیست؛ سابقه پایه معتبر پیدا نشد.');
+      else if (openingEstimated) warnings.push('مانده ابتدای بازه از اولین گردش برآورد شده است و مانده افتتاحیه مستقل نیست.');
+      if (!latest && Number.isFinite(currentStock) && currentStock > 0) warnings.push('کالا موجودی فعلی دارد اما گردش معتبر برای اثبات مانده آن ثبت نشده است.');
+      const warningPanel = warnings.length
+        ? '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-[10px] text-amber-950 space-y-1">' +
+          warnings.map(item => '<p>• ' + escapeKardexText(item) + '</p>').join('') +
+          '<p class="font-bold">این گزارش فقط‌خواندنی است و هیچ مانده یا سند تاریخی را بازنویسی نمی‌کند.</p></div>'
+        : '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-[10px] text-emerald-900">محاسبه گردش‌ها با مانده ثبت‌شده سازگار است؛ این کنترل جایگزین تطبیق با دفتر کل نیست.</div>';
+
+      const batchRows = (Array.isArray(p.batches) ? p.batches : []).map(batch => {
+        const qty = validQty(batch?.remainingQty ?? batch?.quantity), cost = Number(batch?.unitCost);
+        const valid = qty !== null && Number.isFinite(cost) && cost >= 0;
+        return '<div class="rounded-xl bg-indigo-50 border border-indigo-100 p-2.5 flex flex-wrap justify-between gap-2">' +
+          '<div><strong>سری ساخت ' + escapeKardexText(batch?.lot || '—') + '</strong>' +
+          '<span class="block text-[10px] text-slate-500">ورود: ' + escapeKardexText(batch?.receivedDate || '—') +
+          ' | تولید: ' + escapeKardexText(batch?.productionDate || '—') + ' | انقضا: ' + escapeKardexText(batch?.expiryDate || '—') + '</span></div>' +
+          '<div class="text-left tabular-nums font-bold">' + (valid ? qtyText(qty) : '<span class="text-rose-700">اطلاعات نامعتبر</span>') +
+          '<span class="block text-[10px] text-slate-500">بهای واحد: ' + (valid ? money(cost) : 'نیازمند بررسی') + '</span></div></div>';
+      }).join('');
+      const batchSection = batchRows
+        ? '<section class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2"><strong class="text-sm text-indigo-950">سری ساخت‌های کالا</strong><div class="grid grid-cols-1 md:grid-cols-2 gap-2">' + batchRows + '</div></section>' : '';
 
       const transferGroups = new Map();
       movements.forEach((movement, index) => {
-        const transferMatch = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
-        if (!transferMatch || transferGroups.has(transferMatch[0])) return;
-        transferGroups.set(transferMatch[0], { movement, index });
+        const match = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
+        if (match && !transferGroups.has(match[0])) transferGroups.set(match[0], { movement, index });
       });
-      const transferCorrectionRows = Array.from(transferGroups.entries()).map(([transferId, entry]) => {
-        const { movement, index } = entry;
+      const transferRows = Array.from(transferGroups.entries()).map(([transferId, entry]) => {
         const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferId);
-        return `
-          <div class="rounded-xl border border-indigo-200 bg-white p-2.5 flex flex-wrap items-center justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <strong class="block text-[11px] text-indigo-950">${escapeKardexText(transferId)}</strong>
-              <span class="block text-[10px] text-slate-600">${escapeKardexText(movement.doc || 'حواله انتقال')} • ${escapeKardexText(movement.date || 'بدون تاریخ')}</span>
-              <span class="block text-[10px] ${plan.ok ? 'text-emerald-700' : 'text-rose-700'}">${plan.ok ? 'آماده بررسی و اصلاح' : 'اصلاح مسدود: ' + escapeKardexText(plan.reason)}</span>
-            </div>
-            <button type="button" onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${index})"
-              class="shrink-0 bg-indigo-700 text-white border border-indigo-800 px-3 py-2 rounded-lg font-black text-[11px]">
-              بررسی / اصلاح حواله
-            </button>
-          </div>`;
+        return '<div class="rounded-xl border border-indigo-200 bg-white p-2.5 flex flex-wrap items-center justify-between gap-2">' +
+          '<div class="min-w-0 flex-1"><strong class="block text-[11px] text-indigo-950">' + escapeKardexText(transferId) + '</strong>' +
+          '<span class="block text-[10px] text-slate-600">' + escapeKardexText(entry.movement.doc || 'حواله انتقال') + ' • ' + escapeKardexText(entry.movement.date || 'بدون تاریخ') + '</span>' +
+          '<span class="block text-[10px] ' + (plan.ok ? 'text-emerald-700' : 'text-rose-700') + '">' +
+          (plan.ok ? 'آماده بررسی و اصلاح' : 'اصلاح مسدود: ' + escapeKardexText(plan.reason)) + '</span></div>' +
+          '<button type="button" onclick="requestWarehouseMovementCorrection(\'' + String(p.id).replace(/'/g, '') + '\', ' + entry.index + ')" class="shrink-0 bg-indigo-700 text-white border border-indigo-800 px-3 py-2 rounded-lg font-black text-[11px]">بررسی / اصلاح حواله</button></div>';
       }).join('');
-      const transferCorrectionPanel = `
-        <section class="rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-3 space-y-2">
-          <div class="font-black text-sm text-indigo-950">اصلاح حواله‌های انتقال</div>
-          <p class="text-[10px] leading-5 text-indigo-900">برای پیدا کردن گزینه اصلاح، از این قسمت حواله موردنظر را انتخاب کن. کنترل‌های ایمنی قبل از هر تغییری دوباره اجرا می‌شوند.</p>
-          ${transferCorrectionRows || '<div class="rounded-lg bg-white p-2 text-[10px] text-slate-600">برای این کالا حواله انتقال دارای شناسه قابل‌شناسایی ثبت نشده است.</div>'}
-        </section>`;
-      document.getElementById('kardex-modal-list').innerHTML =
-        transferCorrectionPanel +
-        batchSection +
-        (movementRows || '<div class="p-4 text-center text-slate-500">برای این کالا هنوز گردش ثبت‌شده‌ای وجود ندارد.</div>');
+      const transferPanel = '<section class="rounded-2xl border border-indigo-200 bg-indigo-50 p-3 space-y-2"><div class="font-black text-sm text-indigo-950">اصلاح حواله‌های انتقال</div>' +
+        '<p class="text-[10px] leading-5 text-indigo-900">هر انتقال با شناسه مستقل نمایش داده می‌شود؛ اصلاح فقط پس از کنترل دوباره و ثبت سابقه حسابرسی مجاز است.</p>' +
+        (transferRows || '<div class="rounded-lg bg-white p-2 text-[10px] text-slate-600">حواله انتقال قابل‌شناسایی برای این کالا ثبت نشده است.</div>') + '</section>';
+      const table = '<section class="rounded-2xl border border-slate-200 bg-white overflow-hidden"><div class="flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-slate-50">' +
+        '<strong class="text-sm">دفتر گردش کالا</strong><span class="text-[10px] text-slate-500">' + faNum(periodRows.length) + ' ردیف • ترتیب تاریخ و ترتیب ثبت در همان روز</span></div>' +
+        '<div class="overflow-x-auto"><table class="w-full min-w-[850px] text-right text-[11px]"><thead class="bg-slate-100 text-slate-700"><tr>' +
+        '<th class="p-2">تاریخ</th><th class="p-2">شرح / مرجع</th><th class="p-2 text-left">ورود (KG)</th><th class="p-2 text-left">خروج (KG)</th>' +
+        '<th class="p-2 text-left">مانده (KG)</th><th class="p-2">فی / مبلغ ردیف</th></tr></thead><tbody>' +
+        (rows || '<tr><td colspan="6" class="p-5 text-center text-slate-500">در بازه انتخابی گردش ثبت‌شده‌ای وجود ندارد.</td></tr>') +
+        '</tbody></table></div></section>';
+      const list = document.getElementById('kardex-modal-list');
+      if (!list) return;
+      list.innerHTML = summary + warningPanel + transferPanel + batchSection + table;
       openModal('modal-kardex');
     }
 
@@ -5285,7 +5415,7 @@
         const stock = Number(product.stock);
         const unitCost = Number(product.buyPrice ?? 0);
         if (!Number.isFinite(stock) || stock < 0) throw new Error('موجودی سیستمی کالای «' + String(product.name || id) + '» معتبر نیست.');
-        if (!Number.isFinite(unitCost) || unitCost < 0) throw new Error('بهای کالا «' + String(product.name || id) + '» معتبر نیست.');
+        if (state.costingMethod !== 'FIFO' && (!Number.isFinite(unitCost) || unitCost < 0)) throw new Error('بهای کالا «' + String(product.name || id) + '» معتبر نیست.');
       });
       entries.forEach(entry => {
         const id = String(entry?.productId ?? '');
@@ -5294,10 +5424,13 @@
         if (!raw) throw new Error('مقدار شمارش واقعی برای همه کالاها الزامی است.');
         const real = Number(raw);
         if (!Number.isFinite(real) || real < 0) throw new Error('موجودی واقعی باید عددی معتبر و صفر یا بیشتر باشد.');
-        entryMap.set(id, real);
+        const rawUnitCost = entry.rawUnitCost == null ? '' : String(entry.rawUnitCost).trim();
+        const unitCost = rawUnitCost === '' ? null : Number(rawUnitCost);
+        if (rawUnitCost !== '' && (!Number.isFinite(unitCost) || unitCost < 0)) throw new Error('بهای واحد اضافه موجودی معتبر نیست.');
+        entryMap.set(id, { real, unitCost });
       });
       if (entryMap.size !== productIds.size) throw new Error('برای بعضی کالاها مقدار شمارش وارد نشده است.');
-      return scopedProducts.map(product => ({ productId: String(product.id), real: entryMap.get(String(product.id)) }));
+      return scopedProducts.map(product => ({ productId: String(product.id), ...entryMap.get(String(product.id)) }));
     }
 
     function buildPhysicalStocktakingDraft(baseState, entries, operationId, postingDate, warehouseId = null) {
@@ -5321,20 +5454,24 @@
 
           let fifoPlan = null;
           if (draft.costingMethod === 'FIFO' && diff > 0) {
+            if (!Number.isFinite(Number(count.unitCost)) || Number(count.unitCost) <= 0) {
+              throw new Error('برای اضافه موجودی در روش FIFO، بهای واحد تأییدشده را وارد کنید؛ بهای خرید قدیمی به‌صورت خودکار جایگزین نمی‌شود.');
+            }
             addStockBatch(product, {
               id: 'STK-' + operationId + '-' + count.productId,
               lot: 'ADJ-' + operationId,
               quantity: diff,
-              unitCost: Number(product.buyPrice ?? 0),
+              unitCost: Number(count.unitCost),
               receivedDate: postingDate,
               sourceType: 'stocktake',
               sourceRef: operationId
             });
           } else if (draft.costingMethod === 'FIFO' && diff < 0) {
-            fifoPlan = consumeFifoStock(product, Math.abs(diff));
+            fifoPlan = consumeFifoStock(product, Math.abs(diff), { includeExpired: true });
           }
 
-          const unitCost = fifoPlan ? Number(fifoPlan.unitCost) : Number(product.buyPrice ?? 0);
+          const unitCost = fifoPlan ? Number(fifoPlan.unitCost) :
+            (draft.costingMethod === 'FIFO' && diff > 0 ? Number(count.unitCost) : Number(product.buyPrice ?? 0));
           const valuation = fifoPlan ? Number(fifoPlan.totalCost) : Math.abs(diff) * unitCost;
           if (!Number.isFinite(valuation) || valuation <= 0) {
             throw new Error('برای مغایرت کالای «' + String(product.name || product.id) + '» بهای معتبر و بیشتر از صفر وجود ندارد؛ ابتدا بهای کالا را اصلاح کنید.');
@@ -5349,6 +5486,8 @@
             outQty: diff < 0 ? Math.abs(diff) : 0,
             bal: count.real,
             price: unitCost,
+            inventoryCost: valuation,
+            valuationBasis: draft.costingMethod === 'FIFO' && diff > 0 ? 'manual-verified-surplus-cost' : (draft.costingMethod === 'FIFO' ? 'fifo-layer-cost' : 'moving-average-cost'),
             operationId,
             sourceType: 'stocktake',
             sourceId: count.productId
@@ -5356,12 +5495,12 @@
 
           const lines = diff < 0
             ? [
-                { code: '6104', partyId: null, desc: 'کسری انبارگردانی ' + product.name, debit: valuation, credit: 0 },
+                { code: '6105', partyId: null, desc: 'کسری انبارگردانی ' + product.name, debit: valuation, credit: 0 },
                 { code: '1105', partyId: null, desc: product.name, debit: 0, credit: valuation }
               ]
             : [
                 { code: '1105', partyId: null, desc: 'اضافه انبارگردانی ' + product.name, debit: valuation, credit: 0 },
-                { code: '3102', partyId: null, desc: product.name, debit: 0, credit: valuation }
+                { code: '4199', partyId: null, desc: 'سود ناشی از اضافه انبارگردانی ' + product.name, debit: 0, credit: valuation }
               ];
           const voucherId = postVoucher(
             'سند مغایرت انبارگردانی: ' + product.name,
@@ -5384,6 +5523,8 @@
             countedStock: count.real,
             difference: diff,
             valuation,
+            unitCost,
+            valuationBasis: draft.costingMethod === 'FIFO' && diff > 0 ? 'manual-verified-surplus-cost' : (draft.costingMethod === 'FIFO' ? 'fifo-layer-cost' : 'moving-average-cost'),
             voucherId: String(voucherId),
             fifoAllocations: fifoPlan && Array.isArray(fifoPlan.allocations) ? JSON.parse(JSON.stringify(fifoPlan.allocations)) : []
           });
@@ -5424,7 +5565,8 @@
         if (!warehouseProducts.length) throw new Error('در انبار انتخاب‌شده کالایی برای شمارش وجود ندارد.');
         const entries = warehouseProducts.map(product => {
           const input = document.getElementById(`st-real-${product.id}`);
-          return { productId: String(product.id), rawValue: input ? input.value : '' };
+          const costInput = document.getElementById(`st-cost-${product.id}`);
+          return { productId: String(product.id), rawValue: input ? input.value : '', rawUnitCost: costInput ? costInput.value : '' };
         });
         const operationId = createStableId('stocktake');
         const postingDate = getTodayJalaliDate();
@@ -6467,24 +6609,56 @@
       }
       if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
       const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-      // Simulate FIFO changes on clones before posting anything; this catches insufficient stock or invalid batch returns.
+      // Preflight stock, lot provenance and carrying value on isolated product copies.
+      const simulatedProducts = new Map();
       try {
-        const simulatedProducts = new Map();
         for (const entry of returnPlan) {
           if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
           const simulated = simulatedProducts.get(entry.product);
+          const currentStock = Number(simulated.stock || 0);
+          if (!Number.isFinite(currentStock) || currentStock < 0) throw new Error('موجودی فعلی کالا معتبر نیست.');
           if (inv.type === 'sale') {
-            restoreFifoAllocations(simulated, entry.item.fifoAllocations || [], entry.qty, entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice, returnId, entry.item.fifoReturnedAllocations || []);
-            getReturnCostOfGoods(entry.item, entry.qty, entry.product.buyPrice);
-          } else consumeFifoStock(simulated, entry.qty);
+            entry.inventoryCost = getReturnCostOfGoods(entry.item, entry.qty, simulated.buyPrice);
+            entry.returnedBatchAllocations = restoreFifoAllocations(
+              simulated, entry.item.fifoAllocations || [], entry.qty,
+              entry.item.costOfGoodsSold != null ? Number(entry.item.costOfGoodsSold) / Number(entry.item.kg) : simulated.buyPrice,
+              returnId, entry.item.fifoReturnedAllocations || []
+            );
+            const nextStock = currentStock + entry.qty;
+            if (!Number.isFinite(nextStock) || nextStock <= 0) throw new Error('موجودی پس از برگشت فروش معتبر نیست.');
+            if (state.costingMethod === 'AVG') {
+              const currentAverage = Number(simulated.buyPrice || 0);
+              const nextValue = currentStock * currentAverage + entry.inventoryCost;
+              if (!Number.isFinite(currentAverage) || currentAverage < 0 || !Number.isFinite(nextValue) || nextValue < 0) {
+                throw new Error('ارزش موجودی برای محاسبه میانگین پس از برگشت فروش معتبر نیست.');
+              }
+              simulated.buyPrice = Math.round(nextValue / nextStock);
+            }
+            simulated.stock = nextStock;
+          } else {
+            const batchPlan = consumePurchaseReturnBatches(simulated, inv.id, entry.item, entry.qty);
+            entry.purchaseReturnAllocations = batchPlan.allocations;
+            entry.inventoryCost = state.costingMethod === 'FIFO'
+              ? batchPlan.totalCost
+              : Math.round(entry.qty * Number(simulated.buyPrice || 0));
+            if (!Number.isFinite(entry.inventoryCost) || entry.inventoryCost < 0) {
+              throw new Error('بهای دفتری کالای برگشتی معتبر نیست.');
+            }
+            simulated.stock = currentStock - entry.qty;
+          }
+          entry.balanceAfter = simulated.stock;
+          entry.averageCostAfter = Number(simulated.buyPrice || 0);
         }
       } catch (error) {
-        showToast('کنترل تخصیص سری ساخت و بهای تمام‌شده برگشتی ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
+        showToast('کنترل سری ساخت، مقدار یا بهای دفتری برگشتی ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return;
       }
       const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
       const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
-      const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + getReturnCostOfGoods(entry.item, entry.qty, entry.product.buyPrice), 0) : 0;
+      const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : 0;
+      const returnInventoryCost = inv.type === 'purchase' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : returnCogs;
+      if (!Number.isFinite(returnInventoryCost) || returnInventoryCost < 0) { showToast('ارزش دفتری برگشت کالا معتبر نیست؛ سند صادر نشد.', 'error'); return; }
+      const purchaseReturnVariance = inv.type === 'purchase' ? returnBaseTotal - returnInventoryCost : 0;
       const returnVoucherLines = inv.type === 'sale'
         ? [
             { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: returnBaseTotal, credit: 0 },
@@ -6495,7 +6669,9 @@
         : [
             { code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal - partyCreditAmount, credit: 0 },
             ...(partyCreditAmount > 0 ? [{ code: '1107', partyId: inv.partyId, desc: `پیش‌پرداخت تأمین‌کننده بابت برگشت #${invId}`, debit: partyCreditAmount, credit: 0 }] : []),
-            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: returnBaseTotal },
+            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی به بهای دفتری', debit: 0, credit: returnInventoryCost },
+            ...(purchaseReturnVariance > 0 ? [{ code: '4198', partyId: null, desc: `سود اختلاف بهای برگشت خرید #${invId}`, debit: 0, credit: purchaseReturnVariance }] : []),
+            ...(purchaseReturnVariance < 0 ? [{ code: '6107', partyId: null, desc: `زیان اختلاف بهای برگشت خرید #${invId}`, debit: Math.abs(purchaseReturnVariance), credit: 0 }] : []),
             ...(returnVatTotal > 0 ? [{ code: '1106', partyId: null, desc: `اصلاح اعتبار مالیات خرید بابت برگشت #${invId}`, debit: 0, credit: returnVatTotal }] : [])
           ];
       if (inv.type === 'sale' && returnCogs > 0) returnVoucherLines.push(
@@ -6508,21 +6684,29 @@
         showToast('صدور سند برگشت ناموفق بود؛ موجودی و فاکتور تغییر نکردند. ' + (error?.message || ''), 'error');
         return;
       }
-      // Apply inventory and item mutations only after the complete return plan passes validation.
+      // Apply the already validated product snapshots; never recalculate or consume a different batch after posting.
+      simulatedProducts.forEach((simulated, product) => {
+        product.stock = simulated.stock;
+        product.batches = simulated.batches || product.batches || [];
+        if (state.costingMethod === 'AVG') product.buyPrice = simulated.buyPrice;
+      });
       for (const entry of returnPlan) {
         const { item: it, product: p, qty: q } = entry;
         it.returnedKg = Number(it.returnedKg || 0) + q;
         if (inv.type === 'sale') {
-          p.stock += q;
-          it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], q, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, returnId, it.fifoReturnedAllocations || [])];
-        } else {
-          consumeFifoStock(p, q);
-          p.stock -= q;
+          it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...(entry.returnedBatchAllocations || [])];
         }
-        p.kardex.push({ date: getTodayJalaliDate(), doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
+        p.kardex = Array.isArray(p.kardex) ? p.kardex : [];
+        p.kardex.push({
+          date: getTodayJalaliDate(), doc: 'برگشت جزئی فاکتور #' + invId,
+          inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q,
+          bal: entry.balanceAfter, price: it.price, inventoryCost: entry.inventoryCost,
+          costingMethod: state.costingMethod,
+          batchAllocations: entry.returnedBatchAllocations || entry.purchaseReturnAllocations || []
+        });
       }
 
-      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount, inventoryCost: x.inventoryCost, batchAllocations: x.returnedBatchAllocations || x.purchaseReturnAllocations || [] })), createdAt: new Date().toISOString(), actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, partyCreditAmount }];
       if (partyCreditAmount > 0) {
         state.treasuryTxs = state.treasuryTxs || [];
         state.treasuryTxs.unshift({
@@ -7554,7 +7738,7 @@
         { code: '1102', partyId: null, desc: 'پرداخت ارزی به ذی‌نفع خارجی', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
-      else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      else if (diff < 0) lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
       const previous = { paidAmount: Number(c.paidAmount || 0), status: c.status, payments: [...(c.payments || [])], bankBalance: bank ? Number(bank.balance || 0) : null };
       c.paidAmount = previous.paidAmount + amount;
       c.status = c.paidAmount + 0.000001 >= c.amount ? 'paid' : 'partial';
@@ -7611,7 +7795,7 @@
             lines.push({ code: '2105', partyId: item.partyId, desc: 'کاهش بدهی ارزی ' + item.label, debit: difference, credit: 0 });
             lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر پایان دوره ' + item.label, debit: 0, credit: difference });
           } else if (difference < 0) {
-            lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر پایان دوره ' + item.label, debit: Math.abs(difference), credit: 0 });
+            lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر پایان دوره ' + item.label, debit: Math.abs(difference), credit: 0 });
             lines.push({ code: '2105', partyId: item.partyId, desc: 'افزایش بدهی ارزی ' + item.label, debit: 0, credit: Math.abs(difference) });
           }
           item.ref.carryingRate = currentRate;
@@ -7668,7 +7852,7 @@
         { code: '1102', partyId: null, desc: 'حواله ارزی از بانک', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
-      else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      else if (diff < 0) lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
       const previousPaid = Number(shipment.fxPaid || 0);
       const previousPayments = [...(shipment.fxPayments || [])];
       const previousBankBalance = bank ? Number(bank.balance || 0) : null;
