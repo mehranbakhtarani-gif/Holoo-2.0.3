@@ -25,5 +25,5 @@ assert.match(edit, /Object\.assign\(party/);
 assert.match(edit, /saveState\(\)/);
 assert.doesNotMatch(edit, /postVoucher|subledgerId\s*=|ledgerAccountCode\s*=/, 'editing must not post vouchers or change accounting identity');
 assert.match(edit, /party\.id/);
-assert.match(save, /String\(p\.id\) !== String\(editingPartyId\)/);
+assert.match(save, /if \(String\(p\.id\) === String\(editingPartyId\)\) return false;/);
 console.log('PASS: party editing preserves accounting identity and balances without posting vouchers');
