@@ -10900,7 +10900,7 @@
       closings.forEach(v => { const c = inspectTrialBalanceVoucher(v); if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidClosing++; if ((v.lines || []).some(l => !/^[456]\\d*$/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.closingNonResultAccounts++; });
       (Array.isArray(state.fiscalYearClosures) ? state.fiscalYearClosures : []).filter(x => x.status !== 'reopened').forEach(x => { const y = normalizeAccountingDate(x.year); if (y && !closings.some(v => String(v.sourceId || '') === y)) r.missingCloseRecords++; });
       [['سال‌های دارای بیش از یک سند افتتاحیه',r.duplicateOpeningYears],['سال‌های دارای بیش از یک سند اختتامیه',r.duplicateClosingYears],['اسناد افتتاحیه نامعتبر یا نامتوازن',r.invalidOpening],['اسناد اختتامیه نامعتبر یا نامتوازن',r.invalidClosing],['ردیف درآمد/هزینه در افتتاحیه',r.openingResultAccounts],['ردیف غیرنتیجه‌ای در سند اختتامیه سود و زیان',r.closingNonResultAccounts],['سابقه بستن بدون سند اختتامیه',r.missingCloseRecords]].forEach(x => { if (x[1]) r.issues.push(x[0] + ': ' + x[1]); });
-      r.issueCount = r.issues.reduce((n,x) => n + Number((x.match(/: (\\d+)$/) || [])[1] || 0),0); return r;
+      r.issueCount = r.issues.reduce((n,x) => n + Number((x.match(/: (\d+)$/) || [])[1] || 0),0); return r;
     }
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
