@@ -47,9 +47,10 @@
         String(other && other.warehouseId != null ? other.warehouseId : '').trim() === targetId)) {
         reasons.push('برای همین کالای پایه در انبار مقصد رکورد دیگری وجود دارد؛ از ایجاد رکورد تکراری جلوگیری شد.');
       }
-      const linkedCollections = ['invoices', 'orders', 'imports', 'vouchers'];
-      const linked = linkedCollections.some(key => hasDocumentReference(data[key], id));
-      if (linked) reasons.push('در اسناد یا عملیات ثبت‌شده ارجاعی به این کالا وجود دارد؛ تغییر انتساب خودکار مسدود شد.');
+      const history = inspectWarehouseAssignmentHistory(data, id);
+      if (history.ok && (history.documentReferenceCount || history.auditReferenceCount)) {
+        reasons.push('در اسناد یا سوابق حسابرسی ارجاعی به این کالا وجود دارد؛ تغییر انتساب خودکار مسدود شد.');
+      }
     }
     if (product && target && reasons.length === 0) {
       return {
@@ -75,6 +76,117 @@
     };
   }
 
-  root.HolooWarehouseAssignment = { buildWarehouseAssignmentPlan };
+
+  function inspectWarehouseAssignmentHistory(state, productId) {
+    const data = state && typeof state === 'object' ? state : {};
+    const products = Array.isArray(data.products) ? data.products : [];
+    const id = String(productId == null ? '' : productId).trim();
+    const matches = products.filter(product => String(product && product.id != null ? product.id : '').trim() === id);
+    if (!id || matches.length !== 1) {
+      return { ok: false, productId: id, reason: matches.length ? 'شناسه کالا یکتا نیست.' : 'کالا پیدا نشد.', classification: 'unresolved' };
+    }
+    const product = matches[0];
+    const movements = (Array.isArray(product.kardex) ? product.kardex : []).map((row, index) => ({
+      index,
+      date: String(row && (row.date || row.operationDate) || ''),
+      document: String(row && (row.doc || row.description || '') || ''),
+      inQty: Number(row && row.inQty || 0),
+      outQty: Number(row && row.outQty || 0),
+      balance: Number(row && row.bal),
+      warehouseIds: extractWarehouseIds(row)
+    }));
+    const batches = (Array.isArray(product.batches) ? product.batches : []).map((batch, index) => ({
+      index,
+      id: String(batch && batch.id || ''),
+      lot: String(batch && batch.lot || ''),
+      sourceType: String(batch && batch.sourceType || ''),
+      sourceRef: String(batch && batch.sourceRef || ''),
+      sourceBatchId: String(batch && batch.sourceBatchId || ''),
+      quantity: Number(batch && batch.quantity),
+      remainingQty: Number(batch && batch.remainingQty),
+      warehouseIds: extractWarehouseIds(batch)
+    }));
+    const documents = [];
+    let documentReferenceCount = 0;
+    const seen = new Set();
+    const excludedRoots = new Set(['products', 'warehouses', 'auditLogs']);
+    function visit(value, path, inheritedWarehouseIds = []) {
+      if (!value || typeof value !== 'object' || seen.has(value)) return;
+      seen.add(value);
+      const warehouseIds = Array.from(new Set(inheritedWarehouseIds.concat(extractWarehouseIds(value))));
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => visit(item, path + '[' + index + ']', warehouseIds));
+        return;
+      }
+      const referencesProduct = Object.entries(value).some(([key, child]) =>
+        ['productId', 'product_id', 'stockProductId', 'stock_product_id', 'itemProductId'].includes(key) &&
+        child != null && String(child).trim() === id
+      );
+      if (referencesProduct) {
+        documentReferenceCount++;
+      }
+      if (referencesProduct && documents.length < 100) {
+        documents.push({
+          path,
+          recordId: String(value.id || value.voucherId || value.invoiceId || value.orderId || ''),
+          date: String(value.date || value.operationDate || value.createdAt || ''),
+          description: String(value.desc || value.description || value.doc || ''),
+          warehouseIds
+        });
+      }
+      Object.entries(value).forEach(([key, child]) => visit(child, path ? path + '.' + key : key, warehouseIds));
+    }
+    Object.entries(data).forEach(([key, value]) => {
+      if (!excludedRoots.has(key)) visit(value, key);
+    });
+    const auditReferences = (Array.isArray(data.auditLogs) ? data.auditLogs : []).filter(entry =>
+      entry && (
+        String(entry.sourceId || '') === id ||
+        String(entry.productId || '') === id ||
+        String(entry.details && entry.details.productId || '') === id
+      )
+    ).map(entry => ({
+      operationId: String(entry.operationId || ''),
+      sourceType: String(entry.sourceType || ''),
+      action: String(entry.action || ''),
+      time: String(entry.time || entry.createdAt || '')
+    }));
+    const evidenceCount = movements.length + batches.length + documentReferenceCount + auditReferences.length;
+    const warehouseIds = Array.from(new Set([
+      ...movements.flatMap(item => item.warehouseIds),
+      ...batches.flatMap(item => item.warehouseIds),
+      ...documents.flatMap(item => item.warehouseIds)
+    ]));
+    return {
+      ok: true,
+      productId: id,
+      productName: String(product.name || id),
+      classification: evidenceCount ? 'historical-evidence' : 'no-history-found',
+      canAutoReassign: evidenceCount === 0 && Number(product.stock) === 0,
+      currentWarehouseId: product.warehouseId == null ? null : String(product.warehouseId),
+      stock: Number(product.stock),
+      movementCount: movements.length,
+      batchCount: batches.length,
+      documentReferenceCount,
+      auditReferenceCount: auditReferences.length,
+      unresolvedWarehouseEvidenceCount: movements.concat(batches, documents).filter(item => !item.warehouseIds.length).length,
+      warehouseIds,
+      movements: movements.slice(0, 20),
+      batches: batches.slice(0, 20),
+      documents: documents.slice(0, 30),
+      auditReferences: auditReferences.slice(0, 20),
+      truncated: movements.length > 20 || batches.length > 20 || documentReferenceCount > 30 || auditReferences.length > 20
+    };
+  }
+
+  function extractWarehouseIds(record) {
+    if (!record || typeof record !== 'object') return [];
+    return Array.from(new Set([
+      record.warehouseId, record.warehouse_id, record.sourceWarehouseId,
+      record.destinationWarehouseId, record.fromWarehouseId, record.toWarehouseId
+    ].filter(value => value != null && String(value).trim()).map(String)));
+  }
+
+  root.HolooWarehouseAssignment = { buildWarehouseAssignmentPlan, inspectWarehouseAssignmentHistory };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.HolooWarehouseAssignment;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
