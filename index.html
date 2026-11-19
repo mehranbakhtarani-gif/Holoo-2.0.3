@@ -5726,7 +5726,20 @@
           batches: JSON.parse(JSON.stringify(product.batches || []))
         });
       }
+      if (shipment.receiptSnapshot) throw new Error('برای این محموله snapshot رسید قبلی وجود دارد؛ تحویل مجدد بدون بررسی سابقه مجاز نیست.');
       const receivedDate = getTodayJalaliDate();
+      const receiptSnapshot = HolooImportDomain.createReceiptSnapshot(shipment, state.products, {
+        schemaVersion: 1,
+        snapshotId: createStableId('receipt_snapshot'),
+        capturedAt: new Date().toISOString(),
+        receivedDate,
+        actor: state.activeRole || localStorage.getItem(DEVICE_ACTOR_KEY) || 'mehran',
+        deviceId: DEVICE_ID,
+        costingMethod: state.costingMethod || 'AVG'
+      });
+      // The pre-receipt state is attached before the first stock/batch/Kardex mutation.
+      // The caller's saveState() persists this with the receipt in one operation-journal entry.
+      shipment.receiptSnapshot = receiptSnapshot;
       try {
         for (const item of items) {
           const product = state.products.find(p => String(p.id) === String(item.productId));
@@ -5766,6 +5779,7 @@
         }
         shipment.postedToWh = false;
         shipment.receivedAt = null;
+        delete shipment.receiptSnapshot;
         throw error;
       }
       addAudit('تحویل محموله ' + shipment.id + ' با ' + items.length + ' قلم به انبار و ثبت بچ‌های موجودی', { mode: 'automatic', operationDate: receivedDate, sourceType: 'import' });
