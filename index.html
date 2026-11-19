@@ -4904,7 +4904,7 @@
 
     function openInvoiceCorrection(invId) {
       const inv = (state.invoices || []).find(item => Number(item.id) === Number(invId));
-      if (!canCorrectInvoice(inv)) { showToast('اصلاح مستقیم این فاکتور مجاز نیست؛ تسویه، برگشت یا وابستگی فعال دارد. ابتدا وابستگی‌ها باید تعیین‌تکلیف شوند.', 'error'); return; }
+      if (!canCorrectInvoice(inv)) { showToast('فعلاً فقط فاکتور فروش نسیه، بدون تسویه یا برگشت و با اطلاعات کامل پورسانت قابل اصلاح است؛ فاکتور خرید و اسناد تسویه‌شده نیازمند مسیر تخصصی جداگانه‌اند.', 'error'); return; }
       openInvoiceForm(inv.type);
       document.getElementById('inv-party').value = String(inv.partyId);
       document.getElementById('inv-warehouse').value = String(inv.warehouseId);
