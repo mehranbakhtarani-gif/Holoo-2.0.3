@@ -60,10 +60,15 @@ console.log('PASS: bank reconciliation does not propose another bank account or 
 const accountState = { bankAccounts: [] };
 const fields = {};
 const audit = [];
+const posted = [];
+let nextBankId = 0;
 const accountSandbox = {
   state: accountState,
   document: { getElementById: id => ({ value: fields[id] || '' }) },
-  createStableId: () => 'BANK-NEW',
+  createStableId: () => 'BANK-' + (++nextBankId),
+  CHART_ACCOUNTS: [{ code: '1101', name: 'صندوق' }, { code: '1102', name: 'بانک' }, { code: '3101', name: 'سرمایه' }],
+  bankTxDateKey: value => /^1405\\/\\d{2}\\/\\d{2}$/.test(String(value || '')) ? value : null,
+  postVoucher: (...args) => { posted.push(args); return posted.length; },
   addAudit: (...args) => audit.push(args),
   saveState: () => true,
   closeModal: () => {},
@@ -83,11 +88,25 @@ assert.equal(accountState.bankAccounts.length, 1);
 assert.equal(accountState.bankAccounts[0].type, 'bank');
 assert.equal(accountState.bankAccounts[0].accNo, '123456');
 assert.equal(audit.length, 1);
+assert.equal(posted.length, 0);
 fields['bank-account-name'] = 'حساب تکراری';
 saveBankAccount();
 assert.equal(accountState.bankAccounts.length, 1);
+fields['bank-account-name'] = 'حساب دوم';
+fields['bank-account-number'] = '654321';
+fields['bank-account-opening'] = '250';
+fields['bank-account-opening-counter'] = '3101';
+fields['bank-account-opening-date'] = '1405/09/02';
+saveBankAccount();
+assert.equal(accountState.bankAccounts.length, 2);
+assert.equal(posted.length, 1);
+assert.equal(posted[0][0], 'موجودی افتتاحیه بانک حساب دوم');
+assert.equal(posted[0][1][0].bankAccountId, 'BANK-2');
+assert.equal(posted[0][1][0].debit, 250);
+assert.equal(posted[0][1][1].code, '3101');
 fields['bank-account-name'] = 'حساب جاری اصلاح‌شده';
 fields['bank-account-number'] = '123456';
-saveBankAccount('BANK-NEW');
+saveBankAccount('BANK-1');
 assert.equal(accountState.bankAccounts[0].name, 'حساب جاری اصلاح‌شده');
 console.log('PASS: bank account creation, duplicate-number prevention, editing and audit logging');
+console.log('PASS: optional opening balances create a balanced journal tagged to the new bank account');
