@@ -3711,6 +3711,71 @@
       };
     }
 
+    function buildCostingMethodSwitchPlan(products, fromMethod, toMethod) {
+      if (!['AVG', 'FIFO'].includes(fromMethod) || !['AVG', 'FIFO'].includes(toMethod)) {
+        return { ok: false, reason: 'روش قیمت‌گذاری انتخاب‌شده معتبر نیست.' };
+      }
+      if (fromMethod === toMethod) return { ok: true, unchanged: true, updates: [], beforeValue: 0, afterValue: 0, delta: 0 };
+      const updates = [];
+      const globalBatchIds = new Set();
+      let beforeValue = 0;
+      let afterValue = 0;
+      for (const product of (Array.isArray(products) ? products : [])) {
+        const stock = Number(product?.stock);
+        const buyPrice = Number(product?.buyPrice);
+        if (!Number.isFinite(stock) || stock < 0 || !Number.isFinite(buyPrice) || buyPrice < 0) {
+          return { ok: false, reason: 'موجودی یا بهای خرید کالای «' + String(product?.name || product?.id || 'بدون نام') + '» معتبر نیست.' };
+        }
+        let batches = Array.isArray(product.batches) ? product.batches.map(batch => ({ ...batch })) : [];
+        if (stock > 0 && batches.length === 0 && fromMethod === 'AVG') {
+          batches = [{
+            id: 'LEGACY-' + String(product.id),
+            lot: product.lot || 'LEGACY',
+            receivedDate: '0000/00/00',
+            productionDate: '',
+            expiryDate: '',
+            quantity: stock,
+            remainingQty: stock,
+            unitCost: buyPrice,
+            sourceType: 'legacy_opening',
+            sourceRef: 'legacy-stock',
+            warehouseId: product.warehouseId || null
+          }];
+        }
+        const seenBatchIds = new Set();
+        let tracked = 0;
+        let batchValue = 0;
+        for (const batch of batches) {
+          const id = String(batch?.id || '');
+          const qty = Number(batch?.remainingQty ?? batch?.quantity ?? 0);
+          const cost = Number(batch?.unitCost);
+          if (!id || seenBatchIds.has(id) || globalBatchIds.has(id) || !Number.isFinite(qty) || qty < 0 || !Number.isFinite(cost) || cost < 0) {
+            return { ok: false, reason: 'شناسه، مقدار یا بهای سری ساخت کالای «' + String(product?.name || product?.id || 'بدون نام') + '» ناقص یا نامعتبر است.' };
+          }
+          seenBatchIds.add(id);
+          globalBatchIds.add(id);
+          tracked += qty;
+          batchValue += qty * cost;
+          if (!Number.isFinite(tracked) || !Number.isFinite(batchValue)) {
+            return { ok: false, reason: 'ارزش یا مقدار سری‌های ساخت کالای «' + String(product?.name || product?.id || 'بدون نام') + '» از محدوده عددی معتبر خارج است.' };
+          }
+        }
+        if (Math.abs(stock - tracked) > 0.000001) {
+          return { ok: false, reason: 'موجودی کالا «' + String(product?.name || product?.id || 'بدون نام') + '» با مجموع سری‌های ساخت برابر نیست؛ ابتدا مغایرت‌گیری کنید.' };
+        }
+        const currentValue = fromMethod === 'FIFO' ? batchValue : stock * buyPrice;
+        if (!Number.isFinite(currentValue)) return { ok: false, reason: 'ارزش فعلی موجودی کالا معتبر نیست.' };
+        let nextBuyPrice = buyPrice;
+        if (toMethod === 'AVG' && stock > 0) nextBuyPrice = Math.round(batchValue / stock);
+        const nextValue = toMethod === 'FIFO' ? batchValue : stock * nextBuyPrice;
+        if (!Number.isFinite(nextValue)) return { ok: false, reason: 'ارزش موجودی پس از تغییر روش معتبر نیست.' };
+        beforeValue += currentValue;
+        afterValue += nextValue;
+        updates.push({ productId: String(product.id), batches, buyPrice: nextBuyPrice });
+      }
+      return { ok: true, unchanged: false, updates, beforeValue, afterValue, delta: afterValue - beforeValue };
+    }
+
     function isOpeningKardexDocument(value) {
       const normalized = String(value ?? '')
         .normalize('NFKC')
@@ -3976,7 +4041,66 @@
     // =========================================================================
     // 7. MODULE 3: MULTI-WAREHOUSE, KARDEX, STAGNANT & STOCKTAKING
     // =========================================================================
-    function setCostingMethod(m) { if (!['AVG','FIFO'].includes(m)) return; state.costingMethod = m; saveState(); renderInventoryModule(); showToast(`روش قیمت‌گذاری روی ${m} تنظیم شد.`); }
+    function setCostingMethod(m) {
+      const selector = document.getElementById('inv-costing-method');
+      const currentMethod = state.costingMethod || 'AVG';
+      if (!['AVG', 'FIFO'].includes(m)) {
+        if (selector) selector.value = currentMethod;
+        return;
+      }
+      if (m === currentMethod) return;
+      const plan = buildCostingMethodSwitchPlan(state.products, currentMethod, m);
+      if (!plan.ok) {
+        if (selector) selector.value = currentMethod;
+        showToast('تغییر روش قیمت‌گذاری انجام نشد. ' + plan.reason, 'error');
+        return;
+      }
+      const delta = plan.delta;
+      const impactText = 'ارزش فعلی موجودی: ' + money(plan.beforeValue) +
+        '\nارزش پس از تغییر روش: ' + money(plan.afterValue) +
+        '\nاختلاف برآوردی: ' + (delta > 0 ? '+' : '') + money(delta);
+      const warning = m === 'AVG'
+        ? '\nدر روش میانگین، بهای خرید هر کالا بر اساس ارزش سری‌های باقی‌مانده به‌روزرسانی می‌شود.'
+        : '\nدر روش FIFO، لایه‌های سری ساخت موجود مبنای بهای خروج خواهند بود.';
+      if (typeof window === 'undefined' || typeof window.confirm !== 'function' ||
+          !window.confirm('تغییر روش قیمت‌گذاری از ' + currentMethod + ' به ' + m + '؟\n' +
+            impactText + warning + '\nسوابق کاردکس و اسناد قبلی بازنویسی نمی‌شوند. ثبت سند تعدیل حسابداری نیز به‌صورت خودکار انجام نمی‌شود.')) {
+        if (selector) selector.value = currentMethod;
+        return;
+      }
+      const previous = state.products.map(product => ({
+        product,
+        batches: Array.isArray(product.batches) ? product.batches : undefined,
+        buyPrice: product.buyPrice
+      }));
+      let localSnapshot = null;
+      try {
+        const storageKeys = [STORE_KEY, LOCAL_UPDATED_KEY, OPERATION_SOURCE_SEQUENCE_KEY, CLOUD_OUTBOX_KEY];
+        localSnapshot = new Map(storageKeys.map(key => [key, localStorage.getItem(key)]));
+        plan.updates.forEach(update => {
+          const product = state.products.find(item => String(item.id) === update.productId);
+          if (!product) throw new Error('کالا هنگام اعمال تغییر پیدا نشد؛ عملیات لغو شد.');
+          product.batches = update.batches;
+          product.buyPrice = update.buyPrice;
+        });
+        state.costingMethod = m;
+        if (!saveState()) throw new Error('ذخیره محلی ناموفق بود.');
+        renderInventoryModule();
+        showToast('روش قیمت‌گذاری به ' + m + ' تغییر کرد. اختلاف ارزش برآوردی: ' + money(delta));
+      } catch (error) {
+        previous.forEach(snapshot => {
+          if (snapshot.batches === undefined) delete snapshot.product.batches;
+          else snapshot.product.batches = snapshot.batches;
+          snapshot.product.buyPrice = snapshot.buyPrice;
+        });
+        state.costingMethod = currentMethod;
+        if (localSnapshot) localSnapshot.forEach((value, key) => {
+          try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (restoreError) { console.error('Costing switch rollback failed:', restoreError); }
+        });
+        if (selector) selector.value = currentMethod;
+        showToast('تغییر روش قیمت‌گذاری ذخیره نشد؛ وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error');
+      }
+    }
 
     function getInventoryBookValue(product) {
       const stock = Number(product?.stock || 0);
@@ -8086,8 +8210,8 @@
         }
         if (ch === '"' && field.length === 0) quoted = true;
         else if (ch === ',') { row.push(field); field = ''; }
-        else if (ch === '\\n' || ch === '\\r') {
-          if (ch === '\\r' && input[i + 1] === '\\n') i++;
+        else if (ch === '\n' || ch === '\\r') {
+          if (ch === '\\r' && input[i + 1] === '\n') i++;
           row.push(field); rows.push(row); row = []; field = '';
         } else field += ch;
       }
