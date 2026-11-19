@@ -82,7 +82,7 @@ test('correction form carries purchase type and original lines into draft', () =
   const testContext = {
     state, document, invDraft: null, canCorrectInvoice: inv => inv.type === 'purchase', openInvoiceForm(type) { values.type = type; },
     renderInvoiceSettlementAccounts() {}, getTodayJalaliDate() { return '1405/09/02'; },
-    checkPartyCredit() {}, renderInvDraftLines() {}, showToast() {}
+    checkPartyCredit() {}, renderInvDraftLines() {}, showToast() {}, faNum: String
   };
   const open = load(extract('openInvoiceCorrection', 'function renderInvoicesModule'), 'openInvoiceCorrection', testContext);
   open(61);
