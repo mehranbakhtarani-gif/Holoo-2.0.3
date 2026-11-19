@@ -63,6 +63,7 @@ test('flags duplicated record IDs even if the warehouse differs', () => {
     { id: 'P', baseProductId: 'P', warehouseId: 'B', name: 'کالا', stock: 7 }
   ], warehouses);
   assert.ok(result.issues.some(issue => issue.type === 'warehouse-product-id-duplicate'));
+  assert.equal(result.companyTotalStock, null);
 });
 
 test('keeps separate base products as separate company totals', () => {
