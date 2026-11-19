@@ -7841,6 +7841,7 @@
       if (!counterparty || !['USD','CNY','EUR'].includes(currency) || !['1105','6101'].includes(offsetAccountCode) || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(initialRate) || initialRate <= 0) {
         showToast('ذی‌نفع، مبلغ و نرخ اولیه تعهد باید معتبر باشند.', 'error'); return;
       }
+      const fxCommitmentPreCommitSnapshot = JSON.parse(JSON.stringify(state));
       const id = createStableId('fxc');
       const commitment = {
         id, counterparty, supplierPartyId, reference: document.getElementById('fxc-reference').value.trim(),
@@ -7857,11 +7858,15 @@
           { code: '2105', partyId: supplierPartyId, desc: 'تعهد ارزی تأمین‌کننده ' + id, debit: 0, credit: openingRial }
         ], getTodayJalaliDate(), { type: 'fx_commitment', id, event: 'registration' });
       } catch (error) {
-        state.fxCommitments = state.fxCommitments.filter(item => item.id !== id);
+        state = fxCommitmentPreCommitSnapshot;
         showToast('ثبت سند اولیه تعهد ارزی ناموفق بود؛ تعهد ذخیره نشد. ' + (error?.message || ''), 'error'); return;
       }
       addAudit(`ثبت تعهد ارزی ${id} به مبلغ ${amount} ${currency}`);
-      saveState(); closeModal('modal-new-fx-commitment'); renderFxModule();
+      if (!saveState()) {
+        state = fxCommitmentPreCommitSnapshot;
+        showToast('ذخیره محلی تعهد ارزی ناموفق بود؛ تعهد و سند افتتاحیه بازگردانده شدند.', 'error'); return;
+      }
+      closeModal('modal-new-fx-commitment'); renderFxModule();
       showToast('تعهد ارزی و سند افتتاحیه آن ثبت شد.');
     }
 
@@ -7890,6 +7895,7 @@
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
       else if (diff < 0) lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      const fxPaymentPreCommitSnapshot = JSON.parse(JSON.stringify(state));
       const previous = { paidAmount: Number(c.paidAmount || 0), status: c.status, payments: [...(c.payments || [])], bankBalance: bank ? Number(bank.balance || 0) : null };
       c.paidAmount = previous.paidAmount + amount;
       c.status = c.paidAmount + 0.000001 >= c.amount ? 'paid' : 'partial';
@@ -7898,15 +7904,16 @@
       try {
         postVoucher(`پرداخت تعهد ارزی ${c.id}`, lines, undefined, { type: 'fx_commitment', id: c.id, event: paymentId, bankAccountId: bank.id });
       } catch (error) {
-        c.paidAmount = previous.paidAmount;
-        c.status = previous.status;
-        c.payments = previous.payments;
-        if (bank) bank.balance = previous.bankBalance;
+        state = fxPaymentPreCommitSnapshot;
         showToast('ثبت سند پرداخت تعهد ارزی ناموفق بود؛ اطلاعات تعهد بدون تغییر ماند.', 'error');
         return;
       }
       addAudit(`پرداخت ${amount} ${c.currency} از تعهد ${c.id}`);
-      saveState(); renderFxModule();
+      if (!saveState()) {
+        state = fxPaymentPreCommitSnapshot;
+        showToast('ذخیره محلی پرداخت تعهد ارزی ناموفق بود؛ پرداخت، سند و مانده بانک بازگردانده شدند.', 'error'); return;
+      }
+      renderFxModule();
       showToast('پرداخت تعهد ارزی و سند تسعیر ثبت شد.');
     }
 
@@ -7926,6 +7933,7 @@
       if (obligations.some(item => item.ref.lastRevaluationAt === operationDate)) {
         showToast('برای این تاریخ قبلاً تسعیر ثبت شده است؛ از ثبت دوباره جلوگیری شد.', 'error'); return false;
       }
+      const fxRevaluationPreCommitSnapshot = JSON.parse(JSON.stringify(state));
       const snapshots = obligations.map(item => ({
         ref: item.ref, carryingRate: item.ref.carryingRate, lastRevaluationAt: item.ref.lastRevaluationAt,
         revaluationHistory: [...(item.ref.revaluationHistory || [])]
@@ -7968,7 +7976,12 @@
         return false;
       }
       addAudit('ثبت تسعیر پایان دوره ' + operationDate + ' برای ' + obligations.length + ' تعهد ارزی', { mode: 'automatic', operationDate, sourceType: 'fx_revaluation' });
-      saveState(); renderFxModule(); renderImportsModule();
+      if (!saveState()) {
+        state = fxRevaluationPreCommitSnapshot;
+        showToast('ذخیره محلی تسعیر پایان دوره ناموفق بود؛ نرخ‌ها، سوابق و سند تسعیر بازگردانده شدند.', 'error');
+        return false;
+      }
+      renderFxModule(); renderImportsModule();
       showToast(lines.length ? 'سند تسعیر پایان دوره صادر شد و نرخ دفتری تعهدات به‌روزرسانی شد.' : 'اختلاف تسعیر قابل ثبت وجود نداشت؛ نرخ دفتری تعهدات به‌روزرسانی شد.');
       return true;
     }
