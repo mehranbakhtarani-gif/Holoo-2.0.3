@@ -33,7 +33,7 @@ assert.equal(state.bankAccounts[0].balance, 456000);
 assert.equal(vouchers.length, 1);
 const lines = vouchers[0][1];
 assert.equal(lines.reduce((n, x) => n + x.debit, 0), lines.reduce((n, x) => n + x.credit, 0));
-assert.equal(lines.find(x => x.code === '6104').debit, 4000);
+assert.equal(lines.find(x => x.code === '6106').debit, 4000);
 
 amountInput.value = '70';
 sandbox.pay('FX1');
