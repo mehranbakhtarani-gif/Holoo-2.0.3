@@ -167,6 +167,8 @@
     }
     if (!Number.isFinite(Number(source.product.stock)) ||
         !Number.isFinite(Number(destination.product.stock)) ||
+        !Number.isFinite(Number(source.movement.bal)) ||
+        !Number.isFinite(Number(destination.movement.bal)) ||
         Math.abs(Number(source.product.stock) - Number(source.movement.bal)) > 0.000001 ||
         Math.abs(Number(destination.product.stock) - Number(destination.movement.bal)) > 0.000001) {
       return { ok: false, reason: 'موجودی فعلی با مانده ثبت‌شده در زمان حواله برابر نیست.' };
