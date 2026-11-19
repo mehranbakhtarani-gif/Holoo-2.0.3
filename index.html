@@ -8923,6 +8923,79 @@
       showToast(accountId ? 'مشخصات حساب بانکی به‌روزرسانی شد.' : 'حساب بانکی جدید ثبت شد.', 'success');
     }
 
+    function openBankTransferModal() {
+      const accounts = (state.bankAccounts || []).filter(item => item.type === 'bank');
+      if (accounts.length < 2) { showToast('برای انتقال بین بانکی، حداقل دو حساب بانکی فعال لازم است.', 'error'); return; }
+      let modal = document.getElementById('modal-bank-transfer');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-bank-transfer';
+        modal.className = 'hidden fixed inset-0 z-[10050] bg-slate-950/60 p-3 flex items-center justify-center';
+        document.body.appendChild(modal);
+      }
+      const options = accounts.map(item => `<option value="${window.escapeBankReconcileText(item.id)}">${window.escapeBankReconcileText(item.name)} — ${window.escapeBankReconcileText(item.accNo || '')}</option>`).join('');
+      modal.innerHTML = `
+        <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl space-y-3" role="dialog" aria-modal="true" aria-labelledby="bank-transfer-title">
+          <div class="flex items-center justify-between"><h3 id="bank-transfer-title" class="font-black">انتقال وجه بین حساب‌های بانکی</h3><button type="button" onclick="closeModal('modal-bank-transfer')" class="rounded-lg bg-slate-100 px-3 py-2" aria-label="بستن">✕</button></div>
+          <label class="block text-xs font-bold">بانک مبدأ<select id="bank-transfer-source" class="mt-1 w-full rounded-lg border p-3 text-sm">${options}</select></label>
+          <label class="block text-xs font-bold">بانک مقصد<select id="bank-transfer-destination" class="mt-1 w-full rounded-lg border p-3 text-sm">${options}</select></label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="block text-xs font-bold">مبلغ انتقال<input id="bank-transfer-amount" type="number" min="0.01" step="0.01" class="mt-1 w-full rounded-lg border p-3 text-sm tabular-nums" /></label>
+            <label class="block text-xs font-bold">کارمزد بانکی<input id="bank-transfer-fee" type="number" min="0" step="0.01" value="0" class="mt-1 w-full rounded-lg border p-3 text-sm tabular-nums" /></label>
+          </div>
+          <label class="block text-xs font-bold">تاریخ عملیات<input id="bank-transfer-date" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${getTodayJalaliDate()}" /></label>
+          <label class="block text-xs font-bold">شرح انتقال<input id="bank-transfer-desc" maxlength="200" class="mt-1 w-full rounded-lg border p-3 text-sm" placeholder="شرح یا شماره پیگیری" /></label>
+          <div class="rounded-lg bg-sky-50 p-2 text-[11px] leading-5 text-sky-900">سند انتقال متوازن صادر می‌شود: بدهکار بانک مقصد، بستانکار بانک مبدأ و در صورت وجود، بدهکار هزینه کارمزد بانکی. انتقال درآمد یا هزینه محسوب نمی‌شود؛ فقط کارمزد هزینه است.</div>
+          <div class="flex gap-2"><button type="button" onclick="saveBankTransfer()" class="flex-1 rounded-xl bg-holoo-700 py-3 font-bold text-white">ثبت انتقال و صدور سند</button><button type="button" onclick="closeModal('modal-bank-transfer')" class="rounded-xl bg-slate-100 px-4 py-3 font-bold">انصراف</button></div>
+        </div>`;
+      const source = modal.querySelector('#bank-transfer-source');
+      const destination = modal.querySelector('#bank-transfer-destination');
+      if (source && destination && accounts.length > 1) destination.value = String(accounts[1].id);
+      openModal('modal-bank-transfer');
+    }
+
+    function saveBankTransfer() {
+      const sourceId = String(document.getElementById('bank-transfer-source')?.value || '');
+      const destinationId = String(document.getElementById('bank-transfer-destination')?.value || '');
+      const amount = Number(document.getElementById('bank-transfer-amount')?.value || 0);
+      const fee = Number(document.getElementById('bank-transfer-fee')?.value || 0);
+      const date = String(document.getElementById('bank-transfer-date')?.value || '').trim().replace(/-/g, '/');
+      const desc = String(document.getElementById('bank-transfer-desc')?.value || '').trim();
+      const source = (state.bankAccounts || []).find(item => item.type === 'bank' && String(item.id) === sourceId);
+      const destination = (state.bankAccounts || []).find(item => item.type === 'bank' && String(item.id) === destinationId);
+      if (!source || !destination || sourceId === destinationId) { showToast('حساب مبدأ و مقصد باید معتبر و متفاوت باشند.', 'error'); return; }
+      if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(fee) || fee < 0) { showToast('مبلغ انتقال باید مثبت و کارمزد صفر یا بیشتر باشد.', 'error'); return; }
+      if (!bankTxDateKey(date)) { showToast('تاریخ انتقال معتبر وارد کنید.', 'error'); return; }
+      const transferId = createStableId('bank_transfer');
+      const lines = [
+        { code: '1102', bankAccountId: destination.id, desc: 'دریافت انتقال بانکی به ' + destination.name, debit: amount, credit: 0 },
+        ...(fee > 0 ? [{ code: '6101', desc: 'کارمزد انتقال بین بانکی', debit: fee, credit: 0 }] : []),
+        { code: '1102', bankAccountId: source.id, desc: 'ارسال انتقال بانکی از ' + source.name, debit: 0, credit: amount + fee }
+      ];
+      const before = JSON.parse(JSON.stringify(state));
+      try {
+        const voucherId = postVoucher('انتقال بین بانکی ' + source.name + ' به ' + destination.name, lines, date, {
+          type: 'bank_transfer', id: transferId, event: 'posted', mode: 'manual', deferSave: true
+        });
+        if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند انتقال معتبر برنگشت.');
+        const common = { kind: 'bank_transfer', method: 'حواله بانکی', amount, date, desc: desc || 'انتقال بین حساب‌های بانکی', voucherId, transferId, createdAt: new Date().toISOString() };
+        state.treasuryTxs.unshift(
+          { ...common, id: transferId + '-OUT', dir: 'pay', bankAccountId: source.id, amount: amount + fee, desc: (desc || 'انتقال بین بانکی') + ' — مبدأ: ' + source.name },
+          { ...common, id: transferId + '-IN', dir: 'receive', bankAccountId: destination.id, amount, desc: (desc || 'انتقال بین بانکی') + ' — مقصد: ' + destination.name }
+        );
+        addAudit('ثبت انتقال بین بانکی ' + source.name + ' به ' + destination.name, {
+          mode: 'manual', sourceType: 'bank_transfer', sourceId: transferId,
+          details: { sourceBankAccountId: source.id, destinationBankAccountId: destination.id, amount, fee, voucherId }
+        });
+        if (!saveState()) { state = before; return; }
+        closeModal('modal-bank-transfer'); renderAll();
+        showToast('انتقال بین بانکی ثبت شد؛ کارمزد جداگانه به هزینه بانکی منظور شد.', 'success');
+      } catch (error) {
+        state = before;
+        showToast('انتقال ثبت نشد و اطلاعات قبلی حفظ شد. ' + (error?.message || ''), 'error');
+      }
+    }
+
     function renderTreasuryModule() {
        computeCheckRas();
        const bookBalances = getBankAccountBookBalances();
@@ -8931,7 +9004,7 @@
        bankGrid.innerHTML = `
         <div class="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
           <div><strong class="text-sm">حساب‌های بانکی شرکت</strong><p class="mt-1 text-[10px] text-slate-500">مانده دفتری بر اساس اسناد حسابداری دارای شناسه حساب</p></div>
-          <button type="button" onclick="openBankAccountModal()" class="touch-btn rounded-xl bg-holoo-700 px-4 py-2.5 text-xs font-bold text-white">+ تعریف حساب بانکی</button>
+          <div class="flex flex-wrap gap-2"><button type="button" onclick="openBankAccountModal()" class="touch-btn rounded-xl bg-holoo-700 px-4 py-2.5 text-xs font-bold text-white">+ تعریف حساب بانکی</button><button type="button" onclick="openBankTransferModal()" class="touch-btn rounded-xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-xs font-bold text-teal-900">⇄ انتقال بین بانک‌ها</button></div>
         </div>
         ${(state.bankAccounts || []).filter(b => b.type === 'bank').map(b => {
           const row = balanceById.get(String(b.id));
@@ -9004,7 +9077,7 @@
         return `
           <div class="p-2.5 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
             <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span>${t.correctsTxId ? `<span class="block text-[10px] text-indigo-700">نسخه اصلاحی تراکنش ${t.correctsTxId}</span>` : ''}${t.correctedByTxId ? `<span class="block text-[10px] text-slate-600">جایگزین‌شده با ${t.correctedByTxId}</span>` : ''}</div>
-            <div class="flex items-center gap-2"><strong class="tabular-nums">${money(t.amount)}</strong>${!t.correctedByTxId ? `<button type="button" onclick="requestTreasuryCorrection('${t.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold">✏️ بررسی / اصلاح</button>` : ''}</div>
+            <div class="flex items-center gap-2"><strong class="tabular-nums">${money(t.amount)}</strong>${!t.correctedByTxId && t.kind !== 'bank_transfer' ? `<button type="button" onclick="requestTreasuryCorrection('${t.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold">✏️ بررسی / اصلاح</button>` : (t.kind === 'bank_transfer' ? '<span class="text-[10px] text-teal-700">انتقال ثبت‌شده با سند متوازن؛ برای اصلاح از مسیر سند حسابداری اقدام کنید.</span>' : '')}</div>
           </div>`;
       }).join('');
       renderGuaranteesAndCommitments();
