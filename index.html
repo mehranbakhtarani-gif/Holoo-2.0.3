@@ -4279,7 +4279,7 @@
         ? batches.filter(batch => Number(batch.remainingQty || 0) > 0)
         : batches.filter(batch => isBatchEligibleForFifo(batch, todayOrdinal));
       const available = eligible.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
-      if (available + 0.000001 < qty) throw new Error('موجودی سری‌های ساخت منقضی‌نشده برای خروج FIFO کافی نیست.');
+      if (available + 0.000001 < qty) throw new Error(options.includeExpired ? 'مجموع سری‌های ساخت موجود برای اصلاح کسری انبار کافی نیست.' : 'موجودی سری‌های ساخت منقضی‌نشده برای خروج FIFO کافی نیست.');
       const ordered = eligible.sort((a, b) => {
         const ad = String(a.receivedDate || '9999/99/99');
         const bd = String(b.receivedDate || '9999/99/99');
