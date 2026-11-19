@@ -1056,7 +1056,8 @@
                 <div><label class="block font-bold mb-1">فروش پیش‌بینی هر کانتینر (ریال)</label><input id="plan-sell" type="number" min="0" step="any" value="39500000000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
                 <div><label class="block font-bold mb-1">هزینه تأمین مالی کل پروژه (ریال)</label><input id="plan-finance" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
                 <div><label class="block font-bold mb-1">هزینه فروش و توزیع کل پروژه (ریال)</label><input id="plan-selling" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
-                <div><label class="block font-bold mb-1">نرخ مالیات برآوردی سود (%)</label><input id="plan-tax-rate" type="number" min="0" max="100" step="0.01" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>\n                <div><label class="block font-bold mb-1">ارزش خالص فروش هر واحد کالا (NRV، ریال)</label><input id="plan-nrv" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">نرخ مالیات برآوردی سود (%)</label><input id="plan-tax-rate" type="number" min="0" max="100" step="0.01" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">ارزش خالص فروش هر واحد کالا (NRV، ریال)</label><input id="plan-nrv" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
               </div>
               <p class="text-[10px] text-slate-500">هزینه تأمین مالی و فروش در بهای موجودی منظور نشده‌اند. مالیات سود صرفاً برآوردی است و جایگزین محاسبه مالیاتی یا اظهارنامه نیست.</p>
             </div>
@@ -7846,14 +7847,14 @@
       const taxRate = Number(v['plan-tax-rate'] || 0);
       const estimatedTax = Math.max(0, profitBeforeTax) * taxRate / 100;
       const estimatedAfterTax = profitBeforeTax - estimatedTax;
-      const deployedCapital = landedCost + finance + bankFees;
+      const deployedCapital = landedCost + finance + selling + bankFees;
       const totalUnits = safeCount * units;
       return {
         count:safeCount, grossForeignPurchase, purchase, directCost, landedCost, recoverableTax,
         revenue, finance, selling, bankFees, nrvPerUnit, nrvTotal, inventoryWriteDown, carryingValueAfterNrv, grossProfit, profitBeforeTax, estimatedTax, estimatedAfterTax,
         deployedCapital, totalUnits, unitLandedCost:totalUnits > 0 ? landedCost / totalUnits : 0,
         roi:deployedCapital > 0 ? profitBeforeTax / deployedCapital * 100 : null,
-        breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling) / safeCount : 0,
+        breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling + bankFees) / safeCount : 0,
         margin:revenue > 0 ? profitBeforeTax / revenue * 100 : null,
         days:Number(v['plan-days'] || 0)
       };
@@ -7902,6 +7903,7 @@
           '<div class="flex justify-between gap-2"><span>خرید ارزی پس از تخفیف قراردادی</span><b>' + money(r.purchase) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>هزینه‌های مستقیم قابل‌سرمایه‌ای‌شدن</span><b>' + money(r.directCost) + '</b></div>' +
           '<div class="flex justify-between gap-2 border-t pt-1 font-black"><span>بهای تمام‌شده واردات</span><b>' + money(r.landedCost) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>مالیات قابل‌بازیافت (خارج از بهای موجودی)</span><b>' + money(r.recoverableTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>فروش پیش‌بینی‌شده</span><b>' + money(r.revenue) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش + کارمزد حواله</span><b>' + money(r.finance + r.selling + r.bankFees) + '</b></div>' +
