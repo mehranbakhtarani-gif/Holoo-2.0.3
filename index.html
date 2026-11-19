@@ -8468,8 +8468,10 @@
         const normalizedSayad = sayad.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\\s-]/g, '');
         const duplicateSayad = state.checks.some(c => String(c.sayad || '').replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\\s-]/g, '') === normalizedSayad);
         const dueDate = document.getElementById('tr-chk-due').value.trim();
+        const checkBankName = document.getElementById('tr-chk-bank').value.trim();
         if (!/^\\d{16}$/.test(normalizedSayad) || duplicateSayad) { showToast('شناسه صیادی باید دقیقاً ۱۶ رقم معتبر و غیرتکراری باشد.', 'error'); return; }
         if (jalaliDateOrdinal(dueDate) === null) { showToast('تاریخ سررسید معتبر شمسی وارد کنید.', 'error'); return; }
+        if (!checkBankName) { showToast('نام بانک و شعبه چک را وارد کنید.', 'error'); return; }
       } else {
         const expectedAccountType = method === 'cash' ? 'cash' : (method === 'bank' ? 'bank' : null);
         if (!selectedAccount || !expectedAccountType || selectedAccount.type !== expectedAccountType) {
