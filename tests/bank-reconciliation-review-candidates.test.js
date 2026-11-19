@@ -8,6 +8,7 @@ const end = html.indexOf('    function confirmBankReconcileMatch(itemId, voucher
 assert.ok(start >= 0 && end > start, 'manual review candidate helper must exist');
 
 const state = {
+  bankAccounts: [{ id: 'BANK-A', type: 'bank' }, { id: 'BANK-B', type: 'bank' }],
   bankReconcileItems: [{ id: 'other', matched: true, linkedVoucherId: 99 }],
   vouchers: [
     { id: 1, date: '1405/08/15', desc: 'واریز ساتنا', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2500000000, credit: 0 }] },
