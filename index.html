@@ -3455,13 +3455,11 @@
       const locks = state.accountingPeriodLocks || (state.accountingPeriodLocks = []);
       const existing = locks.find(function(item) { return item.periodKey === key; });
       if (existing && existing.status === 'locked') { showToast('این دوره قبلاً قفل شده است.', 'error'); return; }
-      const overlap = getActiveAccountingPeriodLocks().find(function(item) {
-        const a = jalaliDateOrdinal(item.from), b = jalaliDateOrdinal(item.to);
-        return a !== null && b !== null && bounds.fromOrdinal <= b && bounds.toOrdinal >= a;
-      });
-      if (overlap) { showToast('این بازه با دوره قفل‌شده ' + overlap.label + ' هم‌پوشانی دارد.', 'error'); return; }
+      // Month locks may coexist with their containing quarter lock. Reopening one
+      // never reopens the other, because every active lock is checked independently.
       const label = (type === 'month' ? 'ماه ' : 'فصل ') + value + ' سال ' + year;
       if (!confirm('قفل ' + label + ' از ' + bounds.from + ' تا ' + bounds.to + ' انجام شود؟ ثبت و اصلاح اسناد در این بازه مسدود خواهد شد.')) return;
+      const stateBeforeLock = JSON.parse(JSON.stringify(state));
       const actor = state.activeRole || 'mehran';
       const at = new Date().toISOString();
       const event = { action: 'locked', at: at, actor: actor, reason: 'بستن دوره مالی' };
@@ -3478,7 +3476,7 @@
       }
       addAudit('قفل ' + label, { mode: 'manual', sourceType: 'accounting_period_lock', sourceId: key,
         details: { periodType: type, from: bounds.from, to: bounds.to, actor: actor } });
-      if (!saveState()) { showToast('ذخیره قفل دوره ناموفق بود.', 'error'); return; }
+      if (!saveState()) { state = stateBeforeLock; showToast('ذخیره قفل دوره ناموفق بود؛ وضعیت قبلی حفظ شد.', 'error'); return; }
       renderAccountingModule(); showToast(label + ' با موفقیت قفل شد.', 'success');
     }
 
@@ -3489,6 +3487,7 @@
       const reason = String(prompt('علت بازگشایی دوره را ثبت کنید؛ این توضیح در سابقه حسابرسی ذخیره می‌شود:') || '').trim();
       if (reason.length < 8) { showToast('برای بازگشایی، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return; }
       if (!confirm('بازگشایی ' + item.label + ' انجام شود؟ این اقدام در سابقه حسابرسی باقی می‌ماند.')) return;
+      const stateBeforeReopen = JSON.parse(JSON.stringify(state));
       const before = JSON.parse(JSON.stringify(item));
       item.status = 'reopened'; item.reopenedAt = new Date().toISOString(); item.reopenedBy = state.activeRole || 'mehran';
       item.reopenReason = reason;
@@ -3496,7 +3495,7 @@
       item.history.push({ action: 'reopened', at: item.reopenedAt, actor: item.reopenedBy, reason: reason });
       addAudit('بازگشایی ' + item.label, { mode: 'manual', sourceType: 'accounting_period_reopen', sourceId: item.periodKey,
         previous: { status: before.status, from: before.from, to: before.to }, details: { reason: reason, actor: item.reopenedBy } });
-      if (!saveState()) { Object.assign(item, before); showToast('ذخیره بازگشایی ناموفق بود؛ قفل قبلی حفظ شد.', 'error'); return; }
+      if (!saveState()) { state = stateBeforeReopen; showToast('ذخیره بازگشایی ناموفق بود؛ قفل قبلی حفظ شد.', 'error'); return; }
       renderAccountingModule(); showToast(item.label + ' باز شد؛ علت و کاربر بازگشایی ثبت شد.', 'success');
     }
 
@@ -3523,7 +3522,7 @@
         '<label class="font-bold">سال شمسی<input id="period-lock-year" inputmode="numeric" maxlength="4" value="' + escapeLedgerText(String(state.fiscalYear || '1405')) + '" class="touch-btn mt-1 w-full border rounded-lg px-2"/></label>' +
         '<label class="font-bold" id="period-lock-value-label">ماه مالی<select id="period-lock-value" class="touch-btn mt-1 w-full border rounded-lg px-2"></select></label>' +
         '</div><button type="button" onclick="lockAccountingPeriod()" class="touch-btn w-full rounded-xl bg-rose-700 text-white px-4 py-3 font-black">🔒 قفل دوره انتخاب‌شده</button>' +
-        '<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[11px] text-amber-900">بازگشایی فقط با کاربر مهران و ثبت علت انجام می‌شود. هر قفل و بازگشایی در سابقه حسابرسی ثبت خواهد شد. دوره‌های قفل‌شده هم‌پوشانی ندارند.</div>' +
+        '<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[11px] text-amber-900">بازگشایی فقط با کاربر مهران و ثبت علت انجام می‌شود. قفل ماهانه و فصلی می‌توانند هم‌زمان فعال باشند؛ بازگشایی یکی، قفل دیگر را لغو نمی‌کند.</div>' +
         '<div class="border-t pt-3 space-y-2"><strong>سوابق قفل و بازگشایی</strong>' + (rows || '<p class="text-slate-400">هنوز دوره‌ای قفل نشده است.</p>') + '</div></div>';
       renderPeriodLockOptions();
     }
@@ -6963,6 +6962,12 @@
     function cancelInvoice(invId, options = {}) {
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv || inv.status === 'cancelled') return false;
+      const invoicePeriodLock = getAccountingPeriodLockForDate(inv.date);
+      if (invoicePeriodLock) {
+        const message = 'ابطال یا اصلاح این فاکتور مجاز نیست؛ تاریخ سند در ' + invoicePeriodLock.label + ' قفل‌شده قرار دارد. ابتدا بازگشایی کنترل‌شده با ثبت علت انجام شود.';
+        if (!options.silent) showToast(message, 'error');
+        return false;
+      }
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
         if (tx.kind === 'party_credit') return false;
         if ((tx.allocations || []).some(allocation =>
