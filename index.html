@@ -57,11 +57,17 @@
     @page { size: landscape; margin: 10mm; }
     @media print {
       html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-      .erp-layout, header, aside, nav, #toast-container, .no-print { display: none !important; }
+      .erp-layout, .erp-layout header, .erp-layout aside, .erp-layout nav, #toast-container, .no-print { display: none !important; }
       #modal-print-preview { position: static !important; display: block !important; background: #fff !important; padding: 0 !important; }
       #modal-print-preview > div { max-width: 100% !important; max-height: none !important; box-shadow: none !important; padding: 0 !important; border: none !important; }
       #print-area { border: 1px solid #0f172a !important; width: 100% !important; }
-      #print-area > div { display: flex !important; flex-wrap: wrap !important; justify-content: flex-start !important; gap: 0 !important; }
+      #print-area > div { display: block !important; width: 100% !important; min-width: 0 !important; }
+      #print-area, #print-area * { box-sizing: border-box !important; }
+      #print-area { overflow: visible !important; }
+      #print-area .print-report-content, #print-area main { overflow: visible !important; max-width: 100% !important; }
+      #print-area table { table-layout: auto; }
+      #print-area img, #print-area svg, #print-area canvas { max-width: 100% !important; }
+      #print-area a { color: #111827 !important; text-decoration: none !important; }
       #print-area .barcode-label { border: 0 !important; border-radius: 0 !important; margin: 0 !important; }
       #print-area .barcode-label svg { max-width: 100% !important; }
       #print-area .print-company-header { display:flex; justify-content:space-between; gap:16px; border-bottom:2px solid #0f172a; padding-bottom:10px; margin-bottom:14px; font-size:9pt; }
