@@ -1135,7 +1135,7 @@ test('pending cheque correction reverses original issue voucher and posts a repl
       {code:'1103',partyId:'P1',desc:'بستانکار مشتری',debit:0,credit:100}
     ]}]
   };
-  const values={'cc-dir':'pay','cc-party':'P1','cc-sayad':'999988887777666655554444','cc-amount':'150','cc-bank-name':'بانک دوم','cc-bank-account':'BANK-2','cc-due-date':'1405/09/20'};
+  const values={'cc-dir':'pay','cc-party':'P1','cc-sayad':'9999888877776666','cc-amount':'150','cc-bank-name':'بانک دوم','cc-bank-account':'BANK-2','cc-due-date':'1405/09/20'};
   const modal={dataset:{checkId:'CHK-OLD'}};
   const posted=[];let saves=0;let audits=0;let id=0;
   const correct=load(section('function canCorrectCheck(check)','function renderTreasuryModule()'),'saveCheckCorrection',{
