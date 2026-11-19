@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const html = fs.readFileSync('index.html', 'utf8');
 
 assert.match(html, /id="dashboard-menu-search-input"[^>]*role="combobox"/);
+assert.match(html, /id="dashboard-menu-search-input"[^>]*aria-label="جستجوی منوها و قابلیت‌های داشبورد"/);
+assert.match(html, /id="dashboard-menu-search-input"[^>]*min-h-\[44px\]/);
 assert.match(html, /aria-controls="dashboard-menu-search-results"/);
 assert.match(html, /aria-expanded="false"/);
 assert.match(html, /input\.addEventListener\('keydown', handleSearchKeys\)/);
