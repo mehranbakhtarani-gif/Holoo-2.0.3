@@ -328,7 +328,29 @@
           JSON.stringify(currentKardex.slice(0, beforeKardex.length)) !== JSON.stringify(beforeKardex)) {
         return 'پس از رسید، گردش دیگری در کاردکس ثبت شده یا سابقه قبلی تغییر کرده است.';
       }
-      if (JSON.stringify(currentBatches.filter(batch => !sourceBatchIds.has(String(batch.id)))) !== JSON.stringify(beforeBatches)) {
+      const trackedBefore = beforeBatches.reduce((sum, batch) =>
+        sum + Math.max(0, Number(batch.remainingQty ?? batch.quantity ?? 0)), 0
+      );
+      const stockBefore = Math.max(0, Number(before.stock || 0));
+      const legacyUntracked = trackedBefore > stockBefore + 0.000001
+        ? 0
+        : Math.max(0, stockBefore - trackedBefore);
+      const expectedNonReceiptBatches = beforeBatches.slice();
+      if (legacyUntracked > 0.000001) {
+        expectedNonReceiptBatches.push({
+          id: 'LEGACY-' + productId,
+          lot: before.lot || 'LEGACY',
+          receivedDate: '0000/00/00',
+          productionDate: '',
+          expiryDate: '',
+          quantity: legacyUntracked,
+          remainingQty: legacyUntracked,
+          unitCost: Number(before.buyPrice || 0),
+          sourceType: 'legacy_opening',
+          sourceRef: 'legacy-stock'
+        });
+      }
+      if (JSON.stringify(currentBatches.filter(batch => !sourceBatchIds.has(String(batch.id)))) !== JSON.stringify(expectedNonReceiptBatches)) {
         return 'بچ‌های قبلی کالا پس از رسید تغییر کرده‌اند؛ بازیابی snapshot می‌تواند عملیات دیگری را حذف کند.';
       }
       if (Math.abs(Number(product.stock || 0) - expectedStock) > 0.000001 ||
