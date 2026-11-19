@@ -6238,8 +6238,9 @@
     function getBankAccountBookBalances() {
       const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
       const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
-      let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0, invalidBankLines = 0;
-      const unassignedLines = [], unknownLines = [];
+      let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0;
+      let openingDebit = 0, openingCredit = 0, invalidBankLines = 0;
+      const unassignedLines = [], unknownLines = [], openingBalanceLines = [];
       (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach((line, lineIndex) => {
         if (String(line.code) !== '1102') return;
         const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
@@ -6248,24 +6249,31 @@
           return;
         }
         const id = line.bankAccountId == null ? '' : String(line.bankAccountId);
+        const detail = {
+          voucherId: voucher.id, date: voucher.date || '', lineIndex: lineIndex + 1,
+          voucherDesc: voucher.desc || '', lineDesc: line.desc || '',
+          debit, credit, bankAccountId: id
+        };
+        const voucherDescription = String(voucher.desc || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        const isOpeningBankBalance = voucherDescription.includes('افتتاحیه') && voucherDescription.includes('بانک');
+        if (isOpeningBankBalance) {
+          openingDebit += debit;
+          openingCredit += credit;
+          openingBalanceLines.push(detail);
+          return;
+        }
         const target = id ? byId.get(id) : null;
         if (target) { target.debit += debit; target.credit += credit; }
-        else {
-          const detail = {
-            voucherId: voucher.id, date: voucher.date || '', lineIndex: lineIndex + 1,
-            voucherDesc: voucher.desc || '', lineDesc: line.desc || '',
-            debit, credit, bankAccountId: id
-          };
-          if (!id) { unassignedDebit += debit; unassignedCredit += credit; unassignedLines.push(detail); }
-          else { unknownDebit += debit; unknownCredit += credit; unknownLines.push(detail); }
-        }
+        else if (!id) { unassignedDebit += debit; unassignedCredit += credit; unassignedLines.push(detail); }
+        else { unknownDebit += debit; unknownCredit += credit; unknownLines.push(detail); }
       }));
       return {
         accounts: [...byId.values()].map(row => ({ ...row, net: row.debit - row.credit })),
         unassignedNet: unassignedDebit - unassignedCredit,
         unknownNet: unknownDebit - unknownCredit,
-        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit,
-        unassignedLines, unknownLines, invalidBankLines
+        openingNet: openingDebit - openingCredit,
+        unassignedDebit, unassignedCredit, unknownDebit, unknownCredit, openingDebit, openingCredit,
+        unassignedLines, unknownLines, openingBalanceLines, invalidBankLines
       };
     }
     function renderReconcileModule() {
@@ -6284,6 +6292,9 @@
           '<div class="flex flex-wrap gap-3 tabular-nums"><span>بدهکار: ' + money(item.debit) + '</span><span>بستانکار: ' + money(item.credit) + '</span></div>' +
         '</div>'
       ).join('');
+      const openingBalance = bankBalances.openingBalanceLines.length
+        ? '<section class="rounded-lg bg-sky-900/30 p-2 text-sky-100"><div class="font-bold">موجودی افتتاحیه بانک‌ها — جدا از گردش‌های بانکی</div><div class="text-xs mt-1">این مبلغ در مانده افتتاحیه حسابداری ثبت شده و به‌تنهایی مشخص نمی‌کند سهم هر بانک چقدر است؛ در جمع گردش‌های فاقد شناسه محاسبه نمی‌شود.</div><div class="font-bold mt-2">مانده افتتاحیه: ' + money(bankBalances.openingNet) + '</div><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.openingBalanceLines, 'opening') + '</div></section>'
+        : '';
       const unassigned = bankBalances.unassignedLines.length
         ? '<details open class="rounded-lg bg-amber-900/30 p-2 text-amber-100"><summary class="font-bold">گردش‌های فاقد شناسه حساب بانکی — ' + faNum(bankBalances.unassignedLines.length) + ' ردیف | مانده ' + money(bankBalances.unassignedNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unassignedLines, 'unassigned') + '</div></details>'
         : '';
@@ -6294,7 +6305,7 @@
         ? `<div class="col-span-full rounded-lg bg-amber-900/30 p-2 text-amber-200">توجه: ${faNum(bankBalances.invalidBankLines)} ردیف حساب بانکی به دلیل مبلغ نامعتبر، منفی یا ثبت هم‌زمان بدهکار و بستانکار در مانده دفتری محاسبه نشده است.</div>`
         : '';
       document.getElementById('reconcile-summary-bar').innerHTML = `
-        <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${unassigned}${unknown}</div></div>
+        <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${openingBalance}${unassigned}${unknown}</div></div>
         ${invalidBankWarning}
         <div><span class="text-slate-400 block">تراکنش‌های وصل‌شده به سند:</span><strong class="text-emerald-300">${faNum(verified.length)}</strong></div>
         <div><span class="text-slate-400 block">نیازمند بررسی:</span><strong class="text-amber-300">${faNum(pending)} مورد</strong></div>
