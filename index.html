@@ -2271,6 +2271,8 @@
       { code: '6104', name: 'هزینه‌های تجمیعی تعدیلات قدیمی (کسری انبار و تسعیر)' },
       { code: '6105', name: 'هزینه کسری انبارگردانی' },
       { code: '6106', name: 'زیان تسعیر ارز' },
+      { code: '6107', name: 'زیان اختلاف بهای دفتری و برگشت خرید' },
+      { code: '4198', name: 'سود اختلاف بهای دفتری و برگشت خرید' },
       { code: '4199', name: 'سایر درآمدها و سود اضافه انبارگردانی' }
     ];
 
@@ -2612,7 +2614,7 @@
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '1107')) state.accountCatalog.push({ id: 'SUB-1107', code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان', level: 'subsidiary', parentId: 'GL-11', system: true, active: true });
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '2106')) state.accountCatalog.push({ id: 'SUB-2106', code: '2106', name: 'بستانکاران هزینه‌های واردات', level: 'subsidiary', parentId: 'GL-21', system: true, active: true });
     // Add the new inventory and FX result accounts to existing company charts without replacing custom accounts.
-    ['4199', '6105', '6106'].forEach(code => {
+    ['4198', '4199', '6105', '6106', '6107'].forEach(code => {
       const account = CHART_ACCOUNTS.find(item => item.code === code);
       if (account && !state.accountCatalog.some(item => item.level === 'subsidiary' && String(item.code) === code)) {
         state.accountCatalog.push({ id: 'SUB-' + code, code, name: account.name, level: 'subsidiary', parentId: 'GL-' + code.slice(0, 2), system: true, active: true });
@@ -3412,8 +3414,8 @@
         code.startsWith('21') ? sum + (account.credBal || 0) : sum, 0);
       const fxGain = (bal['4104']?.periodCredTurn || 0) - (bal['4104']?.periodDebTurn || 0);
       const costOfSales = bal['5101']?.periodDebTurn || 0;
-      const otherIncome = (bal['4199']?.periodCredTurn || 0) - (bal['4199']?.periodDebTurn || 0);
-      const operatingExpenses = ['6101', '6102', '6103', '6104', '6105', '6106'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0) - (bal[code]?.periodCredTurn || 0), 0);
+      const otherIncome = ['4198', '4199'].reduce((sum, code) => sum + (bal[code]?.periodCredTurn || 0) - (bal[code]?.periodDebTurn || 0), 0);
+      const operatingExpenses = ['6101', '6102', '6103', '6104', '6105', '6106', '6107'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0) - (bal[code]?.periodCredTurn || 0), 0);
       const netProfit = sales + otherIncome + fxGain - costOfSales - operatingExpenses;
       const inventoryValueText = invVal === null ? 'نیازمند تطبیق موجودی' : money(invVal);
       const profitColor = netProfit < 0 ? 'text-rose-200' : 'text-emerald-100';
@@ -4333,6 +4335,55 @@
       const fallbackBatch = { id: 'RETURN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), lot: 'RETURN-' + sourceRef, receivedDate: getTodayJalaliDate(), productionDate: '', expiryDate: '', quantity: qty, remainingQty: qty, unitCost: safeFallbackCost, sourceType: 'sales_return', sourceRef, warehouseId: product.warehouseId || null };
       batches.push(fallbackBatch);
       return [{ batchId: fallbackBatch.id, quantity: qty }];
+    }
+
+    function consumePurchaseReturnBatches(product, invoiceId, item, quantity) {
+      const qty = Number(quantity);
+      if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار برگشت خرید معتبر نیست.');
+      const stock = Number(product.stock);
+      if (!Number.isFinite(stock) || stock < qty) throw new Error('موجودی فعلی برای برگشت خرید کافی نیست.');
+      if (!Array.isArray(product.batches)) throw new Error('سری ساخت خرید اصلی در اطلاعات کالا موجود نیست؛ برگشت خودکار مسدود شد.');
+      const expectedLot = String(item?.lot || ('PUR-' + invoiceId + '-' + item?.productId));
+      const candidates = product.batches.filter(batch =>
+        batch && batch.sourceType === 'purchase' &&
+        String(batch.sourceRef || '') === String(invoiceId) &&
+        String(batch.lot || '') === expectedLot
+      );
+      if (!candidates.length) throw new Error('سری ساخت متناظر با فاکتور خرید اصلی پیدا نشد؛ از کسر کالاهای خرید دیگر جلوگیری شد.');
+      for (const batch of candidates) {
+        const remaining = Number(batch.remainingQty ?? batch.quantity ?? 0);
+        const unitCost = Number(batch.unitCost);
+        if (!Number.isFinite(remaining) || remaining < 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+          throw new Error('مقدار یا بهای سری ساخت خرید اصلی نامعتبر است.');
+        }
+      }
+      const available = candidates.reduce((sum, batch) => sum + Number(batch.remainingQty ?? batch.quantity ?? 0), 0);
+      if (available + 0.000001 < qty) {
+        throw new Error('موجودی باقی‌مانده از همان سری ساخت خرید برای برگشت کافی نیست؛ ابتدا گردش فروش/انتقال را بررسی کنید.');
+      }
+      const ordered = candidates.slice().sort((a, b) =>
+        String(a.receivedDate || '').localeCompare(String(b.receivedDate || '')) ||
+        String(a.id || '').localeCompare(String(b.id || ''))
+      );
+      let remaining = qty, totalCost = 0;
+      const allocations = [];
+      for (const batch of ordered) {
+        if (remaining <= 0.000001) break;
+        const batchRemaining = Number(batch.remainingQty ?? batch.quantity ?? 0);
+        const take = Math.min(remaining, batchRemaining);
+        if (take <= 0) continue;
+        batch.remainingQty = Math.max(0, batchRemaining - take);
+        totalCost += take * Number(batch.unitCost);
+        allocations.push({
+          batchId: String(batch.id), lot: String(batch.lot || ''),
+          quantity: take, unitCost: Number(batch.unitCost), expiryDate: batch.expiryDate || ''
+        });
+        remaining -= take;
+      }
+      if (remaining > 0.000001 || !Number.isFinite(totalCost)) {
+        throw new Error('تخصیص سری ساخت برای برگشت خرید کامل یا معتبر نیست.');
+      }
+      return { totalCost: Math.round(totalCost), unitCost: totalCost / qty, allocations };
     }
 
     // =========================================================================
@@ -6521,24 +6572,56 @@
       }
       if (!returnPlan.length || retTotal <= 0) { showToast('مقدار برگشتی معتبر وارد کنید.', 'error'); return; }
       const returnId = 'RET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-      // Simulate FIFO changes on clones before posting anything; this catches insufficient stock or invalid batch returns.
+      // Preflight stock, lot provenance and carrying value on isolated product copies.
+      const simulatedProducts = new Map();
       try {
-        const simulatedProducts = new Map();
         for (const entry of returnPlan) {
           if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
           const simulated = simulatedProducts.get(entry.product);
+          const currentStock = Number(simulated.stock || 0);
+          if (!Number.isFinite(currentStock) || currentStock < 0) throw new Error('موجودی فعلی کالا معتبر نیست.');
           if (inv.type === 'sale') {
-            restoreFifoAllocations(simulated, entry.item.fifoAllocations || [], entry.qty, entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice, returnId, entry.item.fifoReturnedAllocations || []);
-            getReturnCostOfGoods(entry.item, entry.qty, entry.product.buyPrice);
-          } else consumeFifoStock(simulated, entry.qty);
+            entry.inventoryCost = getReturnCostOfGoods(entry.item, entry.qty, simulated.buyPrice);
+            entry.returnedBatchAllocations = restoreFifoAllocations(
+              simulated, entry.item.fifoAllocations || [], entry.qty,
+              entry.item.costOfGoodsSold != null ? Number(entry.item.costOfGoodsSold) / Number(entry.item.kg) : simulated.buyPrice,
+              returnId, entry.item.fifoReturnedAllocations || []
+            );
+            const nextStock = currentStock + entry.qty;
+            if (!Number.isFinite(nextStock) || nextStock <= 0) throw new Error('موجودی پس از برگشت فروش معتبر نیست.');
+            if (state.costingMethod === 'AVG') {
+              const currentAverage = Number(simulated.buyPrice || 0);
+              const nextValue = currentStock * currentAverage + entry.inventoryCost;
+              if (!Number.isFinite(currentAverage) || currentAverage < 0 || !Number.isFinite(nextValue) || nextValue < 0) {
+                throw new Error('ارزش موجودی برای محاسبه میانگین پس از برگشت فروش معتبر نیست.');
+              }
+              simulated.buyPrice = Math.round(nextValue / nextStock);
+            }
+            simulated.stock = nextStock;
+          } else {
+            const batchPlan = consumePurchaseReturnBatches(simulated, inv.id, entry.item, entry.qty);
+            entry.purchaseReturnAllocations = batchPlan.allocations;
+            entry.inventoryCost = state.costingMethod === 'FIFO'
+              ? batchPlan.totalCost
+              : Math.round(entry.qty * Number(simulated.buyPrice || 0));
+            if (!Number.isFinite(entry.inventoryCost) || entry.inventoryCost < 0) {
+              throw new Error('بهای دفتری کالای برگشتی معتبر نیست.');
+            }
+            simulated.stock = currentStock - entry.qty;
+          }
+          entry.balanceAfter = simulated.stock;
+          entry.averageCostAfter = Number(simulated.buyPrice || 0);
         }
       } catch (error) {
-        showToast('کنترل تخصیص سری ساخت و بهای تمام‌شده برگشتی ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
+        showToast('کنترل سری ساخت، مقدار یا بهای دفتری برگشتی ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return;
       }
       const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
       const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
-      const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + getReturnCostOfGoods(entry.item, entry.qty, entry.product.buyPrice), 0) : 0;
+      const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : 0;
+      const returnInventoryCost = inv.type === 'purchase' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : returnCogs;
+      if (!Number.isFinite(returnInventoryCost) || returnInventoryCost < 0) { showToast('ارزش دفتری برگشت کالا معتبر نیست؛ سند صادر نشد.', 'error'); return; }
+      const purchaseReturnVariance = inv.type === 'purchase' ? returnBaseTotal - returnInventoryCost : 0;
       const returnVoucherLines = inv.type === 'sale'
         ? [
             { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: returnBaseTotal, credit: 0 },
@@ -6549,7 +6632,9 @@
         : [
             { code: '2101', partyId: inv.partyId, desc: `برگشت از خرید #${invId}`, debit: retTotal - partyCreditAmount, credit: 0 },
             ...(partyCreditAmount > 0 ? [{ code: '1107', partyId: inv.partyId, desc: `پیش‌پرداخت تأمین‌کننده بابت برگشت #${invId}`, debit: partyCreditAmount, credit: 0 }] : []),
-            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی', debit: 0, credit: returnBaseTotal },
+            { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی به بهای دفتری', debit: 0, credit: returnInventoryCost },
+            ...(purchaseReturnVariance > 0 ? [{ code: '4198', partyId: null, desc: `سود اختلاف بهای برگشت خرید #${invId}`, debit: 0, credit: purchaseReturnVariance }] : []),
+            ...(purchaseReturnVariance < 0 ? [{ code: '6107', partyId: null, desc: `زیان اختلاف بهای برگشت خرید #${invId}`, debit: Math.abs(purchaseReturnVariance), credit: 0 }] : []),
             ...(returnVatTotal > 0 ? [{ code: '1106', partyId: null, desc: `اصلاح اعتبار مالیات خرید بابت برگشت #${invId}`, debit: 0, credit: returnVatTotal }] : [])
           ];
       if (inv.type === 'sale' && returnCogs > 0) returnVoucherLines.push(
@@ -6562,21 +6647,29 @@
         showToast('صدور سند برگشت ناموفق بود؛ موجودی و فاکتور تغییر نکردند. ' + (error?.message || ''), 'error');
         return;
       }
-      // Apply inventory and item mutations only after the complete return plan passes validation.
+      // Apply the already validated product snapshots; never recalculate or consume a different batch after posting.
+      simulatedProducts.forEach((simulated, product) => {
+        product.stock = simulated.stock;
+        product.batches = simulated.batches || product.batches || [];
+        if (state.costingMethod === 'AVG') product.buyPrice = simulated.buyPrice;
+      });
       for (const entry of returnPlan) {
         const { item: it, product: p, qty: q } = entry;
         it.returnedKg = Number(it.returnedKg || 0) + q;
         if (inv.type === 'sale') {
-          p.stock += q;
-          it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...restoreFifoAllocations(p, it.fifoAllocations || [], q, it.costOfGoodsSold ? it.costOfGoodsSold / it.kg : p.buyPrice, returnId, it.fifoReturnedAllocations || [])];
-        } else {
-          consumeFifoStock(p, q);
-          p.stock -= q;
+          it.fifoReturnedAllocations = [...(it.fifoReturnedAllocations || []), ...(entry.returnedBatchAllocations || [])];
         }
-        p.kardex.push({ date: getTodayJalaliDate(), doc: `برگشت جزئی فاکتور #${invId}`, inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q, bal: p.stock, price: it.price });
+        p.kardex = Array.isArray(p.kardex) ? p.kardex : [];
+        p.kardex.push({
+          date: getTodayJalaliDate(), doc: 'برگشت جزئی فاکتور #' + invId,
+          inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q,
+          bal: entry.balanceAfter, price: it.price, inventoryCost: entry.inventoryCost,
+          costingMethod: state.costingMethod,
+          batchAllocations: entry.returnedBatchAllocations || entry.purchaseReturnAllocations || []
+        });
       }
 
-      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount })), createdAt: new Date().toISOString(), partyCreditAmount }];
+      inv.returnRefs = [...(inv.returnRefs || []), { id: returnId, amount: retTotal, costOfGoodsSold: returnCogs, items: returnPlan.map(x => ({ productId: x.item.productId, lineIndex: x.lineIndex, qty: x.qty, baseAmount: x.baseAmount, vatAmount: x.vatAmount, amount: x.amount, inventoryCost: x.inventoryCost, batchAllocations: x.returnedBatchAllocations || x.purchaseReturnAllocations || [] })), createdAt: new Date().toISOString(), partyCreditAmount }];
       if (partyCreditAmount > 0) {
         state.treasuryTxs = state.treasuryTxs || [];
         state.treasuryTxs.unshift({
