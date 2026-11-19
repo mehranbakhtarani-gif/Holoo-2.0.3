@@ -3528,7 +3528,7 @@
           <span class="text-[11px] text-slate-500 block">بدهی خالص و تعهدات</span>
           <strong class="text-sm font-black text-rose-700 tabular-nums mt-1 block">${money(payables)}</strong>
         </div>
-        <div class="col-span-2 sm:col-span-3 xl:col-span-1 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
+        <div class="col-span-2 sm:col-span-1 xl:col-span-1 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
           <div>
             <span class="text-[11px] text-emerald-100 block">سود (زیان) خالص بازه انتخابی</span>
             <span class="text-[10px] text-emerald-100/90 block mt-0.5">${faNum(period.from)} تا ${faNum(period.to)} · مطابق صورت سود و زیان</span>
@@ -6154,7 +6154,7 @@
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
       const salespersonName = String(document.getElementById('inv-salesperson').value || '').trim();
-      const normalizePartyName = value => String(value || '').normalize('NFKC').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\s]+/g, ' ').trim().toLocaleLowerCase('fa');
+      const normalizePartyName = value => String(value || '').normalize('NFKC').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\\u200c\\s]+/g, ' ').trim().toLocaleLowerCase('fa');
       const salespersonParty = type === 'sale' && commAmount > 0
         ? state.parties.find(p => normalizePartyName(p.name) === normalizePartyName(salespersonName) && p.accountingStatus !== 'inactive')
         : null;
@@ -8866,8 +8866,8 @@
         }
         if (ch === '"' && field.length === 0) quoted = true;
         else if (ch === ',') { row.push(field); field = ''; }
-        else if (ch === '\n' || ch === '\r') {
-          if (ch === '\r' && input[i + 1] === '\n') i++;
+        else if (ch === '\n' || ch === '\\r') {
+          if (ch === '\\r' && input[i + 1] === '\n') i++;
           row.push(field); rows.push(row); row = []; field = '';
         } else field += ch;
       }
@@ -8886,7 +8886,7 @@
     }
 
     function parseBankCSV() {
-      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\uFEFF/, '').trim();
+      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\\uFEFF/, '').trim();
       if (!input) { showToast('محتوای صورتحساب خالی است.', 'error'); return; }
       let rows;
       try { rows = parseBankCSVRecords(input); }
