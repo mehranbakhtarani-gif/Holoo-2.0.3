@@ -6980,6 +6980,11 @@
         if (!options.silent) showToast(message, 'error');
         return false;
       }
+      const invoiceYear = String(normalizeLedgerDate(inv.date) || '').slice(0, 4);
+      const closedFiscalYear = invoiceYear && (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === invoiceYear && (item.sourceEvent || 'default') === 'closing');
+      if (closedFiscalYear) { if (!options.silent) showToast('ابطال فاکتور متعلق به سال مالی بسته‌شده مجاز نیست؛ ابتدا سال مالی باید با فرایند کنترل‌شده بازگشایی شود.', 'error'); return false; }
+      const cancellationReason = String(options.reason || (options.silent ? '' : (prompt('علت ابطال فاکتور #' + invId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || ''))).trim();
+      if (cancellationReason.length < 8) { if (!options.silent) showToast('برای ابطال فاکتور، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return false; }
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
         if (tx.kind === 'party_credit') return false;
         if ((tx.allocations || []).some(allocation =>
@@ -7119,9 +7124,11 @@
         );
       }
 
+      const cancellationStateSnapshot = JSON.parse(JSON.stringify(state));
+      let cancellationVoucherId = null;
       if (cancellationLines.length) {
         try {
-          postVoucher(`ابطال فاکتور #${invId}`, cancellationLines, undefined,
+          cancellationVoucherId = postVoucher(`ابطال فاکتور #${invId}`, cancellationLines, undefined,
             { type: 'invoice_cancel', id: invId, event: 'cancel', deferSave: true });
         } catch (error) {
           showToast('صدور سند ابطال ناموفق بود؛ فاکتور و موجودی تغییر نکردند. ' + (error?.message || ''), 'error');
@@ -7150,7 +7157,12 @@
       inv.status = 'cancelled';
       inv.cancelledCostOfGoodsSold = cancelCogs;
       inv.cancellationAmounts = { baseAmount: cancelBaseAmount, vatAmount: cancelVatAmount, totalAmount: cancelAmount };
-      if (!options.deferSave) saveState();
+      inv.cancellationReason = cancellationReason;
+      inv.cancelledAt = new Date().toISOString();
+      inv.cancelledBy = state.activeRole || 'mehran';
+      inv.cancellationVoucherId = cancellationVoucherId;
+      addAudit('ابطال فاکتور #' + invId, { mode: 'manual', sourceType: 'invoice_cancel', sourceId: String(invId), operationDate: getTodayJalaliDate(), previous: { status: 'active', invoiceDate: inv.date, grandTotal: Number(inv.grandTotal || 0) }, relatedVoucherIds: cancellationVoucherId ? [cancellationVoucherId] : [], note: cancellationReason, details: { reason: cancellationReason, actor: inv.cancelledBy, replacementInvoiceId: inv.correctedByInvoiceId || null } });
+      if (!options.deferSave && !saveState()) { state = cancellationStateSnapshot; showToast('ذخیره ابطال فاکتور ناموفق بود؛ فاکتور، سند و موجودی به وضعیت قبلی بازگشتند.', 'error'); return false; }
       if (!options.silent) { renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info'); }
       return true;
     }
