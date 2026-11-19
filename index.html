@@ -3380,8 +3380,14 @@
         const faIndex = fa.indexOf(ch); return String(faIndex >= 0 ? faIndex : ar.indexOf(ch));
       });
       const postingYear = (/^(\d{4})\/\d{1,2}\/\d{1,2}$/.exec(postingDateText) || [])[1] || '';
-      if (source?.type !== 'fiscal_year_close' && postingYear) {
-        const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId || '') === postingYear);
+      const isFiscalYearClose = source?.type === 'fiscal_year_close' && postingYear &&
+        String(source.id || '') === postingYear && (source.event || 'default') === 'closing' &&
+        postingDateText === getFiscalYearEndDate(postingYear);
+      if (source?.type === 'fiscal_year_close' && !isFiscalYearClose) {
+        throw new Error('سند اختتامیه فقط با شناسه همان سال و تاریخ پایان معتبر سال مالی مجاز است.');
+      }
+      if (!isFiscalYearClose && postingYear) {
+        const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId || '') === postingYear && (v.sourceEvent || 'default') === 'closing');
         if (closedYear) throw new Error('سال مالی ' + closedYear.sourceId + ' بسته شده است؛ ثبت با تاریخ این سال مجاز نیست.');
       }
       if (!Array.isArray(lines) || lines.length < 2) throw new Error('سند نامعتبر است: حداقل دو ردیف لازم است.');
@@ -10500,16 +10506,24 @@
       }));
       if (preview.profit > 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال سود خالص سال ' + year + ' به سود انباشته', debit: 0, credit: preview.profit });
       else if (preview.profit < 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال زیان خالص سال ' + year + ' به سود انباشته', debit: Math.abs(preview.profit), credit: 0 });
+      const closeSnapshot = JSON.parse(JSON.stringify(state));
+      let voucherId;
       try {
-        const voucherId = postVoucher('سند اختتامیه سود و زیان سال مالی ' + year, lines, preview.to,
+        voucherId = postVoucher('سند اختتامیه سود و زیان سال مالی ' + year, lines, preview.to,
           { type: 'fiscal_year_close', id: year, event: 'closing', deferSave: true });
         const voucher = (state.vouchers || []).find(item => String(item.id) === String(voucherId));
-        if (voucher) voucher.locked = true;
+        if (!voucher) throw new Error('سند اختتامیه پس از صدور در دفتر روزنامه پیدا نشد.');
+        voucher.locked = true;
         addAudit('بستن سال مالی ' + year + ' با سند اختتامیه #' + voucherId);
-        saveState();
+        if (!saveState()) throw new Error('ذخیره محلی سند اختتامیه ناموفق بود؛ تغییرات بازگردانده شدند.');
+      } catch (error) {
+        state = closeSnapshot;
         renderAccountingModule();
-        showToast('سال مالی ' + year + ' با سند اختتامیه #' + voucherId + ' بسته شد.');
-      } catch (error) { showToast('بستن سال مالی ناموفق بود: ' + (error?.message || ''), 'error'); }
+        showToast('بستن سال مالی ناموفق بود: ' + (error?.message || ''), 'error');
+        return;
+      }
+      renderAccountingModule();
+      showToast('سال مالی ' + year + ' با سند اختتامیه #' + voucherId + ' بسته شد.');
     }
 
     function renderFiscalYearCloseModule() {
