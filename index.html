@@ -1542,15 +1542,13 @@
   </div>
 
   <div id="modal-new-order" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
-    <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
+    <div class="bg-white rounded-3xl w-full max-w-xl max-h-[92vh] overflow-y-auto p-4 space-y-2.5 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 id="ord-modal-title" class="font-black text-sm">📋 ثبت پیش‌فاکتور و سفارش فروش</h3><button onclick="editingOrderId=null; closeModal('modal-new-order')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
-      <select id="ord-party" class="touch-btn w-full border rounded-xl px-2.5 font-bold"></select>
-      <select id="ord-prod" class="touch-btn w-full border rounded-xl px-2.5 font-bold"></select>
-      <div class="grid grid-cols-2 gap-2">
-        <input type="number" id="ord-qty" value="1000" placeholder="مقدار سفارش (KG)" class="touch-btn border rounded-xl px-2 tabular-nums" />
-        <input type="number" id="ord-price" value="1650000" placeholder="قیمت پیشنهادی هر KG" class="touch-btn border rounded-xl px-2 tabular-nums" />
-      </div>
-      <input type="text" id="ord-terms" value="تحویل درب انبار تهران - چک ۳۰ روزه" class="touch-btn w-full border rounded-xl px-3" />
+      <label class="block font-bold">طرف حساب<select id="ord-party" class="touch-btn w-full border rounded-xl px-2.5 font-bold mt-1"></select></label>
+      <div class="flex justify-between items-center"><strong>اقلام پیش‌فاکتور</strong><button type="button" onclick="addOrderDraftLine()" class="px-3 py-2 rounded-lg bg-emerald-100 text-emerald-800 font-bold">＋ افزودن کالا</button></div>
+      <div id="ord-items-container" class="space-y-2"></div>
+      <div id="ord-total-preview" class="text-left font-black text-sm p-2 bg-slate-50 rounded-lg"></div>
+      <input type="text" id="ord-terms" value="تحویل درب انبار تهران - چک ۳۰ روزه" placeholder="شرایط تحویل و پرداخت" class="touch-btn w-full border rounded-xl px-3" />
       <button id="ord-save-button" onclick="saveOrder()" class="touch-btn w-full bg-holoo-700 text-white font-extrabold rounded-xl">✔ ثبت سفارش مشتری</button>
     </div>
   </div>
@@ -6138,7 +6136,7 @@
     }
 
     function onInvUnitModeChange() {
-      const p = state.products.find(x => x.id === document.getElementById('inv-line-prod').value);
+      const p = getSelectedInvoiceProduct();
       const unitId = document.getElementById('inv-line-unit-mode').value;
       const qty = Number(document.getElementById('inv-line-qty').value || 0);
       const box = document.getElementById('unit-conversion-preview');
@@ -6153,7 +6151,7 @@
     }
 
     function addInvLine(isGift) {
-      const p = state.products.find(x => x.id === document.getElementById('inv-line-prod').value);
+      const p = getSelectedInvoiceProduct();
       const unitId = document.getElementById('inv-line-unit-mode').value;
       const rawQty = Number(document.getElementById('inv-line-qty').value || 0);
       const price = isGift ? 0 : Number(document.getElementById('inv-line-price').value || 0);
@@ -6260,7 +6258,9 @@
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
       const salespersonName = String(document.getElementById('inv-salesperson').value || '').trim();
-      const normalizePartyName = value => String(value || '').normalize('NFKC').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\\u200c\\s]+/g, ' ').trim().toLocaleLowerCase('fa');
+      const normalizePartyName = value => String(value || '').normalize('NFKC')
+        .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
+        .replace(/[\u200c\u200b\sـ]+/g, '').trim().toLocaleLowerCase('fa');
       const salespersonParty = type === 'sale' && commAmount > 0
         ? state.parties.find(p => normalizePartyName(p.name) === normalizePartyName(salespersonName) && p.accountingStatus !== 'inactive')
         : null;
@@ -6982,22 +6982,35 @@
     function copyShare() { const b = document.getElementById('share-text-box'); b.select(); document.execCommand('copy'); showToast('در حافظه کپی شد 📋'); }
 
     // Module 6: Orders
+    function getOrderItems(order) {
+      if (Array.isArray(order?.items) && order.items.length) return order.items;
+      return order && order.productId != null
+        ? [{ productId: order.productId, kg: order.kg, price: order.price }]
+        : [];
+    }
     function renderOrdersModule() {
-      document.getElementById('ord-party').innerHTML = state.parties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-      document.getElementById('ord-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-      document.getElementById('orders-list-container').innerHTML = state.orders.map(o => {
-        const p = state.products.find(x => x.id === o.productId);
-        const stockOk = p && p.stock >= o.kg;
+      document.getElementById('ord-party').innerHTML = state.parties.map(p => `<option value="${escapeLedgerText(p.id)}">${escapeLedgerText(p.name)}</option>`).join('');
+      document.getElementById('orders-list-container').innerHTML = (state.orders || []).map(o => {
+        const items = getOrderItems(o);
+        const total = items.reduce((sum, line) => sum + Number(line.kg || 0) * Number(line.price || 0), 0);
+        const stockOk = items.every(line => {
+          const product = state.products.find(p => String(p.id) === String(line.productId));
+          return product && Number(product.stock || 0) >= Number(line.kg || 0);
+        });
+        const itemSummary = items.map(line => {
+          const product = state.products.find(p => String(p.id) === String(line.productId));
+          return `${escapeLedgerText(product?.name || 'کالای حذف‌شده')} — ${faNum(line.kg)} KG × ${money(line.price)}`;
+        }).join('<br>');
         return `
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
-            <div class="flex justify-between items-center"><span class="font-black text-holoo-900">${o.id}</span><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px]">${o.status}</span></div>
-            <div class="font-bold">${getPartyName(o.partyId)}</div>
-            <div class="text-[11px] text-slate-600 tabular-nums">${p ? p.name : ''} — مقدار: <strong>${faNum(o.kg)} KG</strong> × ${money(o.price)}</div>
-            <div class="text-[10px] ${stockOk ? 'text-emerald-700' : 'text-rose-700'} font-bold">${stockOk ? `✔ موجودی انبار کافی است (${faNum(p.stock)} KG)` : '⚠️ نیاز به تامین از محموله وارداتی'}</div>
+            <div class="flex justify-between items-center"><span class="font-black text-holoo-900">${escapeLedgerText(o.id)}</span><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px]">${escapeLedgerText(o.status || 'باز')}</span></div>
+            <div class="font-bold">${escapeLedgerText(getPartyName(o.partyId))}</div>
+            <div class="text-[11px] text-slate-600 tabular-nums">${itemSummary}</div>
+            <div class="text-[10px] ${stockOk ? 'text-emerald-700' : 'text-rose-700'} font-bold">${stockOk ? '✔ موجودی همه اقلام در انبار مربوطه کافی است' : '⚠️ موجودی یک یا چند قلم کافی نیست'}</div>
             <div class="flex flex-wrap justify-between items-center pt-2 border-t gap-2">
-              <strong class="tabular-nums">${money(o.kg * o.price)}</strong>
+              <strong class="tabular-nums">${money(total)}</strong>
               <div class="flex gap-1.5">
-                ${!o.status.includes('تکمیل') ? `<button onclick="openOrderModal('${String(o.id).replace(/'/g, '&#39;')}')" class="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-xl font-bold">✏️ ویرایش</button><button onclick="convertOrderToInvoice('${o.id}')" class="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-bold">تبدیل به فاکتور فروش</button>` : '<span class="text-[10px] text-slate-500">سفارش تبدیل‌شده؛ ویرایش از روی فاکتور پیگیری شود.</span>'}
+                ${!String(o.status || '').includes('تکمیل') ? `<button onclick="openOrderModal('${String(o.id).replace(/'/g, '&#39;')}')" class="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-xl font-bold">✏️ ویرایش</button><button onclick="convertOrderToInvoice('${String(o.id).replace(/'/g, '&#39;')}')" class="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-bold">تبدیل به فاکتور فروش</button>` : '<span class="text-[10px] text-slate-500">سفارش تبدیل‌شده؛ ویرایش از روی فاکتور پیگیری شود.</span>'}
               </div>
             </div>
           </div>
@@ -7005,76 +7018,124 @@
       }).join('');
     }
     let editingOrderId = null;
+    let orderDraftItems = [];
+    function renderOrderDraftItems() {
+      const host = document.getElementById('ord-items-container');
+      if (!host) return;
+      host.innerHTML = orderDraftItems.map((line, index) => {
+        const options = (state.products || []).map(product =>
+          `<option value="${escapeLedgerText(product.id)}" ${String(product.id) === String(line.productId) ? 'selected' : ''}>${escapeLedgerText(product.name)} — ${escapeLedgerText(getWhName(product.warehouseId))}</option>`
+        ).join('');
+        return `<div class="rounded-xl border bg-slate-50 p-2 space-y-2">
+          <div class="flex justify-between items-center"><strong>قلم ${faNum(index + 1)}</strong><button type="button" onclick="removeOrderDraftLine(${index})" class="text-rose-700 font-bold px-2">حذف</button></div>
+          <select class="touch-btn w-full border rounded-lg px-2" onchange="updateOrderDraftLine(${index},'productId',this.value)">${options}</select>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="number" min="0.0001" step="any" value="${Number(line.kg || 0)}" placeholder="مقدار (KG)" class="touch-btn border rounded-lg px-2 tabular-nums" onchange="updateOrderDraftLine(${index},'kg',this.value)" />
+            <input type="number" min="0" step="any" value="${Number(line.price || 0)}" placeholder="قیمت هر KG" class="touch-btn border rounded-lg px-2 tabular-nums" onchange="updateOrderDraftLine(${index},'price',this.value)" />
+          </div>
+        </div>`;
+      }).join('');
+      const total = orderDraftItems.reduce((sum, line) => sum + Number(line.kg || 0) * Number(line.price || 0), 0);
+      document.getElementById('ord-total-preview').textContent = 'جمع سفارش: ' + money(total);
+    }
+    function addOrderDraftLine(line = null) {
+      const fallbackProduct = state.products[0];
+      if (!line && !fallbackProduct) { showToast('ابتدا حداقل یک کالا تعریف کنید.', 'error'); return; }
+      orderDraftItems.push(line ? { productId: String(line.productId), kg: Number(line.kg), price: Number(line.price) } :
+        { productId: String(fallbackProduct.id), kg: 1000, price: Number(fallbackProduct.prices?.[0] || fallbackProduct.buyPrice || 0) });
+      renderOrderDraftItems();
+    }
+    function updateOrderDraftLine(index, field, value) {
+      if (!orderDraftItems[index]) return;
+      orderDraftItems[index][field] = field === 'productId' ? String(value) : Number(value);
+      renderOrderDraftItems();
+    }
+    function removeOrderDraftLine(index) {
+      orderDraftItems.splice(index, 1);
+      renderOrderDraftItems();
+    }
     function openOrderModal(orderId = null) {
       editingOrderId = orderId === null ? null : String(orderId);
       const order = editingOrderId === null ? null : (state.orders || []).find(item => String(item.id) === editingOrderId);
       if (editingOrderId !== null && (!order || String(order.status || '').includes('تکمیل'))) {
         showToast('این سفارش قابل ویرایش نیست؛ سفارش تبدیل‌شده باید از مسیر فاکتور اصلاح شود.', 'error'); return;
       }
-      document.getElementById('ord-party').innerHTML = state.parties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-      document.getElementById('ord-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-      document.getElementById('ord-party').value = order?.partyId || state.parties[0]?.id || '';
-      document.getElementById('ord-prod').value = order?.productId || state.products[0]?.id || '';
-      document.getElementById('ord-qty').value = order?.kg ?? 1000;
-      document.getElementById('ord-price').value = order?.price ?? 1650000;
+      document.getElementById('ord-party').innerHTML = state.parties.map(p => `<option value="${escapeLedgerText(p.id)}">${escapeLedgerText(p.name)}</option>`).join('');
+      document.getElementById('ord-party').value = String(order?.partyId || state.parties[0]?.id || '');
       document.getElementById('ord-terms').value = order?.terms || 'تحویل درب انبار تهران - چک ۳۰ روزه';
       document.getElementById('ord-modal-title').textContent = order ? '✏️ ویرایش پیش‌فاکتور / سفارش' : '📋 ثبت پیش‌فاکتور و سفارش فروش';
       document.getElementById('ord-save-button').textContent = order ? '✔ ذخیره ویرایش سفارش' : '✔ ثبت سفارش مشتری';
+      orderDraftItems = order ? getOrderItems(order).map(line => ({ productId: String(line.productId), kg: Number(line.kg), price: Number(line.price) })) : [];
+      if (!orderDraftItems.length) addOrderDraftLine();
+      else renderOrderDraftItems();
       openModal('modal-new-order');
     }
     function saveOrder() {
-      const partyId = document.getElementById('ord-party').value, productId = document.getElementById('ord-prod').value;
-      const kg = Number(document.getElementById('ord-qty').value), price = Number(document.getElementById('ord-price').value);
+      const partyId = document.getElementById('ord-party').value;
       const terms = document.getElementById('ord-terms').value.trim();
-      if (!state.parties.some(p => String(p.id) === String(partyId)) ||
-          !state.products.some(p => String(p.id) === String(productId)) ||
-          !Number.isFinite(kg) || kg <= 0 || !Number.isFinite(price) || price < 0 || !terms) {
-        showToast('طرف حساب، کالا، مقدار، قیمت و شرایط سفارش را معتبر وارد کنید.', 'error'); return;
+      const items = orderDraftItems.map(line => ({ productId: String(line.productId), kg: Number(line.kg), price: Number(line.price) }));
+      if (!state.parties.some(p => String(p.id) === String(partyId)) || !terms || !items.length ||
+          items.some(line => !state.products.some(p => String(p.id) === String(line.productId)) ||
+            !Number.isFinite(line.kg) || line.kg <= 0 || !Number.isFinite(line.price) || line.price < 0)) {
+        showToast('طرف حساب، حداقل یک کالای معتبر، مقدار مثبت و قیمت غیرمنفی برای همه اقلام لازم است.', 'error'); return;
       }
       if (editingOrderId !== null) {
         const order = (state.orders || []).find(item => String(item.id) === editingOrderId);
         if (!order || String(order.status || '').includes('تکمیل')) { showToast('سفارش دیگر قابل ویرایش نیست.', 'error'); return; }
-        const previous = { partyId: order.partyId, productId: order.productId, kg: order.kg, price: order.price, terms: order.terms };
-        Object.assign(order, { partyId, productId, kg, price, terms, updatedAt: new Date().toISOString() });
+        const previous = { partyId: order.partyId, items: getOrderItems(order).map(line => ({ ...line })), terms: order.terms };
+        Object.assign(order, { partyId, items, terms, updatedAt: new Date().toISOString() });
+        // Keep legacy single-line fields populated for older app builds and reports.
+        Object.assign(order, { productId: items[0].productId, kg: items[0].kg, price: items[0].price });
         addAudit('ویرایش سفارش ' + order.id, { mode: 'manual', sourceType: 'sales_order', sourceId: order.id, previous });
         editingOrderId = null;
-        saveState(); closeModal('modal-new-order'); renderAll(); showToast('ویرایش سفارش ذخیره شد؛ هیچ فاکتور یا سند حسابداری تغییر نکرد.');
-        return;
+        saveState(); closeModal('modal-new-order'); renderAll(); showToast('ویرایش سفارش ذخیره شد؛ هیچ فاکتور یا سند حسابداری تغییر نکرد.'); return;
       }
-      state.orders.unshift({
-        id: 'ORD-' + (501 + state.orders.length), date: getTodayJalaliDate(),
-        partyId, productId, kg, price, terms, status: 'باز (در انتظار تبدیل)'
-      });
-      saveState(); closeModal('modal-new-order'); renderOrdersModule(); showToast('پیش‌فاکتور و سفارش مشتری ثبت شد.');
+      const id = 'ORD-' + (501 + (state.orders || []).length);
+      state.orders.unshift({ id, date: getTodayJalaliDate(), partyId, items,
+        productId: items[0].productId, kg: items[0].kg, price: items[0].price,
+        terms, status: 'باز (در انتظار تبدیل)' });
+      addAudit('ثبت پیش‌فاکتور ' + id, { mode: 'manual', sourceType: 'sales_order', sourceId: id, details: { itemCount: items.length } });
+      saveState(); closeModal('modal-new-order'); renderAll(); showToast('پیش‌فاکتور چندقلمی ثبت شد.');
     }
     function convertOrderToInvoice(ordId) {
-      const o = (state.orders || []).find(x => String(x.id) === String(ordId));
-      if (!o) { showToast('پیش‌فاکتور پیدا نشد.', 'error'); return; }
-      if (String(o.status || '').includes('تکمیل') || o.invoiceId) {
+      const order = (state.orders || []).find(item => String(item.id) === String(ordId));
+      if (!order) { showToast('پیش‌فاکتور پیدا نشد.', 'error'); return; }
+      if (String(order.status || '').includes('تکمیل') || order.invoiceId) {
         showToast('این پیش‌فاکتور قبلاً به فاکتور متصل شده است.', 'error'); return;
       }
-      const p = (state.products || []).find(x => String(x.id) === String(o.productId));
-      if (!p || !Number.isFinite(Number(o.kg)) || Number(o.kg) <= 0 || Number(p.stock || 0) < Number(o.kg)) {
-        showToast('موجودی یا مقدار کالای پیش‌فاکتور معتبر و کافی نیست.', 'error'); return;
+      const items = getOrderItems(order);
+      if (!items.length) { showToast('پیش‌فاکتور فاقد اقلام معتبر است.', 'error'); return; }
+      const resolved = items.map(line => {
+        const product = (state.products || []).find(item => String(item.id) === String(line.productId));
+        return { line, product };
+      });
+      if (resolved.some(entry => !entry.product || !Number.isFinite(Number(entry.line.kg)) || Number(entry.line.kg) <= 0 ||
+          !Number.isFinite(Number(entry.line.price)) || Number(entry.line.price) < 0 ||
+          Number(entry.product.stock || 0) < Number(entry.line.kg))) {
+        showToast('کالا، مقدار یا موجودی یکی از اقلام پیش‌فاکتور معتبر و کافی نیست.', 'error'); return;
+      }
+      const warehouseId = String(resolved[0].product.warehouseId ?? '');
+      if (resolved.some(entry => String(entry.product.warehouseId ?? '') !== warehouseId)) {
+        showToast('اقلام پیش‌فاکتور در چند انبار هستند؛ برای تبدیل یک فاکتور، همه اقلام باید از یک انبار باشند. سفارش را به تفکیک انبار ثبت کنید.', 'error'); return;
       }
       navigateTo('invoices'); openInvoiceForm('sale');
       const warehouseSelect = document.getElementById('inv-warehouse');
-      if (warehouseSelect && p.warehouseId !== undefined) {
-        warehouseSelect.value = String(p.warehouseId);
-        renderInvoiceProductOptions();
+      if (warehouseSelect) { warehouseSelect.value = warehouseId; renderInvoiceProductOptions(); }
+      document.getElementById('inv-party').value = String(order.partyId);
+      invDraft.sourceOrderId = String(order.id);
+      for (const entry of resolved) {
+        document.getElementById('inv-line-prod').value = String(entry.product.id);
+        document.getElementById('inv-line-unit-mode').value = 'kg';
+        document.getElementById('inv-line-qty').value = String(entry.line.kg);
+        document.getElementById('inv-line-price').value = String(entry.line.price);
+        document.getElementById('inv-line-disc').value = '0';
+        addInvLine(false);
       }
-      document.getElementById('inv-party').value = String(o.partyId);
-      document.getElementById('inv-line-prod').value = String(o.productId);
-      document.getElementById('inv-line-unit-mode').value = 'kg';
-      document.getElementById('inv-line-qty').value = o.kg;
-      document.getElementById('inv-line-price').value = o.price;
-      invDraft.sourceOrderId = String(o.id);
-      addInvLine(false);
-      if (!invDraft.lines.length) {
-        invDraft.sourceOrderId = null;
-        showToast('انتقال اقلام پیش‌فاکتور ناموفق بود؛ وضعیت سفارش تغییر نکرد.', 'error'); return;
+      if (invDraft.lines.length !== resolved.length) {
+        invDraft = { type: 'sale', lines: [] };
+        showToast('انتقال همه اقلام پیش‌فاکتور ناموفق بود؛ وضعیت سفارش تغییر نکرد.', 'error'); return;
       }
-      showToast('اطلاعات پیش‌فاکتور منتقل شد؛ پس از ثبت موفق فاکتور، سفارش تکمیل می‌شود.', 'info');
+      showToast('تمام اقلام پیش‌فاکتور منتقل شد؛ پس از ثبت موفق فاکتور، سفارش تکمیل می‌شود.', 'info');
     }
 
     // =========================================================================
