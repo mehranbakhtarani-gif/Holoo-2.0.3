@@ -10719,7 +10719,8 @@
         const reversal = state.vouchers.find(item => Number(item.id) === Number(reversalId));
         if (reversal) reversal.reversesVoucherId = originalId;
         addAudit('اصلاح سند دستی #' + originalId + ' با سند جایگزین #' + replacementId, { mode: 'manual', sourceType: 'manual_voucher_correction', sourceId: correctionId, previous: { voucherId: originalId, description: originalLive.desc }, note: 'سند اولیه حفظ شد؛ سند معکوس و نسخه جایگزین در یک عملیات ثبت شدند.' });
-        saveState(); closeModal('modal-manual-voucher-correction'); renderAll(); setAccTab('journal');
+        if (!saveState()) throw new Error('ذخیره محلی انجام نشد؛ سند معکوس و نسخه جایگزین ثبت نشدند.');
+        closeModal('modal-manual-voucher-correction'); renderAll(); setAccTab('journal');
         showToast('سند معکوس و نسخه اصلاح‌شده با موفقیت ثبت شدند.', 'success');
       } catch (error) {
         state = before;
