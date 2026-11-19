@@ -7956,7 +7956,7 @@
         const plannedCost = calculation ? Number(calculation.landedCost || 0) : 0;
         const variance = actualCost - plannedCost;
         comparison = moneyTile('بهای ثبت‌شده پرونده منتخب',actualCost,linked.id + ' · ' + (linked.supplier || 'فروشنده نامشخص')) +
-          moneyTile('اختلاف واقعی با برآورد فعلی',variance,calculation ? 'مثبت = هزینه واقعی بیشتر از برآورد' : 'برای مقایسه، ابتدا ورودی‌های برنامه را معتبر کنید') +
+          moneyTile('اختلاف واقعی با برآورد فعلی',variance,calculation ? 'مثبت = هزینه واقعی بیشتر؛ فقط با یکسان بودن دامنه و مقدار پروژه قابل تفسیر است' : 'برای مقایسه، ابتدا ورودی‌های برنامه را معتبر کنید') +
           tile('مانده ارزی پرونده منتخب',outstandingFx, (linked.currency || '') + ' · از ' + faNum(linked.fxTotal || 0) + ' ثبت‌شده');
       } else {
         comparison = '<div class="rounded-xl border border-dashed p-3 text-slate-500 text-[11px]">برای مقایسه مبلغ برآوردی با بهای تمام‌شده ثبت‌شده، یک پرونده واردات را از فهرست بالا انتخاب کنید.</div>';
