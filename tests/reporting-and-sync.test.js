@@ -18,6 +18,7 @@ function functionSource(name) {
 function load(name, context) {
   const sandbox = { ...context, fetchWithTimeout: context.fetchWithTimeout || ((url, options) => context.fetch(url, options)) };
   vm.createContext(sandbox);
+  if (name === 'getPartyNetBalance') vm.runInContext(functionSource('getPartyAccountNetBalance'), sandbox);
   if (name !== 'cloudAuthHeaders') {
     const authHelper = html.match(/function cloudAuthHeaders[\s\S]*?return headers;\s*\}/)?.[0];
     assert.ok(authHelper, 'missing cloud auth header helper');
@@ -69,7 +70,7 @@ async function test(name, fn) { await fn(); passed.push(name); }
       ]
     };
     const getAccount=load('getPartyAccountNetBalance',{state});
-    const get=load('getPartyNetBalance',{state,getPartyAccountNetBalance:getAccount});
+    const get=load('getPartyNetBalance',{state});
     assert.equal(get('P1'),350);
     assert.equal(get('P2'),900);
     assert.equal(getAccount('P1','1103'),350);
