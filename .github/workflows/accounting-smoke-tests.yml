@@ -2,9 +2,12 @@ name: Manual accounting and feature tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
-      - feature/party-ledger-detail
+      - main
 
 permissions:
   contents: read
