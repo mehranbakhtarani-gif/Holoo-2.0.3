@@ -6551,9 +6551,9 @@
             </div>`;
         }
         return `
-          <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
-            <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span></div>
-            <strong class="tabular-nums">${money(t.amount)}</strong>
+          <div class="p-2.5 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
+            <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span>${t.correctsTxId ? `<span class="block text-[10px] text-indigo-700">نسخه اصلاحی تراکنش ${t.correctsTxId}</span>` : ''}${t.correctedByTxId ? `<span class="block text-[10px] text-slate-600">جایگزین‌شده با ${t.correctedByTxId}</span>` : ''}</div>
+            <div class="flex items-center gap-2"><strong class="tabular-nums">${money(t.amount)}</strong>${canCorrectTreasuryTx(t) ? `<button type="button" onclick="openTreasuryCorrection('${t.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}</div>
           </div>`;
       }).join('');
       renderGuaranteesAndCommitments();
