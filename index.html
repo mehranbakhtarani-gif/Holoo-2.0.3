@@ -1652,6 +1652,8 @@
     let syncRevision = 0;
     let syncPending = false;
     let operationJournalBarrier = Promise.resolve();
+    // A failed IndexedDB journal write must never fall through to the legacy snapshot sync.
+    let operationJournalBlocked = false;
     const LOCAL_UPDATED_KEY = STORE_KEY + '_updated_at';
     // صف پایدار همگام‌سازی: تا تأیید Supabase باقی می‌ماند.
     const CLOUD_OUTBOX_KEY = STORE_KEY + '_cloud_outbox_v1';
@@ -1864,6 +1866,11 @@
       let succeeded = false;
       try {
         await operationJournalBarrier;
+        if (operationJournalBlocked) {
+          setCloudBadge('⚠️ دفتر عملیات محلی ناقص است؛ ارسال ابری متوقف شد', 'text-amber-300');
+          showToast('برای جلوگیری از ثبت ناقص سوابق حسابرسی، همگام‌سازی متوقف شد. یک ذخیره موفق دیگر انجام دهید تا دفتر عملیات کامل شود.', 'error');
+          return false;
+        }
         const journalResult = await pushOperationJournalToSupabase();
         if (journalResult.supported) {
           if (journalResult.conflict) return false;
@@ -2596,12 +2603,17 @@
         return false;
       }
       const journalWrite = writeLocalMirror(JSON.parse(snapshot), operation);
-      operationJournalBarrier = Promise.all([operationJournalBarrier, journalWrite.catch(() => {})]);
+      operationJournalBarrier = Promise.all([operationJournalBarrier, journalWrite.catch(e => {
+        operationJournalBlocked = true;
+        return undefined;
+      })]);
       journalWrite.then(() => {
+        operationJournalBlocked = false;
         lastSavedState = JSON.parse(snapshot);
         renderDeviceIdentityStatus();
         scheduleCloudSync();
       }).catch(e => {
+        operationJournalBlocked = true;
         console.error('IndexedDB mirror / operation journal failed:', e);
         setCloudBadge('⚠️ ذخیره دفتر عملیات محلی ناموفق', 'text-amber-300');
         showToast('دفتر عملیات در حافظه داخلی ثبت نشد؛ همگام‌سازی عملیات جدید تا رفع مشکل متوقف می‌ماند.', 'error');
