@@ -20,7 +20,10 @@ const state = {
 };
 const sandbox = { state, bankTxDateKey: value => /^1405\/\d{2}\/\d{2}$/.test(value) ? value : null };
 vm.createContext(sandbox);
-vm.runInContext(html.slice(start, end) + '; this.getBankReconciliationCandidates = getBankReconciliationCandidates;', sandbox);
+const helperStart = html.indexOf('    function isBankOpeningVoucher(voucher)');
+const helperEnd = html.indexOf('    function getBankAccountBookBalances()', helperStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, 'bank opening voucher classifier must exist');
+vm.runInContext(html.slice(helperStart, helperEnd) + html.slice(start, end) + '; this.getBankReconciliationCandidates = getBankReconciliationCandidates;', sandbox);
 
 const deposit = { id: 'D1', date: '1405/09/02', amount: 100 };
 assert.deepEqual(Array.from(sandbox.getBankReconciliationCandidates(deposit), x => x.id), [1]);
