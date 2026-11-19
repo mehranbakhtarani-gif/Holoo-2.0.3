@@ -7849,11 +7849,12 @@
       const estimatedTax = Math.max(0, profitBeforeTax) * taxRate / 100;
       const estimatedAfterTax = profitBeforeTax - estimatedTax;
       const deployedCapital = landedCost + finance + selling + bankFees;
+      const cashRequirementIncludingRecoverableTax = deployedCapital + recoverableTax;
       const totalUnits = safeCount * units;
       return {
         count:safeCount, grossForeignPurchase, purchase, directCost, landedCost, recoverableTax,
         revenue, finance, selling, bankFees, nrvPerUnit, nrvTotal, inventoryWriteDown, carryingValueAfterNrv, grossProfit, profitBeforeTax, estimatedTax, estimatedAfterTax,
-        deployedCapital, totalUnits, unitLandedCost:totalUnits > 0 ? landedCost / totalUnits : 0,
+        deployedCapital, cashRequirementIncludingRecoverableTax, totalUnits, unitLandedCost:totalUnits > 0 ? landedCost / totalUnits : 0,
         roi:deployedCapital > 0 ? profitBeforeTax / deployedCapital * 100 : null,
         breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling + bankFees) / safeCount : 0,
         margin:revenue > 0 ? profitBeforeTax / revenue * 100 : null,
@@ -7914,6 +7915,7 @@
           '<div class="flex justify-between gap-2"><span>مالیات برآوردی</span><b>' + money(r.estimatedTax) + '</b></div>' +
           '<div class="flex justify-between gap-2 font-black"><span>سود پس از مالیات برآوردی</span><b>' + money(r.estimatedAfterTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>سرمایه موردنیاز (بدون مالیات قابل‌بازیافت)</span><b>' + money(r.deployedCapital) + '</b></div>' +
+          '<div class="flex justify-between gap-2 font-bold"><span>نیاز نقدی با احتساب مالیات قابل‌بازیافت</span><b>' + money(r.cashRequirementIncludingRecoverableTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>بهای تمام‌شده هر واحد</span><b>' + money(r.unitLandedCost) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>فروش سربه‌سر هر کانتینر</span><b>' + money(r.breakEvenPerContainer) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>حمل و ترخیص</span><b>' + faNum(r.days) + ' روز</b></div>' +
