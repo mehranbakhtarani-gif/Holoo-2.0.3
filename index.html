@@ -6699,6 +6699,8 @@
           <div class="font-bold text-slate-800">${getPartyName(inv.partyId)} <span class="text-[10px] text-slate-400">(بازاریاب: ${inv.salesperson})</span></div>
           ${inv.correctionOfInvoiceId ? `<div class="text-[10px] text-indigo-800 bg-indigo-50 rounded-lg px-2 py-1">نسخه اصلاحی فاکتور #${faNum(inv.correctionOfInvoiceId)}</div>` : ''}
           ${inv.correctedByInvoiceId ? `<div class="text-[10px] text-slate-600 bg-slate-100 rounded-lg px-2 py-1">این فاکتور با نسخه #${faNum(inv.correctedByInvoiceId)} جایگزین شده است</div>` : ''}
+          ${inv.correctionOfInvoiceId ? `<div class="text-[10px] text-indigo-800 bg-indigo-50 rounded-lg px-2 py-1">مرجع اصلاح: فاکتور #${faNum(inv.correctionOfInvoiceId)} | علت: ${escapeKardexText(inv.correctionReason || '—')}</div>` : ''}
+          ${inv.status === 'cancelled' ? `<div class="text-[10px] text-rose-800 bg-rose-50 border border-rose-100 rounded-lg px-2 py-1">علت ابطال: ${escapeKardexText(inv.cancellationReason || 'ثبت نشده')} | سند معکوس: ${inv.cancellationVoucherId ? '#' + faNum(inv.cancellationVoucherId) : '—'} | کاربر: ${escapeKardexText(inv.cancelledBy || '—')}</div>` : ''}
           ${Number(inv.commAmount || 0) > 0 ? `<div class="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">پورسانت بازاریاب (${faNum(inv.commRate || 0)}٪): ${money(inv.commAmount)}</div>` : ''}
           <div class="space-y-1 bg-slate-50 p-2 rounded-xl border">
             ${inv.items.map(it => `<div class="flex justify-between text-[11px]"><span>${it.name} (${faNum(it.kg)} KG${it.returnedKg ? ` | برگشتی: ${faNum(it.returnedKg)} KG` : ''})</span><strong class="tabular-nums">${money(it.total)}</strong></div>`).join('')}
@@ -10808,6 +10810,9 @@
             </div>
             <button type="button" onclick="requestVoucherCorrection(${v.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-lg text-[10px] font-bold">✏️ بررسی / اصلاح سند</button>
             ${v.correctedByVoucherId ? `<div class="text-[10px] text-slate-600 bg-slate-100 rounded-lg p-2">این سند با سند #${faNum(v.correctedByVoucherId)} اصلاح شده است؛ سند اولیه حفظ شده</div>` : ''}
+            ${v.reversalVoucherId ? `<div class="text-[10px] text-rose-800 bg-rose-50 rounded-lg p-2">سند معکوس: #${faNum(v.reversalVoucherId)} | سند جایگزین: #${faNum(v.correctedByVoucherId || 0)}</div>` : ''}
+            ${v.reversesVoucherId ? `<div class="text-[10px] text-rose-800 bg-rose-50 rounded-lg p-2">این سند، معکوس سند #${faNum(v.reversesVoucherId)} است.</div>` : ''}
+            ${v.correctsVoucherId ? `<div class="text-[10px] text-indigo-800 bg-indigo-50 rounded-lg p-2">این سند، نسخه اصلاحی سند #${faNum(v.correctsVoucherId)} است.</div>` : ''}
             ${v.lines.map(l => `<div class="p-1.5 rounded bg-slate-50 flex justify-between"><span>${faNum(l.code)} - ${l.desc}</span><strong class="tabular-nums">${l.debit ? `${money(l.debit)} بد` : `${money(l.credit)} بس`}</strong></div>`).join('')}
           </div>
         `).join('');
