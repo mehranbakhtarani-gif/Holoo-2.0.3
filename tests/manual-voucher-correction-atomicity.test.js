@@ -38,7 +38,7 @@ function makeHarness(saveResult) {
     createStableId() { return 'CORR-10'; },
     getTodayJalaliDate() { return '1405/08/29'; },
     getVoucherCorrectionBlockReason() { return ''; },
-    jalaliDateOrdinal(value) { return value === '1405/08/29' ? 1 : null; },
+    jalaliDateOrdinal(value) { return value === '1405/08/28' ? 0 : value === '1405/08/29' ? 1 : null; },
     postVoucher(desc, lines, date, source) {
       const id = sandbox.state.vouchers.reduce((max, voucher) => Math.max(max, Number(voucher.id) || 0), 0) + 1;
       sandbox.state.vouchers.unshift({ id, desc, lines, date, sourceType: source.type, sourceId: source.id, sourceEvent: source.event });
