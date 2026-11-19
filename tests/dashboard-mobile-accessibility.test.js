@@ -28,9 +28,9 @@ assert.match(html, /<div class="h-52 sm:h-60 w-full min-w-0"><canvas id="dashCha
 assert.match(html, /grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4/);
 assert.match(html, /id="dash-trend-insights"/);
 assert.match(html, /id="dash-alert-severity"/);
-assert.match(html, /window\\.navigateTo = navigateTo/);
-assert.match(html, /closest\\('\.mobile-bottom-nav button\\[data-mnav\\]'\\)/);
-assert.match(html, /if \\(!target \\|\\| !workspace\\)/);
+assert.match(html, /window\.navigateTo = navigateTo/);
+assert.match(html, /closest\('\.mobile-bottom-nav button\[data-mnav\]'\)/);
+assert.match(html, /if \(!target \|\| !workspace\)/);
 for (const destination of ['dashboard', 'invoices', 'products', 'imports']) {
   assert.ok(html.includes('data-mnav="' + destination + '"'), 'mobile dock destination: ' + destination);
   assert.ok(html.includes('id="mod-' + destination + '"'), 'module section: ' + destination);
