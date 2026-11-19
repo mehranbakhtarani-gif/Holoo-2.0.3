@@ -63,6 +63,7 @@ jobs:
           node tests/editability-controls.test.js
           node tests/invoice-correction.test.js
           node tests/treasury-check-correction.test.js
+          node tests/treasury-check-atomicity.test.js
           node tests/voucher-correction-review.test.js
           node tests/manual-voucher-correction-atomicity.test.js
           node tests/invoice-posting-atomicity.test.js
