@@ -10889,6 +10889,19 @@
       [['شناسه تکراری',r.duplicateIds],['رویداد منبع تکراری',r.duplicateSources],['شماره تکراری',r.duplicateNumbers],['کد حساب نامعتبر',r.missingAccounts],['طرف حساب نامعتبر',r.missingParties],['تاریخ نامعتبر',r.invalidDates],['مبلغ نامعتبر',r.invalidAmounts],['سند نامتوازن',r.unbalanced]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0);return r;
     }
 
+    function buildFiscalOpeningClosingAuditSummary() {
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const openings = vouchers.filter(v => ['opening','legacy_opening'].includes(String(v.sourceType || '')));
+      const closings = vouchers.filter(v => v.sourceType === 'fiscal_year_close' && (v.sourceEvent || 'default') === 'closing');
+      const r = { openingCount: openings.length, closingCount: closings.length, duplicateOpeningYears: 0, duplicateClosingYears: 0, invalidOpening: 0, invalidClosing: 0, openingResultAccounts: 0, closingNonResultAccounts: 0, missingCloseRecords: 0, issues: [] };
+      const countYears = list => { const counts = new Map(); list.forEach(v => { const d = normalizeLedgerDate(v.date || v.operationDate); const y = d ? d.slice(0,4) : ''; if (y) counts.set(y,(counts.get(y)||0)+1); }); return Array.from(counts.values()).reduce((n,c)=>n+Math.max(0,c-1),0); };
+      r.duplicateOpeningYears = countYears(openings); r.duplicateClosingYears = countYears(closings);
+      openings.forEach(v => { const c = inspectTrialBalanceVoucher(v); if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidOpening++; if ((v.lines || []).some(l => /^[456]/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.openingResultAccounts++; });
+      closings.forEach(v => { const c = inspectTrialBalanceVoucher(v); if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidClosing++; if ((v.lines || []).some(l => !/^[456]\\d*$/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.closingNonResultAccounts++; });
+      (Array.isArray(state.fiscalYearClosures) ? state.fiscalYearClosures : []).filter(x => x.status !== 'reopened').forEach(x => { const y = normalizeAccountingDate(x.year); if (y && !closings.some(v => String(v.sourceId || '') === y)) r.missingCloseRecords++; });
+      [['سال‌های دارای بیش از یک سند افتتاحیه',r.duplicateOpeningYears],['سال‌های دارای بیش از یک سند اختتامیه',r.duplicateClosingYears],['اسناد افتتاحیه نامعتبر یا نامتوازن',r.invalidOpening],['اسناد اختتامیه نامعتبر یا نامتوازن',r.invalidClosing],['ردیف درآمد/هزینه در افتتاحیه',r.openingResultAccounts],['ردیف غیرنتیجه‌ای در سند اختتامیه سود و زیان',r.closingNonResultAccounts],['سابقه بستن بدون سند اختتامیه',r.missingCloseRecords]].forEach(x => { if (x[1]) r.issues.push(x[0] + ': ' + x[1]); });
+      r.issueCount = r.issues.reduce((n,x) => n + Number((x.match(/: (\\d+)$/) || [])[1] || 0),0); return r;
+    }
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -10910,6 +10923,8 @@
       ).join('');
       const totals = report.totals;
       const audit = buildGeneralLedgerAuditSummary();
+      const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
+      const fiscalAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>کنترل اسناد افتتاحیه و اختتامیه</strong><b class="block">'+(fiscalAudit.issueCount?faNum(fiscalAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['اسناد افتتاحیه',fiscalAudit.openingCount],['اسناد اختتامیه',fiscalAudit.closingCount],['سال افتتاحیه تکراری',fiscalAudit.duplicateOpeningYears],['سال اختتامیه تکراری',fiscalAudit.duplicateClosingYears],['افتتاحیه نامعتبر',fiscalAudit.invalidOpening],['اختتامیه نامعتبر',fiscalAudit.invalidClosing],['ردیف نتیجه‌ای در افتتاحیه',fiscalAudit.openingResultAccounts],['ردیف غیرنتیجه‌ای در اختتامیه',fiscalAudit.closingNonResultAccounts],['سابقه بستن بدون سند',fiscalAudit.missingCloseRecords]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(fiscalAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+fiscalAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های افتتاحیه و اختتامیه بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش صرفاً خواندنی است؛ اسناد یا سوابق مالی را تغییر نمی‌دهد.</p></div>';
       const auditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی جامع دفترکل</strong><b class="block">'+(audit.issueCount?faNum(audit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کل اسناد',audit.total],['شناسه تکراری',audit.duplicateIds],['منبع تکراری',audit.duplicateSources],['شماره تکراری',audit.duplicateNumbers],['حساب نامعتبر',audit.missingAccounts],['طرف حساب نامعتبر',audit.missingParties],['تاریخ نامعتبر',audit.invalidDates],['مبلغ نامعتبر',audit.invalidAmounts],['نامتوازن',audit.unbalanced]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(audit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+audit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های دفترکل بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش فقط خواندنی است.</p></div>';
       const warnings = [];
       if (report.movementDifference !== 0) warnings.push('گردش بدهکار و بستانکار در بازه انتخابی برابر نیست: ' + money(report.movementDifference));
@@ -10922,7 +10937,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        auditPanel +
+        fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
