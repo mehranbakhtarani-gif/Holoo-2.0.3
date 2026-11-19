@@ -5170,7 +5170,7 @@
       if (fromOrdinal !== null && lastPrior) {
         opening = lastPrior.balance;
         openingBasis = 'مانده ثبت‌شده پیش از شروع بازه';
-      } else if (firstValid) {
+      } else if (firstValid && (toOrdinal === null || firstValid.ordinal <= toOrdinal)) {
         opening = firstValid.balance - firstValid.delta;
         openingBasis = 'برآورد از اولین گردش ثبت‌شده؛ مانده افتتاحیه مستقل ثبت نشده است';
       }
@@ -5208,7 +5208,7 @@
         const match = String(movement?.doc || '').match(/#(\d+)/);
         const invoice = match ? (state.invoices || []).find(item => String(item.id) === String(match[1])) : null;
         const line = invoice && Array.isArray(invoice.items)
-          ? invoice.items.find(item => String(item.productId) === String(p.id)) : null;
+          ? invoice.items.find(item => String(item.productId ?? '') === String(p.id ?? '')) : null;
         const party = invoice ? (state.parties || []).find(item => String(item.id) === String(invoice.partyId)) : null;
         return {
           invoice, line,
