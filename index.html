@@ -3158,6 +3158,12 @@
         };
         input.addEventListener('keydown', handleSearchKeys);
         results.addEventListener('keydown', handleSearchKeys);
+        results.addEventListener('focusin', event => {
+          const focused = event.target.closest('[role="option"]');
+          results.querySelectorAll('[role="option"]').forEach(option => {
+            option.setAttribute('aria-selected', option === focused ? 'true' : 'false');
+          });
+        });
       }
       const q = normalizeDashboardSearch(query);
       results.replaceChildren();
