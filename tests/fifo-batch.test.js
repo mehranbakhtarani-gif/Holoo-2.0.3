@@ -155,6 +155,12 @@ test('inventory reconciliation detects missing and duplicate batch identifiers',
   assert.equal(report.issues.filter(x => x.type === 'batch-id').length, 2);
 });
 
+test('Kardex display sorts dated movements in Jalali chronological order without mutating source history', () => {
+  assert.ok(html.includes('filteredMovements.slice().sort((a, b) =>'));
+  assert.ok(html.includes('return aDate - bDate;'));
+  assert.ok(html.includes('const movementRows = filteredMovements.slice()'));
+});
+
 test('inventory reconciliation detects kardex balance mismatch', () => {
   const report = inspectInventoryReconciliation([{ id: 'R3', name: 'کالا', stock: 7, batches: [], kardex: [
     { bal: 5, inQty: 5, outQty: 0, doc: 'رسید' }
