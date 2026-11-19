@@ -32,6 +32,7 @@ function load(source, name, context) {
     getFiscalYearCloseRecord: () => null,
     getTodayJalaliDate: () => '1405/08/29',
     prompt: () => 'علت آزمایشی',
+    addAudit() {},
     restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
       product.batches = product.batches || [];
       const restored = [];
