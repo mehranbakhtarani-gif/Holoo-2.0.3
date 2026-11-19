@@ -7081,6 +7081,43 @@
       showToast('خروجی تراز آزمایشی دانلود شد.');
     }
 
+    function printTrialBalanceReport() {
+      const from = document.getElementById('trial-from')?.value || trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
+      const to = document.getElementById('trial-to')?.value || trialBalanceToDate || getTodayJalaliDate();
+      let report;
+      try { report = buildTrialBalanceReport(from, to); }
+      catch (error) { showToast(error.message || 'تهیه نسخه چاپی تراز آزمایشی ناموفق بود.', 'error'); return; }
+      const rows = report.rows.map(row => '<tr>' +
+        '<td>' + escapeLedgerText(faNum(row.code)) + '</td>' +
+        '<td>' + escapeLedgerText(row.name) + '</td>' +
+        '<td class="number">' + money(row.periodDebit) + '</td>' +
+        '<td class="number">' + money(row.periodCredit) + '</td>' +
+        '<td class="number">' + money(row.closingBalanceDebit) + '</td>' +
+        '<td class="number">' + money(row.closingBalanceCredit) + '</td></tr>'
+      ).join('');
+      const totals = report.totals;
+      const warnings = [];
+      if (report.movementDifference !== 0) warnings.push('اختلاف گردش بدهکار و بستانکار: ' + money(report.movementDifference));
+      if (report.closingDifference !== 0) warnings.push('اختلاف مانده بدهکار و بستانکار: ' + money(report.closingDifference));
+      if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر در گزارش تاریخ‌دار محاسبه نشده است.');
+      if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف نامعتبر؛ سند مربوط از محاسبه کنار گذاشته شده است.');
+      if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند با ساختار ناقص وجود دارد.');
+      if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن در گزارش باقی مانده است.');
+      const companyName = escapeLedgerText(state.settings?.companyName || 'شرکت');
+      const warningHtml = warnings.length ? '<ul>' + warnings.map(item => '<li>' + escapeLedgerText(item) + '</li>').join('') + '</ul>' : '<p>گردش و مانده بدهکار و بستانکار برابر است.</p>';
+      document.getElementById('print-title').textContent = 'تراز آزمایشی چهارستونی';
+      document.getElementById('print-area').innerHTML =
+        '<div dir="rtl" class="print-report-content space-y-3">' +
+        '<header class="print-company-header"><div><h1>' + companyName + '</h1><strong>تراز آزمایشی چهارستونی</strong></div><div>از تاریخ: ' + escapeLedgerText(from) + '<br>تا تاریخ: ' + escapeLedgerText(to) + '</div></header>' +
+        '<p>اسناد منظورشده: ' + faNum(report.includedVouchers) + ' | حساب‌ها: ' + faNum(report.rows.length) + '</p>' +
+        '<table><thead><tr><th>کد حساب</th><th>نام حساب</th><th>گردش بدهکار</th><th>گردش بستانکار</th><th>مانده بدهکار</th><th>مانده بستانکار</th></tr></thead>' +
+        '<tbody>' + (rows || '<tr><td colspan="6">در بازه انتخابی گردش یا مانده‌ای وجود ندارد.</td></tr>') + '</tbody>' +
+        '<tfoot><tr><th colspan="2">جمع کل</th><th>' + money(totals.periodDebit) + '</th><th>' + money(totals.periodCredit) + '</th><th>' + money(totals.closingBalanceDebit) + '</th><th>' + money(totals.closingBalanceCredit) + '</th></tr></tfoot></table>' +
+        '<section class="print-report-heading">' + warningHtml + '</section>' +
+        '<p>این گزارش صرفاً خواندنی است و هیچ سندی ایجاد یا اصلاح نمی‌کند.</p></div>';
+      openModal('modal-print-preview');
+    }
+
     function runTrialBalanceReport() {
       const fromInput = document.getElementById('trial-from');
       const toInput = document.getElementById('trial-to');
@@ -7131,7 +7168,7 @@
       document.getElementById('accounting-panel-body').innerHTML =
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
-        '<button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button></div>' +
+        '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
