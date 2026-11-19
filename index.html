@@ -4065,32 +4065,14 @@
     function getWarehouseMovementCorrectionBlockReason(product, movement) {
       const description = String(movement?.doc || '');
       if (/اصلاحیه انبارگردانی/.test(description)) {
-        return 'این ردیف شناسه یکتای عملیات و پیوند قطعی به سند مغایرت ندارد؛ موجودی FIFO و سند حسابداری نیز تغییر کرده‌اند. اصلاح تا زمان ایجاد سابقه یکپارچه و قابل ردیابی مسدود است.';
+        return 'این ردیف انبارگردانی شناسه یکتای عملیات و پیوند قطعی به سند مغایرت ندارد؛ برگشت خودکار همچنان مسدود است.';
       }
-      const transferMatch = description.match(/TR-\d+-[a-z0-9]+/i);
+      const transferMatch = description.match(/TR-\\d+-[a-z0-9]+/i);
       if (!transferMatch) return 'نوع گردش انبار یا شناسه عملیات قابل تشخیص نیست؛ اصلاح متوقف شد.';
-      const transferId = transferMatch[0];
-      const related = [];
-      (state.products || []).forEach(item => {
-        (Array.isArray(item.kardex) ? item.kardex : []).forEach(row => {
-          if (String(row.doc || '').includes(transferId)) related.push({ product: item, movement: row });
-        });
-      });
-      const outgoing = related.filter(row => Number(row.movement.outQty || 0) > 0);
-      const incoming = related.filter(row => Number(row.movement.inQty || 0) > 0);
-      if (related.length !== 2 || outgoing.length !== 1 || incoming.length !== 1) {
-        return 'دو سمت خروج و ورود انتقال به‌صورت یکتا پیدا نشد؛ اصلاح برای جلوگیری از مغایرت بین انبارها مسدود است.';
-      }
-      const outQty = Number(outgoing[0].movement.outQty), inQty = Number(incoming[0].movement.inQty);
-      if (!Number.isFinite(outQty) || !Number.isFinite(inQty) || Math.abs(outQty - inQty) > 0.000001 ||
-          String(outgoing[0].movement.date || '') !== String(incoming[0].movement.date || '')) {
-        return 'مقدار یا تاریخ دو سمت انتقال با هم تطبیق ندارد؛ ابتدا باید مغایرت بررسی شود.';
-      }
-      const linkedBatches = (state.products || []).flatMap(item => Array.isArray(item.batches) ? item.batches : [])
-        .filter(batch => String(batch.sourceRef || '') === transferId || String(batch.id || '').includes(transferId));
-      return linkedBatches.length
-        ? 'انتقال به بچ‌های FIFO متصل است؛ برگشت امن باید هم‌زمان بچ‌های مبدأ و مقصد، دو کاردکس و موجودی هر دو انبار را اصلاح کند. این عملیات فعلاً به‌صورت مستقل مجاز نیست.'
-        : 'انتقال دوطرفه شناسایی شد؛ اما مسیر معکوس‌سازی اتمیک برای هر دو انبار و کاردکس هنوز وجود ندارد. اصلاح مستقیم مسدود است.';
+      const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferMatch[0]);
+      return plan.ok
+        ? 'کنترل‌های برگشت دوطرفه و بچ‌ها موفق است؛ اصلاح با برگشت و حواله جایگزین در یک عملیات ثبت می‌شود.'
+        : plan.reason;
     }
 
     function requestWarehouseMovementCorrection(productId, movementIndex) {
@@ -4100,8 +4082,232 @@
         showToast('گردش انبار پیدا نشد؛ هیچ تغییری انجام نشد.', 'error');
         return;
       }
-      const reason = getWarehouseMovementCorrectionBlockReason(product, movement);
-      showToast('بررسی اصلاح گردش انبار: ' + reason, 'warning');
+      const match = String(movement.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+      if (!match) {
+        showToast('اصلاحیه انبارگردانی یا گردش فاقد شناسه یکتا از این مسیر قابل برگشت نیست.', 'warning');
+        return;
+      }
+      const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, match[0]);
+      if (!plan.ok) {
+        showToast('برگشت حواله مسدود شد: ' + plan.reason, 'error');
+        return;
+      }
+
+      const reason = window.prompt('علت اصلاح حواله ' + plan.transferId + ' را وارد کنید (الزامی):', '');
+      if (reason === null) return;
+      if (!String(reason).trim()) {
+        showToast('برای اصلاح حواله ثبت علت الزامی است؛ هیچ تغییری انجام نشد.', 'error');
+        return;
+      }
+
+      const eligibleWarehouses = (state.warehouses || []).filter(item => item && String(item.id) !== plan.sourceWarehouseId);
+      if (!eligibleWarehouses.length) {
+        showToast('انبار مقصد جایگزین در دسترس نیست.', 'error');
+        return;
+      }
+      const defaultChoice = Math.max(0, eligibleWarehouses.findIndex(item => String(item.id) === plan.destinationWarehouseId));
+      const warehouseChoices = eligibleWarehouses.map((item, index) =>
+        (index + 1) + '. ' + String(item.name || item.title || item.id) + ' [' + String(item.id) + ']'
+      ).join('\\n');
+      const selectedChoice = window.prompt(
+        'انبار مقصد جدید را با شماره انتخاب کنید:\\n' + warehouseChoices,
+        String(defaultChoice + 1)
+      );
+      if (selectedChoice === null) return;
+      const selectedIndex = Number(String(selectedChoice).trim()) - 1;
+      if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= eligibleWarehouses.length) {
+        showToast('انتخاب انبار مقصد معتبر نیست؛ هیچ تغییری انجام نشد.', 'error');
+        return;
+      }
+      const replacementWarehouseId = String(eligibleWarehouses[selectedIndex].id);
+      const qtyInput = window.prompt('مقدار حواله جایگزین (کیلوگرم):', String(plan.quantity));
+      if (qtyInput === null) return;
+      const replacementQty = Number(String(qtyInput).trim().replace(/,/g, ''));
+      if (!Number.isFinite(replacementQty) || replacementQty <= 0) {
+        showToast('مقدار حواله جایگزین معتبر نیست؛ هیچ تغییری انجام نشد.', 'error');
+        return;
+      }
+      const replacementWarehouse = eligibleWarehouses[selectedIndex];
+      const confirmation = [
+        'اصلاح حواله به‌صورت یک عملیات واحد ثبت می‌شود:',
+        'برگشت: ' + plan.transferId + ' (' + plan.quantity + ' کیلوگرم)',
+        'مبدأ: ' + String((state.warehouses || []).find(item => String(item.id) === plan.sourceWarehouseId)?.name || plan.sourceWarehouseId),
+        'مقصد جدید: ' + String(replacementWarehouse.name || replacementWarehouse.title || replacementWarehouseId),
+        'مقدار جدید: ' + replacementQty + ' کیلوگرم',
+        'علت: ' + String(reason).trim(),
+        'سند حسابداری حواله قبلی دست‌نخورده می‌ماند.'
+      ].join('\\n');
+      if (!window.confirm(confirmation)) return;
+
+      const result = applyWarehouseTransferCorrection(
+        plan.transferId, replacementWarehouseId, replacementQty, String(reason).trim(), String(productId)
+      );
+      if (!result.ok) showToast('اصلاح حواله انجام نشد: ' + result.reason, 'error');
+    }
+
+    function applyWarehouseTransferCorrection(transferId, replacementWarehouseId, replacementQty, reason, focusProductId) {
+      const currentPlan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferId);
+      if (!currentPlan.ok) return { ok: false, reason: currentPlan.reason };
+      if (!String(reason || '').trim()) return { ok: false, reason: 'علت اصلاح الزامی است.' };
+      if (!Number.isFinite(Number(replacementQty)) || Number(replacementQty) <= 0) {
+        return { ok: false, reason: 'مقدار حواله جایگزین معتبر نیست.' };
+      }
+      const originalState = state;
+      let draft;
+      try {
+        draft = JSON.parse(JSON.stringify(state));
+        const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(draft, transferId);
+        if (!plan.ok) return { ok: false, reason: plan.reason };
+        const source = draft.products.find(item => String(item.id) === plan.sourceProductId);
+        const oldDestination = draft.products.find(item => String(item.id) === plan.destinationProductId);
+        if (!source || !oldDestination) return { ok: false, reason: 'کالای مبدأ یا مقصد حواله اصلی پیدا نشد.' };
+        if (Number(oldDestination.stock) + 0.000001 < plan.quantity) {
+          return { ok: false, reason: 'موجودی فعلی انبار مقصد برای برگشت کامل حواله کافی نیست.' };
+        }
+
+        const now = new Date();
+        const date = getTodayJalaliDate(now);
+        const reversalId = createStableId('whr');
+        const replacementId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        const sourceName = getWhName(plan.sourceWarehouseId);
+        const oldDestinationName = getWhName(plan.destinationWarehouseId);
+
+        source.stock = Number(source.stock) + plan.quantity;
+        oldDestination.stock = Number(oldDestination.stock) - plan.quantity;
+        if (plan.fifo) {
+          const restoreById = new Map();
+          plan.fifoRestores.forEach(item => restoreById.set(item.sourceBatchId,
+            (restoreById.get(item.sourceBatchId) || 0) + item.quantity));
+          (source.batches || []).forEach(batch => {
+            if (restoreById.has(String(batch.id))) batch.remainingQty = Number(batch.remainingQty) + restoreById.get(String(batch.id));
+          });
+          const removeIds = new Set(plan.fifoRestores.map(item => item.destinationBatchId));
+          oldDestination.batches = (oldDestination.batches || []).filter(batch => !removeIds.has(String(batch.id)));
+        }
+        source.kardex.push({
+          date, doc: 'برگشت حواله انتقال ' + plan.transferId + ' به درخواست اصلاح',
+          inQty: plan.quantity, outQty: 0, bal: source.stock, price: source.buyPrice,
+          reversalOf: plan.transferId, reversalId, reason: String(reason).trim(),
+          actor: draft.activeRole || 'mehran', deviceId: DEVICE_ID, createdAt: now.toISOString()
+        });
+        oldDestination.kardex.push({
+          date, doc: 'برگشت حواله انتقال ' + plan.transferId + ' از درخواست اصلاح',
+          inQty: 0, outQty: plan.quantity, bal: oldDestination.stock, price: oldDestination.buyPrice,
+          reversalOf: plan.transferId, reversalId, reason: String(reason).trim(),
+          actor: draft.activeRole || 'mehran', deviceId: DEVICE_ID, createdAt: now.toISOString()
+        });
+
+        const rootProductId = source.baseProductId || source.id;
+        const newDestinationId = String(replacementWarehouseId);
+        if (!newDestinationId || newDestinationId === plan.sourceWarehouseId ||
+            !(draft.warehouses || []).some(item => String(item.id) === newDestinationId)) {
+          return { ok: false, reason: 'انبار مقصد جایگزین معتبر نیست.' };
+        }
+        const qty = Number(replacementQty);
+        if (qty > Number(source.stock) + 0.000001) {
+          return { ok: false, reason: 'موجودی مبدأ پس از برگشت برای مقدار حواله جایگزین کافی نیست.' };
+        }
+        let newDestination = draft.products.find(item =>
+          String(item.warehouseId) === newDestinationId &&
+          String(item.baseProductId || item.id) === String(rootProductId)
+        );
+        if (newDestination && (!Number.isFinite(Number(newDestination.stock)) || Number(newDestination.stock) < 0)) {
+          return { ok: false, reason: 'موجودی انبار مقصد جایگزین معتبر نیست.' };
+        }
+
+        let fifoPlan = null, sourceSimulation = null, destinationSimulation = null;
+        if (draft.costingMethod === 'FIFO') {
+          sourceSimulation = JSON.parse(JSON.stringify(source));
+          fifoPlan = consumeFifoStock(sourceSimulation, qty);
+          const allocatedQty = Array.isArray(fifoPlan?.allocations)
+            ? fifoPlan.allocations.reduce((sum, item) => sum + Number(item.quantity), 0) : NaN;
+          if (!fifoPlan || !Array.isArray(fifoPlan.allocations) ||
+              !Number.isFinite(Number(fifoPlan.totalCost)) || !Number.isFinite(Number(fifoPlan.unitCost)) ||
+              !Number.isFinite(allocatedQty) || Math.abs(allocatedQty - qty) > 0.000001 ||
+              fifoPlan.allocations.some(item => !item.batchId || !Number.isFinite(Number(item.quantity)) ||
+                Number(item.quantity) <= 0 || !Number.isFinite(Number(item.unitCost)) || Number(item.unitCost) < 0)) {
+            return { ok: false, reason: 'تخصیص FIFO برای حواله جایگزین معتبر نیست؛ عملیات کامل لغو شد.' };
+          }
+          if (newDestination) {
+            destinationSimulation = JSON.parse(JSON.stringify(newDestination));
+            const reconciliation = inspectProductBatchReconciliation(destinationSimulation);
+            if (Number.isFinite(Number(destinationSimulation.stock)) &&
+                reconciliation.tracked > Number(destinationSimulation.stock) + 0.000001) {
+              return { ok: false, reason: 'جمع بچ‌های مقصد جایگزین از موجودی کل بیشتر است.' };
+            }
+            ensureProductBatches(destinationSimulation);
+          }
+        }
+
+        if (!newDestination) {
+          newDestination = {
+            ...source, id: String(rootProductId) + '::' + newDestinationId,
+            baseProductId: rootProductId, warehouseId: newDestinationId,
+            stock: 0, kardex: [], batches: []
+          };
+          draft.products.push(newDestination);
+        } else if (draft.costingMethod === 'FIFO') {
+          newDestination.batches = destinationSimulation.batches;
+        }
+        if (draft.costingMethod === 'FIFO') source.batches = sourceSimulation.batches;
+
+        source.stock = Number(source.stock) - qty;
+        source.kardex.push({
+          date, doc: 'حواله خروج انتقال ' + replacementId + ' (جایگزین ' + plan.transferId + ') به ' + getWhName(newDestinationId),
+          inQty: 0, outQty: qty, bal: source.stock, price: source.buyPrice,
+          correctionOf: plan.transferId, correctionId: reversalId, reason: String(reason).trim()
+        });
+        if (draft.costingMethod === 'FIFO') {
+          fifoPlan.allocations.forEach((allocation, index) => {
+            newDestination.batches.push({
+              id: String(allocation.batchId) + '::' + replacementId + '::' + (index + 1),
+              lot: allocation.lot || 'TRANSFER', receivedDate: date, productionDate: '',
+              expiryDate: allocation.expiryDate || '', quantity: allocation.quantity,
+              remainingQty: allocation.quantity, unitCost: allocation.unitCost,
+              sourceType: 'warehouse_transfer', sourceRef: replacementId,
+              sourceBatchId: allocation.batchId, warehouseId: newDestinationId
+            });
+          });
+        }
+        newDestination.stock = Number(newDestination.stock || 0) + qty;
+        newDestination.kardex = Array.isArray(newDestination.kardex) ? newDestination.kardex : [];
+        newDestination.kardex.push({
+          date, doc: 'حواله ورود انتقال ' + replacementId + ' (جایگزین ' + plan.transferId + ') از ' + sourceName,
+          inQty: qty, outQty: 0, bal: newDestination.stock,
+          price: draft.costingMethod === 'FIFO' ? fifoPlan.unitCost : source.buyPrice,
+          correctionOf: plan.transferId, correctionId: reversalId, reason: String(reason).trim()
+        });
+
+        draft.warehouseTransferCorrections = Array.isArray(draft.warehouseTransferCorrections)
+          ? draft.warehouseTransferCorrections : [];
+        draft.warehouseTransferCorrections.unshift({
+          id: reversalId, originalTransferId: plan.transferId, replacementTransferId: replacementId,
+          date, createdAt: now.toISOString(), actor: draft.activeRole || 'mehran',
+          deviceId: DEVICE_ID, reason: String(reason).trim(),
+          sourceProductId: plan.sourceProductId, sourceWarehouseId: plan.sourceWarehouseId,
+          originalDestinationProductId: plan.destinationProductId,
+          originalDestinationWarehouseId: plan.destinationWarehouseId,
+          replacementDestinationWarehouseId: newDestinationId,
+          originalQuantity: plan.quantity, replacementQuantity: qty,
+          fifo: plan.fifo, fifoRestores: plan.fifoRestores
+        });
+
+        state = draft;
+        addAudit('اصلاح اتمیک حواله ' + plan.transferId + ' با برگشت دوطرفه و حواله جایگزین ' + replacementId + '؛ علت: ' + String(reason).trim(), {
+          sourceType: 'warehouse_transfer_correction', operationDate: date
+        });
+        if (!saveState()) {
+          state = originalState;
+          return { ok: false, reason: 'ذخیره محلی عملیات انجام نشد؛ وضعیت قبلی حفظ شد.' };
+        }
+        renderAll();
+        openKardexModal(String(focusProductId || plan.sourceProductId));
+        showToast('برگشت حواله و ثبت حواله جایگزین در یک عملیات ذخیره شد ✔');
+        return { ok: true, reversalId, replacementTransferId: replacementId };
+      } catch (error) {
+        state = originalState;
+        return { ok: false, reason: error?.message || 'خطای پیش‌بینی‌نشده؛ هیچ تغییری ذخیره نشد.' };
+      }
     }
 
     function openKardexModal(id) {
