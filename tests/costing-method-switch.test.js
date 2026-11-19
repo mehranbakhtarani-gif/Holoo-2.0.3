@@ -71,10 +71,24 @@ test('invalid and duplicate batch layers block the switch', () => {
   assert.equal(invalid.ok, false);
 });
 
+test('FIFO to AVG refuses positive stock with no FIFO batch history', () => {
+  const plan = buildCostingMethodSwitchPlan([{ id: 'FIFO-NO-BATCH', stock: 4, buyPrice: 50, batches: [] }], 'FIFO', 'AVG');
+  assert.equal(plan.ok, false);
+  assert.match(plan.reason, /مغایرت‌گیری/);
+});
+
+test('duplicate batch identifiers across different products block the switch', () => {
+  const plan = buildCostingMethodSwitchPlan([
+    { id: 'A', stock: 1, buyPrice: 10, batches: [{ id: 'GLOBAL-DUP', remainingQty: 1, quantity: 1, unitCost: 10 }] },
+    { id: 'B', stock: 1, buyPrice: 10, batches: [{ id: 'GLOBAL-DUP', remainingQty: 1, quantity: 1, unitCost: 10 }] }
+  ], 'AVG', 'FIFO');
+  assert.equal(plan.ok, false);
+});
+
 test('zero-stock products switch without manufacturing a batch', () => {
   const plan = buildCostingMethodSwitchPlan([{ id: 'ZERO', stock: 0, buyPrice: 25, batches: [] }], 'AVG', 'FIFO');
   assert.equal(plan.ok, true);
   assert.equal(plan.updates[0].batches.length, 0);
 });
 
-console.log('PASS: 6 costing-method switch tests');
+console.log('PASS: 8 costing-method switch tests');
