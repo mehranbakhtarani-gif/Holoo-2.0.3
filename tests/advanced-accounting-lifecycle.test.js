@@ -1044,6 +1044,7 @@ test('manual voucher correction posts a reversal and balanced replacement withou
   const posted=[];let saves=0;let audits=0;
   const correct=load(section('function saveManualVoucherCorrection()','function saveManualVoucher()'),'saveManualVoucherCorrection',{
     state,CHART_ACCOUNTS:[{code:'1103',name:'دریافتنی'},{code:'4101',name:'فروش'}],
+    getVoucherCorrectionBlockReason(){return '';},
     document:{getElementById(id){if(id==='modal-manual-voucher-correction')return modal;if(id==='mvc-desc')return {value:values[id]};if(id==='mvc-date')return {value:values[id]};return {value:''};},querySelectorAll(){return rows;}},
     jalaliDateOrdinal(){return 1;},getTodayJalaliDate(){return '1405/09/03';},createStableId(){return 'VCORR-77'},
     postVoucher(...args){posted.push(args);return posted.length===1?88:89;},
