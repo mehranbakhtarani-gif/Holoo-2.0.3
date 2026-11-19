@@ -7831,7 +7831,7 @@
       const safeCount = Math.max(0, count);
       const grossForeignPurchase = safeCount * fob * fx;
       const purchase = grossForeignPurchase * (1 - discount / 100);
-      const perContainerDirect = ['plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection']
+      const perContainerDirect = ['plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer']
         .reduce((sum, id) => sum + Number(v[id] || 0), 0);
       const directCost = safeCount * perContainerDirect + Number(v['plan-other'] || 0);
       const landedCost = purchase + directCost;
@@ -7845,11 +7845,11 @@
       const inventoryWriteDown = nrvPerUnit > 0 ? Math.max(0, landedCost - nrvTotal) : 0;
       const carryingValueAfterNrv = nrvPerUnit > 0 ? Math.min(landedCost, nrvTotal) : landedCost;
       const grossProfit = revenue - landedCost;
-      const profitBeforeTax = grossProfit - finance - selling - bankFees;
+      const profitBeforeTax = grossProfit - finance - selling;
       const taxRate = Number(v['plan-tax-rate'] || 0);
       const estimatedTax = Math.max(0, profitBeforeTax) * taxRate / 100;
       const estimatedAfterTax = profitBeforeTax - estimatedTax;
-      const deployedCapital = landedCost + finance + selling + bankFees;
+      const deployedCapital = landedCost + finance + selling;
       const cashRequirementIncludingRecoverableTax = deployedCapital + recoverableTax;
       const totalUnits = safeCount * units;
       return {
@@ -7857,7 +7857,7 @@
         revenue, finance, selling, bankFees, nrvPerUnit, nrvTotal, inventoryWriteDown, carryingValueAfterNrv, grossProfit, profitBeforeTax, estimatedTax, estimatedAfterTax,
         deployedCapital, cashRequirementIncludingRecoverableTax, totalUnits, unitLandedCost:totalUnits > 0 ? landedCost / totalUnits : 0,
         roi:deployedCapital > 0 ? profitBeforeTax / deployedCapital * 100 : null,
-        breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling + bankFees) / safeCount : 0,
+        breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling) / safeCount : 0,
         margin:revenue > 0 ? profitBeforeTax / revenue * 100 : null,
         days:Number(v['plan-days'] || 0)
       };
@@ -7909,7 +7909,7 @@
           '<div class="flex justify-between gap-2"><span>مالیات قابل‌بازیافت (خارج از بهای موجودی)</span><b>' + money(r.recoverableTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>فروش پیش‌بینی‌شده</span><b>' + money(r.revenue) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
-          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش + کارمزد حواله</span><b>' + money(r.finance + r.selling + r.bankFees) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش (هزینه غیرموجودی)</span><b>' + money(r.finance + r.selling) + '</b></div>' +\n          '<div class="flex justify-between gap-2"><span>کارمزد حواله منظورشده در بهای واردات</span><b>' + money(r.bankFees) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی موجودی طبق NRV</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی پس از آزمون NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
           '<div class="flex justify-between gap-2 ' + profitClass + ' font-black text-xs border-t pt-1"><span>سود پیش‌بینی‌شده قبل از مالیات</span><b>' + money(r.profitBeforeTax) + '</b></div>' +
