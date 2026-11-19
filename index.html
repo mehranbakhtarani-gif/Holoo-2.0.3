@@ -6391,6 +6391,8 @@
         ];
       }
 
+      // Keep a rollback point for the complete invoice + journal + inventory transaction.
+      const invoicePreCommitSnapshot = JSON.parse(JSON.stringify(state));
       state.invoices.unshift(invoice);
       try {
         postVoucher(type === 'sale' ? `صدور فاکتور فروش #${id}` : `ثبت فاکتور خرید #${id}`,
@@ -6461,7 +6463,12 @@
           });
         }
       }
-      saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
+      if (!saveState()) {
+        state = correctionOriginalState || invoicePreCommitSnapshot;
+        showToast('ذخیره محلی فاکتور ناموفق بود؛ فاکتور، سند، موجودی و مانده حساب به وضعیت قبل بازگشتند.', 'error');
+        return;
+      }
+      document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
       invDraft = { type, lines: [] };
       const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
       showToast(wasCorrection ? `نسخه اصلاحی فاکتور #${faNum(id)} ثبت شد ✔` : `فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
