@@ -17,7 +17,8 @@ const state = {
     { id: 1, date: '1405/09/02', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 100, credit: 0 }] },
     { id: 2, date: '1405/09/02', lines: [{ code: '1102', bankAccountId: 'BANK-B', debit: 100, credit: 0 }] },
     { id: 3, date: '1405/09/02', lines: [{ code: '1102', debit: 100, credit: 0 }] },
-    { id: 4, date: '1405/09/02', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 60, credit: 0 }, { code: '1102', bankAccountId: 'BANK-A', debit: 40, credit: 0 }] }
+    { id: 4, date: '1405/09/02', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 60, credit: 0 }, { code: '1102', bankAccountId: 'BANK-A', debit: 40, credit: 0 }] },
+    { id: 5, date: '1405/09/02', desc: 'موجودی افتتاحیه بانک الف', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 100, credit: 0 }] }
   ]
 };
 const sandbox = { state, bankTxDateKey: value => /^1405\/\d{2}\/\d{2}$/.test(value) ? value : null };
