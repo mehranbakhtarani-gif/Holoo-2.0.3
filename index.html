@@ -7836,8 +7836,13 @@
       const revenue = safeCount * Number(v['plan-sell'] || 0);
       const finance = Number(v['plan-finance'] || 0);
       const selling = Number(v['plan-selling'] || 0);
+      const bankFees = safeCount * Number(v['plan-transfer'] || 0);
+      const nrvPerUnit = Number(v['plan-nrv'] || 0);
+      const nrvTotal = nrvPerUnit * safeCount * units;
+      const inventoryWriteDown = nrvPerUnit > 0 ? Math.max(0, landedCost - nrvTotal) : 0;
+      const carryingValueAfterNrv = nrvPerUnit > 0 ? Math.min(landedCost, nrvTotal) : landedCost;
       const grossProfit = revenue - landedCost;
-      const profitBeforeTax = grossProfit - finance - selling;
+      const profitBeforeTax = grossProfit - finance - selling - bankFees;
       const taxRate = Number(v['plan-tax-rate'] || 0);
       const estimatedTax = Math.max(0, profitBeforeTax) * taxRate / 100;
       const estimatedAfterTax = profitBeforeTax - estimatedTax;
@@ -7845,7 +7850,7 @@
       const totalUnits = safeCount * units;
       return {
         count:safeCount, grossForeignPurchase, purchase, directCost, landedCost, recoverableTax,
-        revenue, finance, selling, grossProfit, profitBeforeTax, estimatedTax, estimatedAfterTax,
+        revenue, finance, selling, bankFees, nrvPerUnit, nrvTotal, inventoryWriteDown, carryingValueAfterNrv, grossProfit, profitBeforeTax, estimatedTax, estimatedAfterTax,
         deployedCapital, totalUnits, unitLandedCost:totalUnits > 0 ? landedCost / totalUnits : 0,
         roi:deployedCapital > 0 ? profitBeforeTax / deployedCapital * 100 : null,
         breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling) / safeCount : 0,
@@ -7899,7 +7904,9 @@
           '<div class="flex justify-between gap-2 border-t pt-1 font-black"><span>بهای تمام‌شده واردات</span><b>' + money(r.landedCost) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>فروش پیش‌بینی‌شده</span><b>' + money(r.revenue) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
-          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش + کارمزد حواله</span><b>' + money(r.finance + r.selling + r.bankFees) + '</b></div>' +\n          '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی موجودی طبق NRV</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +\n          '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی پس از آزمون NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش + کارمزد حواله</span><b>' + money(r.finance + r.selling + r.bankFees) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی موجودی طبق NRV</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی پس از آزمون NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
           '<div class="flex justify-between gap-2 ' + profitClass + ' font-black text-xs border-t pt-1"><span>سود پیش‌بینی‌شده قبل از مالیات</span><b>' + money(r.profitBeforeTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>مالیات برآوردی</span><b>' + money(r.estimatedTax) + '</b></div>' +
           '<div class="flex justify-between gap-2 font-black"><span>سود پس از مالیات برآوردی</span><b>' + money(r.estimatedAfterTax) + '</b></div>' +
@@ -7979,8 +7986,9 @@
     function archiveCapitalPlan(id) {
       const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
       if (!plan) { showToast('نسخه برنامه پیدا نشد.', 'error'); return; }
+      const previousStatus = plan.status;
       plan.status = 'archived'; plan.archivedAt = new Date().toISOString(); plan.updatedAt = plan.archivedAt;
-      addAudit('بایگانی نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id,details:{previousStatus:plan.status}});
+      addAudit('بایگانی نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id,details:{previousStatus}});
       saveState(); renderCapitalPlanner(); showToast('نسخه برنامه بایگانی شد؛ سابقه آن حفظ شده است.');
     }
 
