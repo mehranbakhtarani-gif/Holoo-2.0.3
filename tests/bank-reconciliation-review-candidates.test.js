@@ -20,7 +20,7 @@ const state = {
     { id: 99, date: '1405/08/15', desc: 'قبلاً به تراکنش دیگری وصل شده', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: 2500000000, credit: 0 }] }
   ]
 };
-const sandbox = { state, bankTxDateKey: value => String(value || '') };
+const sandbox = { state, CHART_ACCOUNTS: [{ code: '1103', name: 'حساب دریافتنی' }, { code: '2101', name: 'حساب پرداختنی' }], bankTxDateKey: value => String(value || '') };
 vm.createContext(sandbox);
 vm.runInContext(html.slice(start, end) + '; this.getBankReconciliationReviewCandidates = getBankReconciliationReviewCandidates;', sandbox);
 
