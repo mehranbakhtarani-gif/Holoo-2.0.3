@@ -14,8 +14,19 @@ function extractFunction(name, endMarker) {
   return html.slice(start, end).trim();
 }
 function load(source, name, context) {
-  const sandbox = { ...context };
+  let generatedId = 0;
+  const sandbox = {
+    createStableId(prefix = 'test') { return prefix + '-TEST-' + (++generatedId); },
+    addAudit() {},
+    lastQueuedAuditId: null,
+    ...context
+  };
   vm.createContext(sandbox);
+  const supplierHelperStart = html.indexOf('function isSupplierParty(');
+  const supplierHelperEnd = html.indexOf('function getPartyLedgerControlCodes(', supplierHelperStart);
+  if (supplierHelperStart >= 0 && supplierHelperEnd > supplierHelperStart) {
+    vm.runInContext(html.slice(supplierHelperStart, supplierHelperEnd), sandbox);
+  }
   const partyHelpersStart = html.indexOf('function normalizePartyIdentity(');
   const partyHelpersEnd = html.indexOf('function buildPartyLedger(', partyHelpersStart);
   if (partyHelpersStart >= 0 && partyHelpersEnd > partyHelpersStart) {
