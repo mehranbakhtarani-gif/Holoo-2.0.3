@@ -4893,8 +4893,9 @@
     }
 
         function canCorrectInvoice(inv) {
-      if (!inv || inv.status !== 'active' || inv.type !== 'sale' || inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
-      if (Number(inv.commAmount || 0) > 0 && !inv.salespersonPartyId) return false;
+      if (!inv || inv.status !== 'active' || !['sale', 'purchase'].includes(inv.type) ||
+          inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
+      if (inv.type === 'sale' && Number(inv.commAmount || 0) > 0 && !inv.salespersonPartyId) return false;
       if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
       if ((inv.items || []).some(item => Number(item.returnedKg || 0) > 0)) return false;
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => tx.kind !== 'party_credit' && (((tx.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0)) || Number(tx.allocInvId) === Number(inv.id)));
@@ -4904,7 +4905,7 @@
 
     function openInvoiceCorrection(invId) {
       const inv = (state.invoices || []).find(item => Number(item.id) === Number(invId));
-      if (!canCorrectInvoice(inv)) { showToast('فعلاً فقط فاکتور فروش نسیه، بدون تسویه یا برگشت و با اطلاعات کامل پورسانت قابل اصلاح است؛ فاکتور خرید و اسناد تسویه‌شده نیازمند مسیر تخصصی جداگانه‌اند.', 'error'); return; }
+      if (!canCorrectInvoice(inv)) { showToast('فعلاً فقط فاکتورهای نسیه و تسویه‌نشده، بدون برگشت یا تخصیص فعال پرداخت/چک قابل اصلاح‌اند؛ فاکتورهای تسویه‌شده نیازمند تعیین‌تکلیف وابستگی‌ها هستند.', 'error'); return; }
       openInvoiceForm(inv.type);
       document.getElementById('inv-party').value = String(inv.partyId);
       document.getElementById('inv-warehouse').value = String(inv.warehouseId);
