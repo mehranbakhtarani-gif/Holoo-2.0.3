@@ -97,4 +97,5 @@ test('separates products with missing and unknown warehouse references without m
   ]);
   assert.equal(JSON.stringify(source), before, 'inspection must not mutate source products');
 });
-\nconsole.log('PASS: 8 multi-warehouse reconciliation tests');
+
+console.log('PASS: 8 multi-warehouse reconciliation tests');
