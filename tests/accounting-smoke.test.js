@@ -264,6 +264,7 @@ test('bank statement review requires exact amount and exact date together', () =
       ] }]
     },
     bankTxDateKey(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? String(value) : null; },
+    isBankOpeningVoucher(voucher) { return voucher?.sourceType === 'bank_account_opening' || /^موجودی افتتاحیه بانک/.test(String(voucher?.desc || '')); },
     CHART_ACCOUNTS: [{ code: '1102', name: 'بانک' }, { code: '4101', name: 'فروش' }]
   });
   assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/01' }).length, 0);
