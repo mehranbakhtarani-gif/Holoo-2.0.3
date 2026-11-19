@@ -177,7 +177,7 @@ begin
       if v_entity_type is null or v_entity_id is null or v_change_type is null
          or v_entity_type not in (
         'capitalPlans', 'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports',
-        'fxCommitments', 'accountCatalog', 'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
+        'fxCommitments', 'accountCatalog', 'accountingPeriodLocks', 'fiscalYearClosures', 'bankAccounts', 'checks', 'treasuryTxs', 'bankReconcileItems',
         'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'guarantees', 'payableCommitments', 'vouchers', 'approvals', 'auditLogs', 'customUnits'
       ) then
         raise exception 'unsupported entity collection: %', v_entity_type;
@@ -268,4 +268,4 @@ grant execute on function public.holoo_apply_state_operation(
 comment on function public.holoo_apply_state_operation(
   text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
 ) is
-  'Atomically compare-and-swaps the company snapshot and appends an idempotent operation audit record. Supports capitalPlans, payrollRuns, depreciationEntries, guarantees and payableCommitments collections; does not modify RLS policies.';
+  'Atomically compare-and-swaps the company snapshot and appends an idempotent operation audit record. Supports accountingPeriodLocks, fiscalYearClosures, capitalPlans, payrollRuns, depreciationEntries, guarantees and payableCommitments collections; does not modify RLS policies.';
