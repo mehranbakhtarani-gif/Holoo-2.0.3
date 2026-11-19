@@ -6362,13 +6362,15 @@
       document.getElementById('reconcile-tx-list').innerHTML = (state.bankReconcileItems || []).map(r => {
         const linked = r.matched && r.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(r.linkedVoucherId));
         const candidates = linked ? [] : getBankReconciliationCandidates(r);
-        const reviewCandidates = !linked && !candidates.length ? getBankReconciliationReviewCandidates(r) : [];
-        const reviewHtml = reviewCandidates.length
-          ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="text-xs font-bold text-amber-900">بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار (' + faNum(reviewCandidates.length) + ')</summary><div class="mt-2 space-y-2">' +
-            reviewCandidates.map(v => '<div class="rounded border bg-white p-2 text-xs"><strong>سند #' + faNum(v.id) + '</strong> — ' + window.escapeBankReconcileText(v.desc) +
-              '<div>تاریخ سند: ' + faNum(v.date) + ' | بدهکار: ' + money(v.debit) + ' | بستانکار: ' + money(v.credit) + '</div>' +
-              '<div class="font-bold text-amber-800">' + (v.amountMatch ? 'مبلغ برابر است' : 'مبلغ متفاوت است') + '؛ ' + (v.dateMatch ? 'تاریخ برابر است' : 'تاریخ متفاوت است') +
-              (v.bankAccountId ? '؛ شناسه حساب: ' + window.escapeBankReconcileText(v.bankAccountId) : '؛ سند شناسه حساب بانکی ندارد') + '</div></div>').join('') +
+        const reviewCandidates = !linked ? getBankReconciliationReviewCandidates(r) : [];
+        const reviewHtml = !linked
+          ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="text-xs font-bold text-amber-900">🔎 بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار' + (reviewCandidates.length ? ' (' + faNum(reviewCandidates.length) + ')' : '') + '</summary><div class="mt-2 space-y-2">' +
+            (reviewCandidates.length
+              ? reviewCandidates.map(v => '<div class="rounded border bg-white p-2 text-xs"><strong>سند #' + faNum(v.id) + '</strong> — ' + window.escapeBankReconcileText(v.desc) +
+                '<div>تاریخ سند: ' + faNum(v.date) + ' | بدهکار: ' + money(v.debit) + ' | بستانکار: ' + money(v.credit) + '</div>' +
+                '<div class="font-bold text-amber-800">' + (v.amountMatch ? 'مبلغ برابر است' : 'مبلغ متفاوت است') + '؛ ' + (v.dateMatch ? 'تاریخ برابر است' : 'تاریخ متفاوت است') +
+                (v.bankAccountId ? '؛ شناسه حساب: ' + window.escapeBankReconcileText(v.bankAccountId) : '؛ سند شناسه حساب بانکی ندارد') + '</div></div>').join('')
+              : '<div class="rounded border bg-white p-2 text-xs text-slate-700">با معیارهای فعلی سند احتمالی پیدا نشد. تاریخ، مبلغ و حساب بانکی تراکنش و اسناد ثبت‌شده باید کنترل شوند.</div>') +
             '</div></details>'
           : '';
         const actions = linked
