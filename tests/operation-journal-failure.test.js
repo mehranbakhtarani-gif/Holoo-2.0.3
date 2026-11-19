@@ -6,6 +6,8 @@ assert.match(html, /let operationJournalBlocked = false/,
   'the app must track operation-journal write failures');
 assert.match(html, /journalWrite\.then\(\(\) => \{\s*operationJournalBlocked = false;/,
   'a later successful journal transaction must clear the blocked state');
+assert.match(html, /journalWrite\.catch\(e => \{\s*operationJournalBlocked = true;/,
+  'the journal barrier must set the blocked state before it resolves');
 assert.match(html, /\.catch\(e => \{\s*operationJournalBlocked = true;/,
   'a failed journal transaction must block cloud sync');
 
