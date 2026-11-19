@@ -190,6 +190,13 @@ assert.ok(html.includes('actor: draft.activeRole || \'mehran\', deviceId: DEVICE
 assert.ok(html.includes('let committed = false;'));
 assert.ok(html.includes('if (!committed) state = originalState;'));
 assert.ok(html.includes('سند حسابداری حواله قبلی دست‌نخورده می‌ماند.'));
-assert.ok(html.includes('window.confirm(confirmation)'));
+assert.ok(html.includes('id="modal-warehouse-transfer-correction"'));
+assert.ok(html.includes('function submitWarehouseTransferCorrection()'));
+assert.ok(html.includes('wh-correction-reason'));
+assert.ok(html.includes('wh-correction-destination'));
+assert.ok(html.includes('wh-correction-quantity'));
+assert.ok(html.includes('wh-correction-confirm'));
+assert.ok(!html.includes('window.prompt(\'علت اصلاح حواله'));
+assert.ok(!html.includes('window.confirm(confirmation)'));
 assert.ok(html.includes('if (!saveState())'));
 console.log('PASS: warehouse transfer and stocktake audit projections are read-only, escaped, and conservative');
