@@ -5801,19 +5801,36 @@
         const party = state.parties.find(p => String(p.id) === editingPartyId);
         if (!party) { showToast('طرف حساب برای ویرایش پیدا نشد؛ تغییری ذخیره نشد.', 'error'); return; }
         const previous = { name: party.name, phone: party.phone, ecoCode: party.ecoCode, creditLimit: party.creditLimit, terms: party.terms };
+        const previousAuditLogs = Array.isArray(state.auditLogs) ? state.auditLogs.slice() : [];
+        const previousQueuedAuditId = lastQueuedAuditId;
         Object.assign(party, { name, phone, ecoCode, creditLimit, terms });
         addAudit('ویرایش مشخصات طرف حساب', { mode: 'manual', sourceType: 'party', sourceId: party.id, previous, note: 'شناسه تفصیلی و گردش‌های ثبت‌شده طرف حساب تغییر نکردند.' });
-        saveState(); closeModal('modal-new-party'); renderAll(); showToast('مشخصات طرف حساب ذخیره و همگام‌سازی شد.');
+        if (!saveState()) {
+          Object.assign(party, previous);
+          state.auditLogs = previousAuditLogs;
+          lastQueuedAuditId = previousQueuedAuditId;
+          return;
+        }
+        closeModal('modal-new-party'); renderAll(); showToast('مشخصات طرف حساب ذخیره و همگام‌سازی شد.');
         editingPartyId = null;
         return;
       }
       const partyId = 'P-' + Date.now();
+      const previousAuditLogs = Array.isArray(state.auditLogs) ? state.auditLogs.slice() : [];
+      const previousQueuedAuditId = lastQueuedAuditId;
       state.parties.push({
         id: partyId, name, role,
         subledgerId: 'PARTY-' + partyId, ledgerAccountCode: isSupplierParty({ role }) ? '2101' : '1103', accountingStatus: 'active',
         phone, ecoCode, creditLimit, terms
       });
-      saveState(); closeModal('modal-new-party'); renderAll(); showToast('طرف حساب جدید ثبت شد.');
+      addAudit('ثبت طرف حساب جدید', { mode: 'manual', sourceType: 'party', sourceId: partyId, note: 'شناسه تفصیلی مستقل برای طرف حساب ایجاد شد.' });
+      if (!saveState()) {
+        state.parties.pop();
+        state.auditLogs = previousAuditLogs;
+        lastQueuedAuditId = previousQueuedAuditId;
+        return;
+      }
+      closeModal('modal-new-party'); renderAll(); showToast('طرف حساب جدید ثبت شد.');
       editingPartyId = null;
     }
 
@@ -5866,7 +5883,8 @@
       if (!b) return;
       if (!p || invDraft.type !== 'sale') { b.classList.add('hidden'); return; }
       const receivableBalance = getPartyAccountNetBalance(p.id, String(p.ledgerAccountCode || '1103'));
-      const creditLimit = Number(p.creditLimit ?? 5000000000);
+      const storedCreditLimit = Number(p.creditLimit ?? 5000000000);
+      const creditLimit = Number.isFinite(storedCreditLimit) && storedCreditLimit >= 0 ? storedCreditLimit : 5000000000;
       const rem = creditLimit - Math.max(0, Number.isFinite(receivableBalance) ? receivableBalance : 0);
       b.classList.remove('hidden');
       b.className = rem <= 0 ? 'p-2 rounded-xl text-[11px] font-bold bg-rose-100 text-rose-900' : 'p-2 rounded-xl text-[11px] font-bold bg-emerald-50 text-emerald-800';
