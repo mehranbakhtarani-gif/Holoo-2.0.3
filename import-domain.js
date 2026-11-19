@@ -197,7 +197,43 @@
     };
   }
 
-  const api = { normalizeItems, allocateImportExpenses, calculateLandedCost, calculateShipmentProfit };
+  function createReceiptSnapshot(shipment, products, metadata = {}) {
+    if (!shipment || !shipment.id) throw new Error('شناسه محموله برای snapshot رسید الزامی است.');
+    if (metadata.schemaVersion !== undefined && Number(metadata.schemaVersion) !== 1) {
+      throw new Error('نسخه snapshot رسید پشتیبانی نمی‌شود.');
+    }
+    const items = normalizeItems(shipment);
+    if (!items.length) throw new Error('اقلام محموله برای snapshot رسید موجود نیست.');
+    const productById = new Map((products || []).map(product => [String(product.id), product]));
+    const productStates = new Map();
+    for (const item of items) {
+      const productId = String(item.productId || '');
+      const product = productById.get(productId);
+      if (!product) throw new Error('کالای ' + productId + ' برای snapshot رسید پیدا نشد.');
+      if (!productStates.has(productId)) {
+        // Persist the complete pre-receipt product state so a future audited
+        // compensation can restore stock, weighted-average cost, Kardex and batches.
+        productStates.set(productId, {
+          productId,
+          state: JSON.parse(JSON.stringify(product))
+        });
+      }
+    }
+    return {
+      schemaVersion: 1,
+      snapshotId: String(metadata.snapshotId || ''),
+      shipmentId: String(shipment.id),
+      capturedAt: String(metadata.capturedAt || new Date().toISOString()),
+      receivedDate: String(metadata.receivedDate || ''),
+      actor: String(metadata.actor || ''),
+      deviceId: String(metadata.deviceId || ''),
+      costingMethod: String(metadata.costingMethod || ''),
+      items: JSON.parse(JSON.stringify(items)),
+      products: [...productStates.values()]
+    };
+  }
+
+  const api = { normalizeItems, allocateImportExpenses, calculateLandedCost, calculateShipmentProfit, createReceiptSnapshot };
   root.HolooImportDomain = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
