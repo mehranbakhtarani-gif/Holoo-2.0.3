@@ -10849,7 +10849,7 @@
           }
           const validation = inspectTrialBalanceVoucher(voucher);
           if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) throw new Error('سند اختتامیه صادرشده از کنترل توازن عبور نکرد.');
-          if ((voucher.lines || []).some(line => !/^[456]\\d*$/.test(String(line.code || '')) && String(line.code || '') !== '3102')) {
+          if ((voucher.lines || []).some(line => !/^[456]\d*$/.test(String(line.code || '')) && String(line.code || '') !== '3102')) {
             throw new Error('سند اختتامیه شامل حسابی خارج از حساب‌های نتیجه‌دار و سود انباشته است.');
           }
           voucher.locked = true;
