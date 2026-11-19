@@ -2675,7 +2675,10 @@
       const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
       const operationPayload = JSON.parse(snapshot);
-      operationPayload.activeRole = 'mehran';
+      // The shared snapshot must retain the operator assigned to this device.
+      // Never stamp every operation as Mehran: Ehsan's device would be misattributed.
+      const operationActor = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
+      operationPayload.activeRole = operationActor;
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
       const previousAuditId = lastQueuedAuditId ?? lastSavedState?.auditLogs?.[0]?.id ?? null;
       const hasNewAuditEvent = !!lastAudit && lastAudit.id !== previousAuditId;
@@ -2686,7 +2689,7 @@
         sequence,
         schemaVersion: OPERATION_SCHEMA_VERSION,
         companyRecordId: cloudConfig.recordId,
-        actor: localStorage.getItem(DEVICE_ACTOR_KEY) || state.activeRole || 'mehran',
+        actor: operationActor,
         deviceId: OPERATION_SOURCE_ID,
         createdAt: updatedAt,
         operationType: 'state_snapshot',

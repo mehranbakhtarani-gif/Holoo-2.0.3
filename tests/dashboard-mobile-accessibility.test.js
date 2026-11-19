@@ -2,6 +2,11 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const html = fs.readFileSync('index.html', 'utf8');
 
+// Each device's fixed operator must be preserved in both snapshot and journal metadata.
+assert.match(html, /operationPayload\.activeRole = operationActor/);
+assert.match(html, /actor: operationActor/);
+assert.match(html, /const operationActor = localStorage\.getItem\(DEVICE_ACTOR_KEY\) === 'ehsan' \? 'ehsan' : 'mehran'/);
+
 assert.match(html, /id="dashboard-menu-search-input"[^>]*role="combobox"/);
 assert.match(html, /id="dashboard-menu-search-input"[^>]*aria-label="جستجوی منوها و قابلیت‌های داشبورد"/);
 assert.match(html, /id="dashboard-menu-search-input"[^>]*min-h-\[44px\]/);
