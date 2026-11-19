@@ -4392,10 +4392,25 @@
         const productId = escapeKardexText(item.productId);
         const stock = product && Number.isFinite(Number(product.stock)) ? faNum(Number(product.stock)) : 'نامعتبر';
         const currentWarehouse = item.warehouseId ? escapeKardexText(item.warehouseId) : 'ثبت‌نشده';
+        const history = HolooWarehouseAssignment.inspectWarehouseAssignmentHistory(state, item.productId);
+        const historyRows = history.ok ? [
+          ...(history.movements || []).map(row => 'کاردکس: ' + (row.date || 'بدون تاریخ') + ' · ' + (row.document || 'بدون شرح') + (row.warehouseIds.length ? ' · انبار: ' + row.warehouseIds.join('/') : ' · انبار تاریخی نامشخص')),
+          ...(history.batches || []).map(row => 'بچ: ' + (row.lot || row.id || ('ردیف ' + (row.index + 1))) + (row.sourceRef ? ' · مرجع: ' + row.sourceRef : '') + (row.warehouseIds.length ? ' · انبار: ' + row.warehouseIds.join('/') : ' · انبار تاریخی نامشخص')),
+          ...(history.documents || []).map(row => 'سند: ' + (row.recordId || row.path) + (row.date ? ' · ' + row.date : '') + (row.warehouseIds.length ? ' · انبار: ' + row.warehouseIds.join('/') : ' · انبار سند نامشخص')),
+          ...(history.auditReferences || []).map(row => 'حسابرسی: ' + (row.operationId || row.sourceType || 'ثبت سابقه') + (row.action ? ' · ' + row.action : ''))
+        ].slice(0, 12) : [history.reason || 'ردیابی سابقه ممکن نشد.'];
+        const historyMarkup = '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2 space-y-1"><div class="font-bold text-slate-800">ردیابی سابقه: ' +
+          faNum(history.movementCount || 0) + ' کاردکس · ' + faNum(history.batchCount || 0) + ' بچ · ' +
+          faNum(history.documentReferenceCount || 0) + ' ارجاع سند · ' + faNum(history.auditReferenceCount || 0) + ' سابقه حسابرسی</div>' +
+          (historyRows.length ? '<details><summary class="cursor-pointer font-bold text-indigo-700">مشاهده ردپاهای تاریخی</summary><ul class="list-disc pr-4 pt-1 space-y-1">' +
+            historyRows.map(row => '<li class="break-words">' + escapeKardexText(row) + '</li>').join('') +
+            '</ul>' + (history.truncated ? '<div class="text-amber-800">فهرست برای نمایش کوتاه شده است؛ شمارش کامل در خلاصه لحاظ شده.</div>' : '') + '</details>' :
+            '<div class="text-emerald-800">در داده‌های قابل بررسی سابقه کاردکس، بچ، سند یا حسابرسی پیدا نشد.</div>') +
+          '</div>';
         return '<article class="rounded-xl border border-slate-200 bg-white p-3 space-y-2" data-warehouse-assignment-card data-product-id="' + productId + '">' +
           '<div class="flex flex-wrap items-start justify-between gap-2"><div><div class="font-black text-sm">' + escapeKardexText(item.productName) + '</div><div class="text-[10px] text-slate-500">کد کالا: ' + productId + ' | انبار فعلی: ' + currentWarehouse + '</div></div>' +
           '<span class="rounded-full bg-amber-100 text-amber-900 px-2 py-1 text-[10px] font-bold">' + (item.reason === 'missing-warehouse' ? 'بدون شناسه انبار' : 'شناسه انبار نامعتبر') + '</span></div>' +
-          '<div class="text-[11px] text-slate-600">موجودی ثبت‌شده: ' + stock + ' KG</div>' +
+          '<div class="text-[11px] text-slate-600">موجودی ثبت‌شده: ' + stock + ' KG</div>' + historyMarkup +
           '<label class="block text-[10px] font-bold text-slate-700">انبار مقصد' +
           '<select class="touch-btn mt-1 w-full border rounded-xl bg-white px-3 font-bold" data-warehouse-assignment-target onchange="previewWarehouseAssignment(this)"><option value="">انتخاب انبار مقصد</option>' + warehouseOptions + '</select></label>' +
           '<div data-warehouse-assignment-preview class="rounded-lg bg-slate-50 p-2 text-[10px] text-slate-600">ابتدا انبار مقصد را انتخاب کنید تا امکان اصلاح و اثر آن بررسی شود.</div>' +
@@ -4403,8 +4418,8 @@
           '</article>';
       }).join('');
       return '<section class="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">' +
-        '<div><div class="font-black text-sm text-amber-950">کالاهای فاقد انبار معتبر — اصلاح کنترل‌شده</div>' +
-        '<p class="mt-1 text-[10px] text-amber-900">برای جلوگیری از تغییر تاریخچه، انتساب خودکار فقط برای کالای بدون موجودی، بدون کاردکس، بدون سری ساخت و بدون ارجاع در اسناد مجاز است. موارد فعال برای بررسی دستی مسدود می‌مانند.</p></div>' +
+        '<div><div class="font-black text-sm text-amber-950">تطبیق تاریخی کالاهای فاقد انبار معتبر</div>' +
+        '<p class="mt-1 text-[10px] text-amber-900">ردپاهای کاردکس، بچ‌ها، اسناد و سوابق حسابرسی برای هر کالا جداگانه نمایش داده می‌شود. وجود سابقه به‌معنای اثبات انبار تاریخی نیست؛ در این وضعیت اصلاح خودکار مسدود می‌ماند و هیچ سند یا گردش قبلی بازنویسی نمی‌شود.</p></div>' +
         '<div class="space-y-2">' + cards + '</div></section>';
     }
 
