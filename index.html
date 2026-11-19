@@ -4267,6 +4267,35 @@
       };
     }
 
+    function inspectWarehouseTransferBatchLinks(products) {
+      const items = Array.isArray(products) ? products : [];
+      const issues = [];
+      const batchOwners = new Map();
+      const transferBatches = new Map();
+      items.forEach(product => (Array.isArray(product?.batches) ? product.batches : []).forEach(batch => {
+        const id = String(batch?.id || '').trim();
+        if (id && !batchOwners.has(id)) batchOwners.set(id, { product, batch });
+        if (batch?.sourceType === 'warehouse_transfer') { const transferId = String(batch.sourceRef || '').trim(); if (!transferBatches.has(transferId)) transferBatches.set(transferId, []); transferBatches.get(transferId).push({ product, batch }); }
+      }));
+      transferBatches.forEach((rows, transferId) => {
+        if (!transferId) { issues.push({ type: 'transfer-batch', productId: '—', productName: 'انتقال انبار', message: 'سری ساخت انتقالی شناسه حواله ندارد.', detail: 'sourceRef ثبت نشده است.' }); return; }
+        let transferredQuantity = 0;
+        rows.forEach(({ product, batch }) => {
+          const quantity = Number(batch.quantity);
+          const sourceBatchId = String(batch.sourceBatchId || '').trim();
+          if (!Number.isFinite(quantity) || quantity <= 0) issues.push({ type: 'transfer-batch', productId: String(product.id || '—'), productName: String(product.name || 'کالای انتقالی'), message: 'مقدار سری ساخت انتقالی نامعتبر است.', detail: transferId + ' | سری: ' + String(batch.lot || batch.id || '—') });
+          else transferredQuantity += quantity;
+          if (!sourceBatchId) issues.push({ type: 'transfer-batch', productId: String(product.id || '—'), productName: String(product.name || 'کالای انتقالی'), message: 'پیوند سری ساخت مقصد به سری ساخت مبدأ ثبت نشده است.', detail: transferId + ' | سری مقصد: ' + String(batch.id || batch.lot || '—') });
+          else { const source = batchOwners.get(sourceBatchId); if (!source) issues.push({ type: 'transfer-batch', productId: String(product.id || '—'), productName: String(product.name || 'کالای انتقالی'), message: 'سری ساخت مبدأ برای سری ساخت انتقالی پیدا نشد.', detail: transferId + ' | شناسه سری مبدأ: ' + sourceBatchId }); else if (String(source.product?.baseProductId || source.product?.id || '') !== String(product.baseProductId || product.id || '')) issues.push({ type: 'transfer-batch', productId: String(product.id || '—'), productName: String(product.name || 'کالای انتقالی'), message: 'سری ساخت مبدأ و مقصد به دو کالای پایه متفاوت تعلق دارند.', detail: transferId + ' | سری مبدأ: ' + sourceBatchId }); }
+          if (String(batch.warehouseId || '') !== String(product.warehouseId || '')) issues.push({ type: 'transfer-batch', productId: String(product.id || '—'), productName: String(product.name || 'کالای انتقالی'), message: 'انبار ثبت‌شده در سری ساخت انتقالی با انبار کالا برابر نیست.', detail: transferId + ' | انبار سری: ' + String(batch.warehouseId || '—') + ' | انبار کالا: ' + String(product.warehouseId || '—') });
+        });
+        const transferEvents = [];
+        items.forEach(product => (Array.isArray(product?.kardex) ? product.kardex : []).forEach(movement => { if (String(movement?.doc || '').includes(transferId)) transferEvents.push({ product, movement }); }));
+        const destinationQuantity = transferEvents.filter(row => String(row.movement.doc || '').includes('ورود انتقال')).reduce((sum, row) => sum + Number(row.movement.inQty || 0), 0);
+        if (transferEvents.length && Math.abs(destinationQuantity - transferredQuantity) > 0.000001) issues.push({ type: 'transfer-batch', productId: '—', productName: 'انتقال انبار', message: 'جمع مقدار سری‌های ساخت انتقالی با مقدار ورود حواله برابر نیست.', detail: transferId + ' | ورود کاردکس: ' + destinationQuantity + ' | سری‌های ساخت: ' + transferredQuantity });
+      });
+      return { checkedTransferBatchGroups: transferBatches.size, issues };
+    }
     function inspectStocktakingAuditTrail(appState) {
       const logs = Array.isArray(appState?.auditLogs) ? appState.auditLogs : [];
       const vouchers = Array.isArray(appState?.vouchers) ? appState.vouchers : [];
@@ -4327,6 +4356,8 @@
       issues.push(...warehouseTopology.issues);
       const stocktakeAudit = inspectStocktakingAuditTrail(state);
       issues.push(...stocktakeAudit.issues);
+      const transferBatchAudit = inspectWarehouseTransferBatchLinks(items);
+      issues.push(...transferBatchAudit.issues);
       let checkedBatches = 0;
       let checkedMovements = 0;
       const globalBatchIds = new Map();
@@ -4445,7 +4476,7 @@
           issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: invalidIdentity ? 'هویت کالای مبدأ و مقصد یا انبارهای متفاوت انتقال معتبر نیست.' : 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}${identityDetail}` });
         }
       });
-      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedStocktakeOperations: stocktakeAudit.checkedOperations, checkedStocktakeItems: stocktakeAudit.checkedItems, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
+      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedStocktakeOperations: stocktakeAudit.checkedOperations, checkedStocktakeItems: stocktakeAudit.checkedItems, checkedTransferBatchGroups: transferBatchAudit.checkedTransferBatchGroups, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
     }
 
     function ensureProductBatches(product) {
@@ -4943,6 +4974,7 @@
         ['انتقال‌های بررسی‌شده', report.checkedTransfers, 'border-slate-200 bg-slate-50'],
         ['عملیات انبارگردانی بررسی‌شده', report.checkedStocktakeOperations || 0, 'border-slate-200 bg-slate-50'],
         ['اقلام انبارگردانی بررسی‌شده', report.checkedStocktakeItems || 0, 'border-slate-200 bg-slate-50'],
+        ['گروه سری ساخت انتقالی بررسی‌شده', report.checkedTransferBatchGroups || 0, 'border-slate-200 bg-slate-50'],
         ['کالاهای پایهٔ چندانباره', report.checkedBaseProducts || 0, 'border-slate-200 bg-slate-50']
       ].map(([label, value, style]) => `<div class="rounded-xl border p-3 ${style}"><div class="text-[10px] font-bold">${label}</div><strong class="text-xl tabular-nums">${faNum(value)}</strong></div>`).join('');
       const list = document.getElementById('inventory-reconciliation-list');
@@ -4955,6 +4987,7 @@
         'kardex-sequence': 'مغایرت توالی مانده کاردکس',
         'transfer': 'مغایرت حواله انتقال بین انبارها',
         'stocktake-audit': 'مغایرت سابقه حسابرسی انبارگردانی',
+        'transfer-batch': 'مغایرت پیوند سری ساخت انتقال بین انبارها',
         'warehouse-product-identity': 'شناسه کالای پایه نامعتبر',
         'warehouse-product-reference': 'ارجاع به انبار نامعتبر',
         'warehouse-product-id-duplicate': 'شناسه رکورد کالا تکراری',
