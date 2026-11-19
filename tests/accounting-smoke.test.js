@@ -38,8 +38,10 @@ test('dashboard balances exclude invalid-date and invalid-amount vouchers and re
       { date: '1405/01/04', lines: [{ code: '1101', debit: 40, credit: 0 }, { code: '4101', debit: 0, credit: 25 }] }
     ] },
     jalaliDateOrdinal(value) {
-      const match = String(value || '').match(/^(\\d{4})\\/01\\/(\\d{2})$/);
-      return match ? Number(match[1]) * 10000 + Number(match[2]) : null;
+      const [year, month, day] = String(value || '').split('/');
+      return /^\\d{4}$/.test(year) && month === '01' && /^\\d{2}$/.test(day)
+        ? Number(year) * 10000 + Number(month) * 100 + Number(day)
+        : null;
     }
   });
   const result = build();
