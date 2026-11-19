@@ -4033,6 +4033,10 @@
       const correctionPlan = audit.kind === 'transfer'
         ? HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, audit.transferId)
         : { ok: false, reason: 'انبارگردانی از مسیر اصلاح حواله انتقال قابل برگشت نیست.' };
+      const correctionEvents = audit.kind === 'transfer'
+        ? (state.auditLogs || []).filter(log => log && log.warehouseTransferCorrection &&
+            String(log.warehouseTransferCorrection.originalTransferId) === String(audit.transferId))
+        : [];
       const esc = HolooWarehouseAudit.escapeAuditText;
       if (audit.kind === 'stocktake') {
         const voucherRows = audit.voucherCandidates.length
@@ -4062,6 +4066,19 @@
         ' • تطبیق تاریخ: ' + (audit.dateMatches ? 'بله' : 'خیر') + '</div>' +
         '<div class="font-bold">' + esc(audit.reason) + '</div><div class="border-t border-indigo-100 pt-1"><strong>پیوند بچ‌های FIFO:</strong>' + batchRows + '</div>' +
         '<div>snapshot قبل از انتقال، کاربر و دستگاه در رکورد قدیمی موجود نیست؛ این گزارش بازسازی محدود است.</div>' +
+        '<div class="border-t border-indigo-100 pt-1"><strong>تاریخچه اصلاحات:</strong>' +
+        (correctionEvents.length
+          ? correctionEvents.map(log => {
+              const event = log.warehouseTransferCorrection;
+              return '<div class="mt-1">برگشت: ' + esc(event.originalTransferId) + ' • حواله جایگزین: ' +
+                esc(event.replacementTransferId) + ' • مقدار جدید: ' + faNum(event.replacementQuantity) +
+                ' KG • مقصد: ' + esc(event.replacementDestinationWarehouseId) +
+                '<div>زمان: ' + esc(log.createdAt || event.createdAt || 'ثبت نشده') +
+                ' • کاربر: ' + esc(log.actor || event.actor || 'ثبت نشده') +
+                ' • دستگاه: ' + esc(log.deviceId || event.deviceId || 'ثبت نشده') + '</div>' +
+                '<div>علت: ' + esc(event.reason || 'ثبت نشده') + '</div></div>';
+            }).join('')
+          : '<div>برای این حواله سابقه اصلاح ثبت نشده است.</div>') + '</div>' +
         '<div class="font-bold ' + (correctionPlan.ok ? 'text-emerald-800' : 'text-rose-800') + '">' +
         (correctionPlan.ok
           ? 'این حواله شرایط اولیه برگشت را دارد؛ با انتخاب «بررسی اصلاح گردش انبار» می‌توانید علت، مقصد و مقدار جایگزین را ثبت کنید.'
