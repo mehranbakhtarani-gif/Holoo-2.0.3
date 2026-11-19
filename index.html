@@ -3568,9 +3568,11 @@
         const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
       const operationMode = source?.mode === 'manual' ? 'manual' : 'automatic';
-      const voucherLines = lines.map(line => line.code === '1102' && (line.bankAccountId || source?.bankAccountId)
-        ? { ...line, bankAccountId: String(line.bankAccountId || source.bankAccountId) }
-        : { ...line });
+      const voucherLines = lines.map(line => {
+        if (line.code === '1102' && (line.bankAccountId || source?.bankAccountId)) return { ...line, bankAccountId: String(line.bankAccountId || source.bankAccountId) };
+        if (line.code === '1101' && (line.cashAccountId || source?.cashAccountId)) return { ...line, cashAccountId: String(line.cashAccountId || source.cashAccountId) };
+        return { ...line };
+      });
       state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, locked: false, desc, lines: voucherLines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
       if (source?.type === 'invoice') { const invoice = state.invoices.find(item => String(item.id) === String(source.id)); if (invoice) invoice.voucherId = id; }
@@ -8769,7 +8771,7 @@
         const accountCode = bAcc.type === 'cash' ? '1101' : '1102';
         const lines = dir === 'receive' ? [{ code: accountCode, partyId: null, desc: bAcc.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: bAcc.name, debit: 0, credit: amount }];
         try {
-          const voucherId = postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted', deferSave: true, ...(bAcc.type === 'bank' ? { bankAccountId: bAcc.id } : {}) });
+          const voucherId = postVoucher('تراکنش خزانه (' + bAcc.name + ')', lines, undefined, { type: 'treasury', id: txId, event: 'posted', deferSave: true, ...(bAcc.type === 'bank' ? { bankAccountId: bAcc.id } : { cashAccountId: bAcc.id }) });
           if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
         } catch (error) {
           showToast('ثبت سند خزانه ناموفق بود؛ مانده حساب و فاکتورها تغییر نکردند. ' + (error?.message || ''), 'error');
@@ -8868,6 +8870,27 @@
       addAudit(isCustomer ? 'استرداد وجه اعتبار مشتری' : 'دریافت وجه اعتبار تأمین‌کننده', { mode: 'manual', sourceType: 'party_credit_refund' });
       saveState(); closeModal('modal-party-credit-refund'); renderAll();
       showToast('تسویه اعتبار ثبت و موجودی صندوق/بانک به‌روزرسانی شد.');
+    }
+
+    function getCashAccountBookBalances() {
+      const accounts = (state.bankAccounts || []).filter(account => account.type === 'cash');
+      const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
+      let unassignedDebit = 0, unassignedCredit = 0, invalidLines = 0, invalidVoucherDates = 0;
+      const unassignedLines = [], unknownLines = [], inspected = new Set();
+      (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach((line, lineIndex) => {
+        if (String(line.code) !== '1101') return;
+        const key = String(voucher.id ?? 'row-' + lineIndex);
+        if (!inspected.has(key)) { inspected.add(key); if (!bankTxDateKey(voucher.date || voucher.operationDate)) invalidVoucherDates++; }
+        const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+        if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) { invalidLines++; return; }
+        const id = line.cashAccountId == null ? '' : String(line.cashAccountId);
+        const detail = { voucherId: voucher.id, date: voucher.date || '', lineIndex: lineIndex + 1, voucherDesc: voucher.desc || '', lineDesc: line.desc || '', debit, credit, cashAccountId: id };
+        const target = id ? byId.get(id) : (accounts.length === 1 ? byId.get(String(accounts[0].id)) : null);
+        if (target) { target.debit += debit; target.credit += credit; }
+        else if (id) unknownLines.push(detail);
+        else { unassignedDebit += debit; unassignedCredit += credit; unassignedLines.push(detail); }
+      }));
+      return { accounts: [...byId.values()].map(row => ({ ...row, net: row.debit - row.credit })), unassignedDebit, unassignedCredit, unassignedNet: unassignedDebit - unassignedCredit, invalidLines, invalidVoucherDates, unassignedLines, unknownLines, inspectedVoucherCount: inspected.size };
     }
 
     function getTreasuryTxAccount(tx) {
@@ -9322,6 +9345,7 @@
        computeCheckRas();
        const bookBalances = getBankAccountBookBalances();
        const balanceById = new Map(bookBalances.accounts.map(row => [String(row.account.id), row]));
+       const cashBalances = getCashAccountBookBalances();
        const bankGrid = document.getElementById('bank-accounts-grid');
        bankGrid.innerHTML = `
         <div class="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
@@ -9340,6 +9364,13 @@
               ${mismatch ? '<div class="rounded-lg bg-amber-50 p-2 text-[10px] leading-5 text-amber-800">مانده ذخیره‌شده قدیمی با دفترکل متفاوت است؛ عدد دفترکل نمایش داده شده و مقدار قدیمی مبنای گزارش نیست.</div>' : ''}
             </div>`;
         }).join('') || '<div class="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">هنوز حساب بانکی تعریف نشده است. برای شروع، «تعریف حساب بانکی» را انتخاب کنید.</div>'}
+        <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2"><div><strong class="text-sm">کنترل مانده صندوق‌ها</strong><p class="mt-1 text-[10px] text-slate-500">مانده بر اساس ردیف‌های دفترکل حساب ۱۱۰۱ و شناسه صندوق</p></div><span class="text-[10px] font-bold">تعداد صندوق: ${faNum(cashBalances.accounts.length)}</span></div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2">${cashBalances.accounts.map(row => '<div class="rounded-lg border bg-slate-50 p-2"><div class="text-[10px] text-slate-500">' + window.escapeBankReconcileText(row.account.name || 'صندوق') + '</div><strong class="tabular-nums">' + money(row.net) + '</strong></div>').join('') || '<p class="text-xs text-slate-500">صندوقی تعریف نشده است.</p>'}</div>
+          ${cashBalances.unassignedLines.length ? '<div class="rounded-lg bg-amber-50 p-2 text-[10px] text-amber-900">هشدار: ' + faNum(cashBalances.unassignedLines.length) + ' ردیف دفترکل صندوق شناسه مشخص ندارد و به‌صورت قطعی به یک صندوق قابل انتساب نیست.</div>' : ''}
+          ${cashBalances.unknownLines.length ? '<div class="rounded-lg bg-rose-50 p-2 text-[10px] text-rose-900">هشدار: ' + faNum(cashBalances.unknownLines.length) + ' ردیف به شناسه صندوق تعریف‌نشده متصل است.</div>' : ''}
+          ${cashBalances.invalidLines || cashBalances.invalidVoucherDates ? '<div class="rounded-lg bg-rose-50 p-2 text-[10px] text-rose-900">ردیف مبلغ نامعتبر: ' + faNum(cashBalances.invalidLines) + ' • سند با تاریخ نامعتبر: ' + faNum(cashBalances.invalidVoucherDates) + '</div>' : ''}
+        </div>
       `;
 
       const checkAudit = buildCheckAuditSummary();
