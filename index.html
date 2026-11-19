@@ -6313,6 +6313,7 @@
       state.treasuryTxs.unshift({
         id: txId, date: getTodayJalaliDate(), dir, partyId,
         method: method === 'check' ? 'چک صیادی' : (method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی'),
+        ...(selectedAccount ? { bankAccountId: selectedAccount.id } : {}),
         amount, allocInv: singleAllocation ? `#${faNum(singleAllocation.invoiceId)}` : (allocations.length ? `${faNum(allocations.length)} فاکتور` : '—'),
         allocInvId: singleAllocation ? singleAllocation.invoiceId : null,
         allocations, desc: desc || 'تراکنش خزانه'
@@ -6396,6 +6397,99 @@
       showToast('تسویه اعتبار ثبت و موجودی صندوق/بانک به‌روزرسانی شد.');
     }
 
+    function getTreasuryTxAccount(tx) {
+      if (!tx || !['حواله بانکی','صندوق نقدی'].includes(tx.method)) return null;
+      const type = tx.method === 'حواله بانکی' ? 'bank' : 'cash';
+      const code = type === 'bank' ? '1102' : '1101';
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'treasury' && String(item.sourceId) === String(tx.id) && (item.sourceEvent || 'default') === 'posted');
+      const line = (voucher?.lines || []).find(item => String(item.code) === code && (Number(item.debit || 0) > 0 || Number(item.credit || 0) > 0));
+      const accountId = tx.bankAccountId || line?.bankAccountId;
+      const accounts = (state.bankAccounts || []).filter(item => item.type === type);
+      if (accountId) return accounts.find(item => String(item.id) === String(accountId)) || null;
+      return accounts.length === 1 ? accounts[0] : null;
+    }
+
+    function canCorrectTreasuryTx(tx) {
+      if (!tx || tx.kind === 'party_credit' || !['حواله بانکی','صندوق نقدی'].includes(tx.method) || tx.correctedByTxId) return false;
+      if (Number(tx.allocInvId || 0) > 0 || (tx.allocations || []).some(item => Number(item.amount || 0) > 0)) return false;
+      if ((state.checks || []).some(check => String(check.sourceTxId || '') === String(tx.id))) return false;
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'treasury' && String(item.sourceId) === String(tx.id) && (item.sourceEvent || 'default') === 'posted');
+      if (!voucher || voucher.locked || (voucher.lines || []).length < 2) return false;
+      return !!getTreasuryTxAccount(tx) && !!(state.parties || []).some(party => String(party.id) === String(tx.partyId));
+    }
+
+    function openTreasuryCorrection(txId) {
+      const tx = (state.treasuryTxs || []).find(item => String(item.id) === String(txId));
+      if (!canCorrectTreasuryTx(tx)) { showToast('این تراکنش چک، تخصیص فاکتور یا وابستگی نامشخص دارد؛ اصلاح مستقیم آن مجاز نیست.', 'error'); return; }
+      let modal = document.getElementById('modal-treasury-correction');
+      if (!modal) {
+        modal = document.createElement('div'); modal.id = 'modal-treasury-correction';
+        modal.className = 'fixed inset-0 z-[10060] bg-slate-950/60 p-3 flex items-center justify-center hidden';
+        modal.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] overflow-y-auto p-4 space-y-3"><div class="flex justify-between items-center"><h3 id="tc-title" class="font-black">اصلاح تراکنش خزانه</h3><button type="button" onclick="closeModal('modal-treasury-correction')" class="px-3 py-2 rounded-lg bg-slate-100 font-bold">بستن</button></div><p class="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3">سند اولیه حذف نمی‌شود؛ سند معکوس و تراکنش جایگزین با سابقه حسابرسی ثبت خواهند شد. تراکنش‌های دارای تخصیص فاکتور یا چک از این مسیر قابل اصلاح نیستند.</p><label class="block text-xs font-bold">نوع عملیات</label><select id="tc-dir" class="touch-btn w-full border rounded-xl px-3"><option value="receive">دریافت</option><option value="pay">پرداخت</option></select><label class="block text-xs font-bold">طرف حساب</label><select id="tc-party" class="touch-btn w-full border rounded-xl px-3"></select><label class="block text-xs font-bold">روش</label><select id="tc-method" class="touch-btn w-full border rounded-xl px-3" onchange="renderTreasuryCorrectionAccounts()"><option value="bank">حواله بانکی</option><option value="cash">صندوق نقدی</option></select><label class="block text-xs font-bold">حساب</label><select id="tc-account" class="touch-btn w-full border rounded-xl px-3"></select><label class="block text-xs font-bold">مبلغ (ریال)</label><input id="tc-amount" type="number" min="1" class="touch-btn w-full border rounded-xl px-3 tabular-nums"/><label class="block text-xs font-bold">شرح</label><input id="tc-desc" class="touch-btn w-full border rounded-xl px-3"/><div class="flex justify-end gap-2"><button type="button" onclick="closeModal('modal-treasury-correction')" class="px-4 py-2 rounded-xl bg-slate-100 font-bold">انصراف</button><button type="button" onclick="saveTreasuryCorrection()" class="px-4 py-2 rounded-xl bg-holoo-700 text-white font-bold">ثبت سند معکوس و تراکنش جایگزین</button></div></div>`;
+        document.body.appendChild(modal);
+      }
+      modal.dataset.txId = String(tx.id);
+      document.getElementById('tc-title').textContent = 'اصلاح تراکنش خزانه ' + tx.id;
+      document.getElementById('tc-dir').value = tx.dir;
+      document.getElementById('tc-party').innerHTML = (state.parties || []).map(party => `<option value="${escapeLedgerText(party.id)}">${escapeLedgerText(party.name)}</option>`).join('');
+      document.getElementById('tc-party').value = String(tx.partyId);
+      document.getElementById('tc-method').value = tx.method === 'حواله بانکی' ? 'bank' : 'cash';
+      document.getElementById('tc-amount').value = String(Number(tx.amount || 0));
+      document.getElementById('tc-desc').value = tx.desc || '';
+      renderTreasuryCorrectionAccounts(getTreasuryTxAccount(tx)?.id);
+      openModal('modal-treasury-correction');
+    }
+
+    function renderTreasuryCorrectionAccounts(selectedId) {
+      const type = document.getElementById('tc-method')?.value === 'cash' ? 'cash' : 'bank';
+      const select = document.getElementById('tc-account'); if (!select) return;
+      const accounts = (state.bankAccounts || []).filter(item => item.type === type);
+      select.innerHTML = accounts.map(item => `<option value="${escapeLedgerText(item.id)}">${escapeLedgerText(item.name)}</option>`).join('');
+      if (selectedId !== undefined && selectedId !== null) select.value = String(selectedId);
+    }
+
+    function saveTreasuryCorrection() {
+      const modal = document.getElementById('modal-treasury-correction');
+      const txId = modal?.dataset.txId;
+      const originalLive = (state.treasuryTxs || []).find(item => String(item.id) === String(txId));
+      if (!canCorrectTreasuryTx(originalLive)) { showToast('تراکنش برای اصلاح پیدا نشد یا وابستگی جدیدی پیدا کرده است.', 'error'); return; }
+      const oldAccountLive = getTreasuryTxAccount(originalLive);
+      const dir = document.getElementById('tc-dir').value;
+      const partyId = document.getElementById('tc-party').value;
+      const method = document.getElementById('tc-method').value;
+      const accountId = document.getElementById('tc-account').value;
+      const amount = Number(document.getElementById('tc-amount').value || 0);
+      const desc = document.getElementById('tc-desc').value.trim();
+      const partyLive = (state.parties || []).find(item => String(item.id) === String(partyId));
+      const accountLive = (state.bankAccounts || []).find(item => String(item.id) === String(accountId) && item.type === method);
+      if (!['receive','pay'].includes(dir) || !partyLive || !accountLive || !Number.isFinite(amount) || amount <= 0 || !desc || !oldAccountLive) { showToast('طرف حساب، حساب خزانه، شرح و مبلغ معتبر لازم است.', 'error'); return; }
+      const before = state; state = JSON.parse(JSON.stringify(state));
+      try {
+        const original = state.treasuryTxs.find(item => String(item.id) === String(txId));
+        const oldAccount = state.bankAccounts.find(item => String(item.id) === String(oldAccountLive.id));
+        const newAccount = state.bankAccounts.find(item => String(item.id) === String(accountId));
+        const oldVoucher = state.vouchers.find(item => item.sourceType === 'treasury' && String(item.sourceId) === String(txId) && (item.sourceEvent || 'default') === 'posted');
+        if (!oldAccount || !newAccount || !oldVoucher) throw new Error('سند یا حساب مبدا تراکنش پیدا نشد.');
+        const correctionId = createStableId('treasury-correction');
+        const reversalLines = (oldVoucher.lines || []).map(line => ({ ...line, desc: 'معکوس: ' + (line.desc || oldVoucher.desc || ''), debit: Number(line.credit || 0), credit: Number(line.debit || 0) }));
+        const reversalVoucherId = postVoucher('سند معکوس تراکنش خزانه ' + txId, reversalLines, getTodayJalaliDate(), { type: 'treasury_correction', id: correctionId, event: 'reversal', mode: 'manual', deferSave: true });
+        const accountCode = method === 'bank' ? '1102' : '1101';
+        const lines = dir === 'receive'
+          ? [{ code: accountCode, partyId: null, desc: accountLive.name, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'دریافت از مشتری', debit: 0, credit: amount }]
+          : [{ code: '2101', partyId, desc: 'پرداخت به تأمین‌کننده', debit: amount, credit: 0 }, { code: accountCode, partyId: null, desc: accountLive.name, debit: 0, credit: amount }];
+        const replacementVoucherId = postVoucher('تراکنش اصلاحی خزانه (' + accountLive.name + ')', lines, getTodayJalaliDate(), { type: 'treasury_correction', id: correctionId, event: 'replacement', mode: 'manual', deferSave: true, ...(method === 'bank' ? { bankAccountId: accountLive.id } : {}) });
+        oldAccount.balance = Number(oldAccount.balance || 0) + (original.dir === 'receive' ? -Number(original.amount || 0) : Number(original.amount || 0));
+        newAccount.balance = Number(newAccount.balance || 0) + (dir === 'receive' ? amount : -amount);
+        const replacementTxId = createStableId('TR-CORR');
+        original.correctedByTxId = replacementTxId; original.reversalVoucherId = reversalVoucherId; original.correctionCompletedAt = new Date().toISOString();
+        const replacementVoucher = state.vouchers.find(item => Number(item.id) === Number(replacementVoucherId)); if (replacementVoucher) replacementVoucher.correctsTxId = String(txId);
+        const reversalVoucher = state.vouchers.find(item => Number(item.id) === Number(reversalVoucherId)); if (reversalVoucher) reversalVoucher.reversesTxId = String(txId);
+        state.treasuryTxs.unshift({ id: replacementTxId, date: getTodayJalaliDate(), dir, partyId, method: method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی', bankAccountId: accountLive.id, amount, allocInv: '—', allocInvId: null, allocations: [], desc, correctsTxId: String(txId), voucherId: replacementVoucherId, reversalVoucherId });
+        addAudit('اصلاح تراکنش خزانه ' + txId + ' با تراکنش جایگزین ' + replacementTxId, { mode: 'manual', sourceType: 'treasury_correction', sourceId: correctionId, previous: { txId: String(txId), amount: Number(originalLive.amount || 0), dir: originalLive.dir }, note: 'تراکنش اولیه حفظ شد؛ سند معکوس و تراکنش جایگزین در یک عملیات ثبت شدند.' });
+        saveState(); closeModal('modal-treasury-correction'); renderAll();
+        showToast('سند معکوس و تراکنش اصلاح‌شده خزانه ثبت شدند.', 'success');
+      } catch (error) { state = before; showToast('اصلاح خزانه انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error'); }
+    }
     function renderTreasuryModule() {
       document.getElementById('bank-accounts-grid').innerHTML = state.bankAccounts.map(b => `
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 flex justify-between items-center text-xs">
@@ -6457,9 +6551,9 @@
             </div>`;
         }
         return `
-          <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center">
-            <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span></div>
-            <strong class="tabular-nums">${money(t.amount)}</strong>
+          <div class="p-2.5 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
+            <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span>${t.correctsTxId ? `<span class="block text-[10px] text-indigo-700">نسخه اصلاحی تراکنش ${t.correctsTxId}</span>` : ''}${t.correctedByTxId ? `<span class="block text-[10px] text-slate-600">جایگزین‌شده با ${t.correctedByTxId}</span>` : ''}</div>
+            <div class="flex items-center gap-2"><strong class="tabular-nums">${money(t.amount)}</strong>${canCorrectTreasuryTx(t) ? `<button type="button" onclick="openTreasuryCorrection('${t.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}</div>
           </div>`;
       }).join('');
       renderGuaranteesAndCommitments();
