@@ -14,7 +14,7 @@ function extract(name, endMarker) {
   return html.slice(start, end);
 }
 function load(source, fnName, context) {
-  const sandbox = context;
+  const sandbox = { jalaliDateOrdinal: () => 1, ...context };
   vm.createContext(sandbox);
   vm.runInContext(source + `; this.__fn = ${fnName};`, sandbox);
   return sandbox.__fn;
