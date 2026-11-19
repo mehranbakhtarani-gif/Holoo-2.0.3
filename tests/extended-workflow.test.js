@@ -113,6 +113,9 @@ function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAcc
   let saves = 0;
   const submit = load(extractFunction('submitInvoice', 'function renderInvoicesModule()'), 'submitInvoice', {
     state, invDraft: draft, document: fakeDocument(values), getTodayJalaliDate() { return '1405/09/02'; },
+    normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
+    jalaliDateOrdinal(value) { return /^1405\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; },
+    getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; },
     addStockBatch(product, details) { product.batches = product.batches || []; product.batches.push({ ...details, id: 'TEST-BATCH-' + product.batches.length, remainingQty: details.quantity }); },
     consumeFifoStock(product, quantity) {
       product.batches = product.batches || [];
