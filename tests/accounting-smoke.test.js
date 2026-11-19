@@ -282,5 +282,49 @@ test('bank statement review prioritizes exact matches and exposes single-dimensi
   assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/02' }).length, 0);
 });
 
+test('inventory valuation reconciles to GL control account 1105 and withholds unverified totals', () => {
+  const source = section('function buildInventoryControlAccountReconciliation()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildInventoryControlAccountReconciliation', {
+    state: { costingMethod: 'FIFO', products: [
+      { id: 'P1', name: 'کالای اول', warehouseId: 'W1', stock: 5, bookValue: 250 },
+      { id: 'P2', name: 'کالای دوم', warehouseId: 'W2', stock: 3, bookValue: 150 }
+    ], vouchers: [
+      { id: 1, date: '1405/01/01', lines: [{ code: '1105', debit: 500, credit: 0 }, { code: '3101', debit: 0, credit: 500 }] },
+      { id: 2, date: '1405/01/02', lines: [{ code: '6101', debit: 100, credit: 0 }, { code: '1105', debit: 0, credit: 100 }] }
+    ] },
+    getInventoryBookValue(product) { return product.bookValue; },
+    jalaliDateOrdinal(value) { return /^1405\\/01\\/\\d{2}$/.test(String(value || '')) ? 1 : null; },
+    inspectTrialBalanceVoucher(voucher) { return voucher.validation || { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  const matched = build();
+  assert.equal(matched.status, 'matched');
+  assert.equal(matched.inventoryValue, 400);
+  assert.equal(matched.controlBalance, 400);
+  assert.equal(matched.difference, 0);
+  assert.equal(matched.details[0].productId, 'P1');
+
+  const mismatchBuild = loadFunction(source, 'buildInventoryControlAccountReconciliation', {
+    state: { costingMethod: 'AVG', products: [{ id: 'P1', name: 'کالا', stock: 5, bookValue: 500 }], vouchers: [
+      { id: 3, date: '1405/01/01', lines: [{ code: '1105', debit: 400, credit: 0 }, { code: '3101', debit: 0, credit: 400 }] }
+    ] },
+    getInventoryBookValue(product) { return product.bookValue; },
+    jalaliDateOrdinal() { return 1; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  const mismatch = mismatchBuild();
+  assert.equal(mismatch.status, 'mismatch');
+  assert.equal(mismatch.difference, 100);
+
+  const unverifiedBuild = loadFunction(source, 'buildInventoryControlAccountReconciliation', {
+    state: { costingMethod: 'FIFO', products: [{ id: 'P2', name: 'سری ساخت نامعتبر', stock: 5, bookValue: null }], vouchers: [
+      { id: 4, date: '1405/01/01', lines: [{ code: '1105', debit: 300, credit: 0 }, { code: '3101', debit: 0, credit: 300 }] }
+    ] },
+    getInventoryBookValue(product) { return product.bookValue; },
+    jalaliDateOrdinal() { return 1; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  assert.equal(unverifiedBuild().status, 'unverified');
+});
+ 
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
