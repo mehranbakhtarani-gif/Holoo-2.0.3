@@ -388,7 +388,51 @@
     return null;
   }
 
-  const api = { normalizeItems, allocateImportExpenses, calculateLandedCost, calculateShipmentProfit, createReceiptSnapshot, getReceiptReversalBlockReason };
+
+  function escapeReceiptAuditText(value) {
+    return String(value === undefined || value === null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getReceiptAuditView(shipment, vouchers) {
+    if (!shipment || typeof shipment !== 'object') {
+      return { isPosted: false, activeSnapshot: null, history: [], registrationVoucher: null };
+    }
+    const voucherList = Array.isArray(vouchers) ? vouchers : [];
+    const registrationVoucher = voucherList.find(voucher =>
+      voucher && voucher.sourceType === 'import' &&
+      String(voucher.sourceId) === String(shipment.id) &&
+      (voucher.sourceEvent || 'default') === 'registration'
+    ) || null;
+    const history = (Array.isArray(shipment.receiptHistory) ? shipment.receiptHistory : []).map(entry => {
+      const reversal = entry && entry.reversal && typeof entry.reversal === 'object' ? entry.reversal : null;
+      const voucherId = reversal && reversal.preservedRegistrationVoucherId
+        ? String(reversal.preservedRegistrationVoucherId)
+        : '';
+      const preservedVoucher = voucherId
+        ? voucherList.find(voucher => voucher && String(voucher.id) === voucherId) || null
+        : null;
+      return {
+        snapshot: entry && entry.snapshot && typeof entry.snapshot === 'object' ? entry.snapshot : null,
+        reversal,
+        preservedVoucher
+      };
+    });
+    return {
+      isPosted: shipment.postedToWh === true,
+      activeSnapshot: shipment.receiptSnapshot && typeof shipment.receiptSnapshot === 'object'
+        ? shipment.receiptSnapshot
+        : null,
+      history,
+      registrationVoucher
+    };
+  }
+
+  const api = { normalizeItems, allocateImportExpenses, calculateLandedCost, calculateShipmentProfit, createReceiptSnapshot, getReceiptReversalBlockReason, getReceiptAuditView, escapeReceiptAuditText };
   root.HolooImportDomain = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
