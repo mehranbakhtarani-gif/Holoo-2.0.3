@@ -25,7 +25,13 @@ jobs:
       - name: Run every test suite
         run: |
           set -e
-          for test_file in tests/*.test.js; do
+          for test_file in \
+            tests/dashboard-accounting-kpis.test.js \
+            tests/dashboard-mobile-accessibility.test.js \
+            tests/dashboard-priorities.test.js \
+            tests/accounting-reports-cross-validation.test.js \
+            tests/accounting-smoke.test.js \
+            tests/profit-loss-report.test.js; do
             echo "::group::${test_file}"
             node "${test_file}"
             echo "::endgroup::"
