@@ -50,8 +50,8 @@ test('dashboard balances exclude invalid-date and invalid-amount vouchers and re
   assert.equal(result.balances['4101'].credTurn, 100);
   assert.equal(result.quality.invalidDateVouchers, 1);
   assert.equal(result.quality.invalidAmountVouchers, 1);
-  assert.equal(result.quality.invalidStructureVouchers, 1);
-  assert.equal(result.quality.unbalancedVouchers, 2);
+  assert.equal(result.quality.invalidStructureVouchers, 2);
+  assert.equal(result.quality.unbalancedVouchers, 1);
 });
 
 // 1. Double-entry posting, source idempotency and cross-document references.
