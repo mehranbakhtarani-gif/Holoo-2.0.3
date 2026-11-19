@@ -62,6 +62,11 @@ function load(source, name, context) {
   };
   vm.createContext(sandbox);
   if (helperSource) vm.runInContext(helperSource, sandbox);
+  const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
+  const warehouseResolverEnd = html.indexOf('function renderInvoiceProductOptions(', warehouseResolverStart);
+  if (warehouseResolverStart >= 0 && warehouseResolverEnd > warehouseResolverStart) {
+    vm.runInContext(html.slice(warehouseResolverStart, warehouseResolverEnd), sandbox);
+  }
   vm.runInContext(source + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
