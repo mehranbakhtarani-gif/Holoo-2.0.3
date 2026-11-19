@@ -30,7 +30,7 @@ test('dashboard balances exclude invalid-date and invalid-amount vouchers and re
   const source = section('function buildDashboardAccountBalances()', 'function getPartyNetBalance(');
   const build = loadFunction(source, 'buildDashboardAccountBalances', {
     CHART_ACCOUNTS: [{ code: '1101', name: 'Cash' }, { code: '4101', name: 'Sales' }],
-    state: { vouchers: [
+    state: { fiscalYear: '1405', vouchers: [
       { date: '1405/01/01', lines: [{ code: '1101', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }] },
       { date: 'invalid', lines: [{ code: '1101', debit: 900, credit: 0 }, { code: '4101', debit: 0, credit: 900 }] },
       { date: '1405/01/02', lines: [{ code: '1101', debit: 'bad', credit: 0 }, { code: '4101', debit: 0, credit: 50 }] },
