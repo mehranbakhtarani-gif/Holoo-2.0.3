@@ -225,6 +225,8 @@ const closeState = {
 const closeSandbox = {
   state:closeState, CHART_ACCOUNTS,
   normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
+  money: value => String(value), confirm: () => true,
+  getAccountingPeriodLockForDate: () => null,
   addAudit(){}, saveState(){return true;}, renderAccountingModule(){}, showToast(){},
   getTodayJalaliDate:()=>closeSandbox.testToday,
   testToday:'1404/12/29'
