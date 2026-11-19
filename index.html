@@ -1060,6 +1060,21 @@
                 <div><label class="block font-bold mb-1">ارزش خالص فروش هر واحد کالا (NRV، ریال)</label><input id="plan-nrv" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
               </div>
               <p class="text-[10px] text-slate-500">هزینه تأمین مالی و فروش در بهای موجودی منظور نشده‌اند. مالیات سود صرفاً برآوردی است و جایگزین محاسبه مالیاتی یا اظهارنامه نیست.</p>
+              <div class="border-t pt-3 space-y-2">
+                <h4 class="font-black text-xs">زمان‌بندی پرداخت و وصول وجه (روز پس از تاریخ شروع)</h4>
+                <p class="text-[10px] text-slate-500">درصد هر ردیف، سهمی از همان مبلغ است که در روز تعیین‌شده پرداخت/وصول می‌شود. سهم باقی‌مانده به‌عنوان زمان‌بندی‌نشده گزارش می‌شود؛ این پیش‌بینی، گردش واقعی بانک نیست.</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                  <div><label class="block font-bold mb-1">پرداخت خرید (%)</label><input id="plan-cf-purchase-pct" type="number" min="0" max="100" step="0.01" value="100" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">روز پرداخت خرید</label><input id="plan-cf-purchase-day" type="number" min="0" step="1" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">پرداخت هزینه‌های مستقیم و مالیات قابل‌بازیافت (%)</label><input id="plan-cf-direct-pct" type="number" min="0" max="100" step="0.01" value="100" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">روز پرداخت هزینه‌های مستقیم</label><input id="plan-cf-direct-day" type="number" min="0" step="1" value="30" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">پرداخت تأمین مالی و فروش (%)</label><input id="plan-cf-overhead-pct" type="number" min="0" max="100" step="0.01" value="100" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">روز پرداخت هزینه‌های جانبی</label><input id="plan-cf-overhead-day" type="number" min="0" step="1" value="45" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">وصول فروش (%)</label><input id="plan-cf-sales-pct" type="number" min="0" max="100" step="0.01" value="100" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                  <div><label class="block font-bold mb-1">روز وصول فروش</label><input id="plan-cf-sales-day" type="number" min="0" step="1" value="90" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                </div>
+                <div id="planner-cashflow" class="overflow-x-auto"></div>
+              </div>
             </div>
             <div id="planner-validation" class="hidden rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800 text-[11px]"></div>
             <div id="planner-scenarios-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
@@ -8044,7 +8059,7 @@
     }
 
     function capitalPlanReadInputs() {
-      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv','plan-import-id'];
+      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv','plan-cf-purchase-pct','plan-cf-purchase-day','plan-cf-direct-pct','plan-cf-direct-day','plan-cf-overhead-pct','plan-cf-overhead-day','plan-cf-sales-pct','plan-cf-sales-day','plan-import-id'];
       const data = {};
       ids.forEach(id => { const el = document.getElementById(id); data[id] = el ? (el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value.trim()) : ''; });
       return data;
@@ -8092,12 +8107,14 @@
     }
     function capitalPlanValidation(v) {
       const errors = [];
-      const numeric = ['plan-count','plan-units','plan-days','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv'];
+      const numeric = ['plan-count','plan-units','plan-days','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv','plan-cf-purchase-pct','plan-cf-purchase-day','plan-cf-direct-pct','plan-cf-direct-day','plan-cf-overhead-pct','plan-cf-overhead-day','plan-cf-sales-pct','plan-cf-sales-day'];
       numeric.forEach(id => { if (!Number.isFinite(Number(v[id])) || Number(v[id]) < 0) errors.push('مقدار نامعتبر یا منفی در ' + id); });
       if (!(Number(v['plan-count']) >= 1 && Number.isInteger(Number(v['plan-count'])) && Number(v['plan-count']) <= 1000)) errors.push('تعداد کانتینر باید عدد صحیح بین ۱ تا ۱۰۰۰ باشد.');
       if (!(Number(v['plan-fx']) > 0)) errors.push('نرخ ارز باید بزرگ‌تر از صفر باشد.');
       if (!(Number(v['plan-fob']) > 0)) errors.push('ارزش FOB باید بزرگ‌تر از صفر باشد.');
       if (Number(v['plan-discount']) > 100 || Number(v['plan-tax-rate']) > 100) errors.push('درصد تخفیف و نرخ مالیات نمی‌تواند بیش از ۱۰۰ باشد.');
+      ['plan-cf-purchase-pct','plan-cf-direct-pct','plan-cf-overhead-pct','plan-cf-sales-pct'].forEach(id => { if (Number(v[id]) > 100) errors.push('درصدهای زمان‌بندی جریان نقدی نباید بیش از ۱۰۰ باشند.'); });
+      ['plan-cf-purchase-day','plan-cf-direct-day','plan-cf-overhead-day','plan-cf-sales-day'].forEach(id => { if (!Number.isInteger(Number(v[id]))) errors.push('روزهای جریان نقدی باید عدد صحیح باشند.'); });
       if (!(Number(v['plan-units']) > 0)) errors.push('تعداد واحد کالا در هر کانتینر باید بزرگ‌تر از صفر باشد.');
       if (!(Number(v['plan-sell']) >= 0)) errors.push('فروش پیش‌بینی‌شده معتبر نیست.');
       return errors;
@@ -8119,6 +8136,7 @@
         grid.innerHTML = '<div class="col-span-full rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800">تا زمان اصلاح ورودی‌ها، خروجی مالی نمایش داده نمی‌شود.</div>';
         const sens = document.getElementById('planner-fx-sensitivity'); if (sens) sens.innerHTML = '—';
         renderCapitalPlanSavedList();
+        renderCapitalPlanCashflow(v, null);
         renderCapitalPlanReconciliation(v, null);
         return;
       }
@@ -8139,8 +8157,9 @@
           '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش (هزینه غیرموجودی)</span><b>' + money(r.finance + r.selling) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>کارمزد حواله منظورشده در بهای واردات</span><b>' + money(r.bankFees) + '</b></div>' +
-          '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی موجودی طبق NRV</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +
-          '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی پس از آزمون NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی کل موجودی طبق NRV (تحلیل جداگانه)</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی کل موجودی پس از NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
+          '<div class="rounded-lg bg-amber-50 text-amber-900 p-2 text-[10px]">آزمون NRV در این نسخه تحلیل جداگانه کل موجودی است و در سود پیش‌بینی‌شده/مالیات کسر نشده؛ برای اثرگذاری بر سود باید مقدار فروش‌رفته و موجودی پایان دوره به تفکیک کالا مشخص باشد.</div>' +
           '<div class="flex justify-between gap-2 ' + profitClass + ' font-black text-xs border-t pt-1"><span>سود پیش‌بینی‌شده قبل از مالیات</span><b>' + money(r.profitBeforeTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>مالیات برآوردی</span><b>' + money(r.estimatedTax) + '</b></div>' +
           '<div class="flex justify-between gap-2 font-black"><span>سود پس از مالیات برآوردی</span><b>' + money(r.estimatedAfterTax) + '</b></div>' +
@@ -8158,8 +8177,49 @@
       }).join('');
       const sens = document.getElementById('planner-fx-sensitivity');
       if (sens) sens.innerHTML = '<table class="w-full text-right text-[11px]"><thead><tr><th class="p-2">تغییر ارز</th><th class="p-2">نرخ جدید</th><th class="p-2">سود قبل از مالیات</th><th class="p-2">ROI</th></tr></thead><tbody>' + sensitivity + '</tbody></table>';
+      renderCapitalPlanCashflow(v, base);
       renderCapitalPlanReconciliation(v, base);
       renderCapitalPlanSavedList();
+    }
+    function capitalPlanCashflow(input, calculation) {
+      const v = input || {};
+      const pct = (id) => Math.max(0, Math.min(100, Number(v[id] || 0))) / 100;
+      const day = (id) => Math.max(0, Math.floor(Number(v[id] || 0)));
+      const events = [
+        {day:day('plan-cf-purchase-day'), label:'پرداخت خرید ارزی', out:calculation.purchase * pct('plan-cf-purchase-pct'), in:0},
+        {day:day('plan-cf-direct-day'), label:'پرداخت هزینه مستقیم و مالیات قابل‌بازیافت', out:(calculation.directCost + calculation.recoverableTax) * pct('plan-cf-direct-pct'), in:0},
+        {day:day('plan-cf-overhead-day'), label:'پرداخت تأمین مالی و فروش', out:(calculation.finance + calculation.selling) * pct('plan-cf-overhead-pct'), in:0},
+        {day:day('plan-cf-sales-day'), label:'وصول فروش پیش‌بینی‌شده', out:0, in:calculation.revenue * pct('plan-cf-sales-pct')}
+      ].sort((a,b)=>a.day-b.day);
+      const grouped = new Map();
+      events.forEach(e => {
+        const row = grouped.get(e.day) || {day:e.day,out:0,in:0,labels:[]};
+        row.out += e.out; row.in += e.in; row.labels.push(e.label); grouped.set(e.day,row);
+      });
+      let balance=0, peakDeficit=0;
+      const rows=[...grouped.values()].sort((a,b)=>a.day-b.day).map(r=>{
+        const net=r.in-r.out; balance+=net; peakDeficit=Math.max(peakDeficit,-balance);
+        return {...r,net,balance};
+      });
+      const scheduledOut=events.reduce((s,e)=>s+e.out,0);
+      const scheduledIn=events.reduce((s,e)=>s+e.in,0);
+      const totalOut=calculation.purchase+calculation.directCost+calculation.recoverableTax+calculation.finance+calculation.selling;
+      return {rows,peakDeficit,endingBalance:balance,scheduledOut,scheduledIn,unscheduledOut:Math.max(0,totalOut-scheduledOut),uncollectedSales:Math.max(0,calculation.revenue-scheduledIn)};
+    }
+    function renderCapitalPlanCashflow(input, calculation) {
+      const el=document.getElementById('planner-cashflow');
+      if(!el) return;
+      if(!calculation){el.innerHTML='<div class="text-xs text-slate-500 p-2">برای نمایش زمان‌بندی، ابتدا ورودی‌های مالی را اصلاح کنید.</div>';return;}
+      const cf=capitalPlanCashflow(input,calculation);
+      const rows=cf.rows.map(r=>'<tr class="border-t"><td class="p-2">'+faNum(r.day)+'</td><td class="p-2">'+r.labels.map(capitalPlanEscape).join('، ')+'</td><td class="p-2">'+money(r.out)+'</td><td class="p-2">'+money(r.in)+'</td><td class="p-2 font-bold">'+money(r.balance)+'</td></tr>').join('');
+      el.innerHTML='<div class="grid grid-cols-2 md:grid-cols-4 gap-2 my-2 text-[10px]">'+
+        '<div class="rounded-lg bg-slate-50 border p-2">حداکثر کسری تجمعی<br><b>'+money(cf.peakDeficit)+'</b></div>'+
+        '<div class="rounded-lg bg-slate-50 border p-2">مانده خالص پایان برنامه<br><b>'+money(cf.endingBalance)+'</b></div>'+
+        '<div class="rounded-lg bg-slate-50 border p-2">پرداخت زمان‌بندی‌نشده<br><b>'+money(cf.unscheduledOut)+'</b></div>'+
+        '<div class="rounded-lg bg-slate-50 border p-2">فروش وصول‌نشده<br><b>'+money(cf.uncollectedSales)+'</b></div></div>'+
+        '<table class="w-full text-right text-[10px]"><thead><tr><th class="p-2">روز</th><th class="p-2">رویداد</th><th class="p-2">خروج وجه</th><th class="p-2">ورود وجه</th><th class="p-2">مانده تجمعی</th></tr></thead><tbody>'+
+        (rows||'<tr><td colspan="5" class="p-2 text-slate-500">رویدادی برای نمایش نیست.</td></tr>')+'</tbody></table>'+
+        '<p class="text-[10px] text-amber-800 bg-amber-50 p-2 rounded-lg mt-2">این جدول سناریوی زمان‌بندی بر اساس درصدها و روزهای واردشده است؛ بدون مانده افتتاحیه، برنامه اقساط واقعی و تأیید اسناد بانکی، معادل پیش‌بینی نقدینگی قطعی یا تطبیق بانکی نیست.</p>';
     }
     function renderCapitalPlanReconciliation(input, calculation) {
       const el = document.getElementById('planner-reconciliation');
@@ -8184,9 +8244,19 @@
         const actualCost = Number(linked.totalLandedRial || 0);
         const plannedCost = calculation ? Number(calculation.landedCost || 0) : 0;
         const variance = actualCost - plannedCost;
-        comparison = moneyTile('بهای ثبت‌شده پرونده منتخب',actualCost,linked.id + ' · ' + (linked.supplier || 'فروشنده نامشخص')) +
-          moneyTile('اختلاف واقعی با برآورد فعلی',variance,calculation ? 'مثبت = هزینه واقعی بیشتر؛ فقط با یکسان بودن دامنه و مقدار پروژه قابل تفسیر است' : 'برای مقایسه، ابتدا ورودی‌های برنامه را معتبر کنید') +
-          tile('مانده ارزی پرونده منتخب',outstandingFx, (linked.currency || '') + ' · از ' + faNum(linked.fxTotal || 0) + ' ثبت‌شده');
+        const actualItems=Array.isArray(linked.items)?linked.items:[];
+        const actualExpenses=linked.expenses && typeof linked.expenses==='object'?linked.expenses:{};
+        const expenseLabels={freight:'حمل',insurance:'بیمه',customs:'گمرک',port:'بندر',clearance:'ترخیص',inland:'حمل داخلی'};
+        const expenseRows=Object.keys(expenseLabels).filter(key=>Number(actualExpenses[key]||0)!==0).map(key=>'<div class="flex justify-between gap-2 border-b py-1"><span>'+expenseLabels[key]+'</span><b>'+money(actualExpenses[key])+'</b></div>').join('');
+        const itemRows=actualItems.map(item=>'<div class="flex justify-between gap-2 border-b py-1"><span>کالا '+capitalPlanEscape(item.productId||'—')+' · '+capitalPlanEscape(item.lot||'بدون بچ')+'</span><b>'+faNum(item.quantityKg||0)+' کیلو / '+faNum(item.cartons||0)+' کارتن</b></div>').join('');
+        const plannedUnits=calculation?Number(calculation.totalUnits||0):0;
+        const actualKg=actualItems.reduce((sum,item)=>sum+Number(item.quantityKg||0),0);
+        const scopeNote=calculation?'<div class="rounded-lg bg-amber-50 text-amber-900 p-2 text-[10px]">مقدار برنامه ('+faNum(plannedUnits)+' واحد عمومی) با وزن واقعی پرونده ('+faNum(actualKg)+' کیلوگرم) هم‌واحد نیست؛ اختلاف بهای کل فقط پس از یکسان‌سازی تعداد، واحد و اقلام قابل اتکاست.</div>':'';
+        comparison = moneyTile('بهای ثبت‌شده پرونده منتخب',actualCost,linked.id+' · '+(linked.supplier||'فروشنده نامشخص'))+
+          moneyTile('اختلاف واقعی با برآورد فعلی',variance,calculation?'مثبت = هزینه واقعی بیشتر؛ این اختلاف خودکار تطبیق حسابداری نیست':'برای مقایسه، ابتدا ورودی‌های برنامه را معتبر کنید')+
+          tile('مانده ارزی پرونده منتخب',outstandingFx,(linked.currency||'')+' · از '+faNum(linked.fxTotal||0)+' ثبت‌شده')+
+          '<div class="col-span-full rounded-xl border p-3 text-[10px] space-y-1"><strong>اقلام واقعی پرونده ('+faNum(actualItems.length)+')</strong>'+(itemRows||'<div>جزئیات قلم کالا موجود نیست.</div>')+'</div>'+
+          '<div class="col-span-full rounded-xl border p-3 text-[10px] space-y-1"><strong>تفکیک هزینه‌های ثبت‌شده</strong>'+(expenseRows||'<div>جزئیات هزینه‌ای ثبت نشده است.</div>')+'</div>'+scopeNote;
       } else {
         comparison = '<div class="rounded-xl border border-dashed p-3 text-slate-500 text-[11px]">برای مقایسه مبلغ برآوردی با بهای تمام‌شده ثبت‌شده، یک پرونده واردات را از فهرست بالا انتخاب کنید.</div>';
       }
@@ -8203,8 +8273,9 @@
       el.innerHTML = plans.map(p => {
         const status = p.status === 'approved' ? '<span class="text-emerald-700 font-bold">تأییدشده</span>' : '<span class="text-amber-700 font-bold">پیش‌نویس</span>';
         const result = p.calculation || {};
-        const approve = p.status === 'approved' ? '' : '<button type="button" onclick="approveCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-emerald-700 text-white px-2 py-1">تأیید مهران</button>';
-        return '<div class="flex flex-wrap items-center justify-between gap-2 border-b last:border-0 py-2"><div class="min-w-0"><div class="font-bold">' + capitalPlanEscape(p.name || 'بدون عنوان') + ' · ' + faNum(result.count || 0) + ' کانتینر · ' + status + '</div><div class="text-[10px] text-slate-500">' + capitalPlanEscape(p.updatedAt || '') + ' · سود پیش‌بینی‌شده: ' + money(result.profitBeforeTax || 0) + '</div></div><div class="flex flex-wrap gap-1"><button type="button" onclick="loadCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-slate-700 text-white px-2 py-1">بارگذاری</button>' + approve + '<button type="button" onclick="archiveCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-rose-700 text-white px-2 py-1">بایگانی</button></div></div>';
+        const approve = p.status === 'approved' ? '' : '<button type="button" onclick="approveCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-emerald-700 text-white px-2 py-1">ثبت تأیید گردش‌کار مهران</button>';
+        const approvalMeta = p.status === 'approved' ? '<div class="text-[10px] text-emerald-700">تأیید گردش‌کار: '+capitalPlanEscape(p.approvedBy||'نامشخص')+' · '+capitalPlanEscape(p.approvedAt||'')+'</div>' : '';
+        return '<div class="flex flex-wrap items-center justify-between gap-2 border-b last:border-0 py-2"><div class="min-w-0"><div class="font-bold">' + capitalPlanEscape(p.name || 'بدون عنوان') + ' · ' + faNum(result.count || 0) + ' کانتینر · ' + status + '</div><div class="text-[10px] text-slate-500">' + capitalPlanEscape(p.updatedAt || '') + ' · سود پیش‌بینی‌شده: ' + money(result.profitBeforeTax || 0) + '</div>'+approvalMeta+'</div><div class="flex flex-wrap gap-1"><button type="button" onclick="loadCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-slate-700 text-white px-2 py-1">بارگذاری</button>' + approve + '<button type="button" onclick="archiveCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-rose-700 text-white px-2 py-1">بایگانی</button></div></div>';
       }).join('');
     }
     function saveCapitalPlan() {
@@ -8215,7 +8286,7 @@
       const now = new Date().toISOString();
       const id = createStableId('capitalplan');
       const calculation = capitalPlanCalculate(input);
-      const record = {id,name:input['plan-name'] || 'برنامه بدون عنوان',supplier:input['plan-supplier'] || '',input,calculation,status:'draft',createdAt:now,updatedAt:now,createdBy:state.activeRole || 'mehran',approvedAt:null,approvedBy:null};
+      const record = {id,name:input['plan-name'] || 'برنامه بدون عنوان',supplier:input['plan-supplier'] || '',input,calculation,cashflow:capitalPlanCashflow(input,calculation),nrvTreatment:'separate_full_inventory_valuation_not_in_profit_until_sold_and_ending_inventory_quantities_are_modeled',status:'draft',createdAt:now,updatedAt:now,createdBy:state.activeRole || 'mehran',createdDeviceId:DEVICE_ID || null,approvedAt:null,approvedBy:null};
       state.capitalPlans.unshift(record);
       addAudit('ذخیره نسخه برنامه‌ریزی سرمایه: ' + record.name,{sourceType:'capital_planner',sourceId:id,details:{status:'draft',count:calculation.count,landedCost:calculation.landedCost,profitBeforeTax:calculation.profitBeforeTax}});
       saveState();
@@ -8237,9 +8308,9 @@
       const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
       if (!plan) { showToast('نسخه برنامه پیدا نشد.', 'error'); return; }
       if (plan.status === 'approved') { showToast('این نسخه قبلاً تأیید شده است.', 'info'); return; }
-      plan.status = 'approved'; plan.approvedAt = new Date().toISOString(); plan.approvedBy = state.activeRole; plan.updatedAt = plan.approvedAt;
-      addAudit('تأیید نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id,details:{count:plan.calculation?.count,landedCost:plan.calculation?.landedCost,profitBeforeTax:plan.calculation?.profitBeforeTax}});
-      saveState(); renderCapitalPlanner(); showToast('نسخه برنامه تأیید شد؛ این تأیید سند حسابداری ایجاد نمی‌کند.');
+      plan.status = 'approved'; plan.approvedAt = new Date().toISOString(); plan.approvedBy = state.activeRole; plan.approvedDeviceId = DEVICE_ID || null; plan.approvalType = 'local_workflow_acknowledgement_not_authenticated_signature'; plan.updatedAt = plan.approvedAt;
+      addAudit('ثبت تأیید گردش‌کار برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id,details:{count:plan.calculation?.count,landedCost:plan.calculation?.landedCost,profitBeforeTax:plan.calculation?.profitBeforeTax,approvalType:plan.approvalType,approvedDeviceId:plan.approvedDeviceId}});
+      saveState(); renderCapitalPlanner(); showToast('تأیید گردش‌کار ثبت شد؛ این ثبت امضای هویتی امن یا سند حسابداری نیست.');
     }
     function archiveCapitalPlan(id) {
       const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
