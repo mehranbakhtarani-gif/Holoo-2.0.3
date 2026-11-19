@@ -42,11 +42,11 @@ assert.ok(html.includes('شناسه تفصیلی و گردش‌های ثبت‌�
 // Posted invoices use a reversal-and-replacement correction flow; settled/returned invoices are blocked.
 assert.ok(html.includes('function canCorrectInvoice(inv)'));
 assert.ok(html.includes('function openInvoiceCorrection(invId)'));
-assert.ok(html.includes('cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true })'));
+assert.ok(html.includes('cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true, reason: correctionReason })'));
 assert.ok(html.includes('correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId)'));
 assert.ok(html.includes('correctedByInvoiceId = Number(id)'));
 assert.ok(html.includes('sourceType: \'invoice_correction\''));
-assert.ok(html.includes('if (!options.deferSave) saveState()'));
+assert.ok(html.includes('if (!options.deferSave && !saveState())'));
 assert.ok(html.includes('return true;'));
 assert.ok(html.includes('✏️ اصلاح حسابرسی‌شده'));
 

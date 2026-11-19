@@ -44,11 +44,12 @@ const state = {
 };
 const CHART_ACCOUNTS = [
   {code:'1101',name:'صندوق'},{code:'1102',name:'بانک'},{code:'1201',name:'دارایی ثابت'},
-  {code:'2201',name:'تسهیلات'},{code:'3101',name:'سرمایه'},{code:'4101',name:'فروش'},
+  {code:'2201',name:'تسهیلات'},{code:'3101',name:'سرمایه'},{code:'3102',name:'سود انباشته'},{code:'4101',name:'فروش'},
   {code:'6101',name:'هزینه اداری'}
 ];
 const sandbox = {
   state, CHART_ACCOUNTS,
+  normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
   getInvoiceReturnedAmount: inv => (inv.returnRefs || []).reduce((s,r)=>s+Number(r.amount||0),0),
   getPartyName: id => state.parties.find(p=>String(p.id)===String(id))?.name || '—',
   agingBucket: days => days <= 0 ? 'سررسید نشده' : days <= 30 ? '۱ تا ۳۰ روز' : days <= 60 ? '۳۱ تا ۶۰ روز' : days <= 90 ? '۶۱ تا ۹۰ روز' : 'بیش از ۹۰ روز',
@@ -60,7 +61,7 @@ vm.runInContext(sliceBetween('    function buildAgingRows(', '    function rende
 vm.runInContext(sliceBetween('    function escapeBankReconciliationText(', '    function renderReconcileModule('), sandbox);
 vm.runInContext(sliceBetween('    let actualCashFlowFromDate = null;', '    function saveCustomAccount()') +
   '; this.api={buildAccountLedger,buildBalanceSheetReport,buildProfitLossReport,buildActualCashFlowReport,buildAgingRows,getBankReconciliationCandidates,confirmBankReconcileMatch};', sandbox);
-vm.runInContext(sliceBetween('    let trialBalanceFromDate = null;', '    function renderAccountingModule()') +
+vm.runInContext("function normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); }\n" + sliceBetween('    let trialBalanceFromDate = null;', '    function renderAccountingModule()') +
   '; this.api.buildTrialBalanceReport=buildTrialBalanceReport;', sandbox);
 const api = sandbox.api;
 
@@ -223,6 +224,9 @@ const closeState = {
 };
 const closeSandbox = {
   state:closeState, CHART_ACCOUNTS,
+  normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
+  money: value => String(value), confirm: () => true,
+  getAccountingPeriodLockForDate: () => null,
   addAudit(){}, saveState(){return true;}, renderAccountingModule(){}, showToast(){},
   getTodayJalaliDate:()=>closeSandbox.testToday,
   testToday:'1404/12/29'
@@ -230,7 +234,10 @@ const closeSandbox = {
 vm.createContext(closeSandbox);
 vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()'), closeSandbox);
 vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function countInvalidReportVoucherLines('), closeSandbox);
+vm.runInContext(sliceBetween('    function countInvalidReportVoucherLines(', '    function buildAccountLedger('), closeSandbox);
 vm.runInContext(sliceBetween('    function inspectTrialBalanceVoucher(', '    function buildTrialBalanceReport('), closeSandbox);
+vm.runInContext(sliceBetween('    function getFiscalYearCloseRecord(', '    function getFiscalYearEndDate('), closeSandbox);
+vm.runInContext(sliceBetween('    function isOpeningKardexDocument(', '    function inspectBatchMetadata('), closeSandbox);
 vm.runInContext(sliceBetween('    function getFiscalYearEndDate(', '    function renderFiscalYearCloseModule('), closeSandbox);
 vm.runInContext(sliceBetween('    function postVoucher(', '    // ========================================================================='), closeSandbox);
 closeSandbox.testToday = closeSandbox.getFiscalYearEndDate('1404');

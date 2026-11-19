@@ -49,6 +49,11 @@ const jalaliStart = html.indexOf('    function jalaliDateOrdinal(');
 const jalaliEnd = html.indexOf('    function currentJalaliOrdinal()', jalaliStart);
 assert.notEqual(jalaliStart, -1, 'Jalali date helper must exist');
 vm.runInContext(html.slice(jalaliStart, jalaliEnd), sandbox);
+const voucherValidationStart = html.indexOf('    function inspectTrialBalanceVoucher(');
+const voucherValidationEnd = html.indexOf('    function ', voucherValidationStart + 10);
+assert.notEqual(voucherValidationStart, -1, 'trial balance voucher validation helper must exist');
+assert.notEqual(voucherValidationEnd, -1, 'trial balance voucher validation helper must have an end');
+vm.runInContext(html.slice(voucherValidationStart, voucherValidationEnd) + '; this.inspectTrialBalanceVoucher = inspectTrialBalanceVoucher;', sandbox);
 vm.runInContext(html.slice(start, end) + '; this.api = { normalizeLedgerDate, buildProfitLossReport };', sandbox);
 const { buildProfitLossReport } = sandbox.api;
 

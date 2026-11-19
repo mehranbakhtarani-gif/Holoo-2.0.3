@@ -4395,17 +4395,18 @@
       return { checkedOperations, issues };
     }
 
-    function inspectInventoryReconciliation(products, warehouses) {
+    function inspectInventoryReconciliation(products, warehouses, appState = (typeof state !== 'undefined' ? state : null)) {
       const items = Array.isArray(products) ? products : [];
+      const auditState = appState || { products: items, warehouses: Array.isArray(warehouses) ? warehouses : [], invoices: [], vouchers: [], auditLogs: [] };
       const issues = [];
       const unverified = [];
       const transferGroups = new Map();
       const warehouseTopology = inspectWarehouseProductTopology(items, warehouses);
       issues.push(...warehouseTopology.issues);
-      const stocktakeAudit = inspectStocktakingAuditTrail(state);
+      const stocktakeAudit = inspectStocktakingAuditTrail(auditState);
       issues.push(...stocktakeAudit.issues);
       const transferBatchAudit = inspectWarehouseTransferBatchLinks(items);
-      const inventoryOperationAudit = inspectInventoryOperationAudit(state);
+      const inventoryOperationAudit = inspectInventoryOperationAudit(auditState);
       issues.push(...inventoryOperationAudit.issues);
       issues.push(...transferBatchAudit.issues);
       let checkedBatches = 0;
@@ -4516,7 +4517,7 @@
           transferGroups.get(transferId).push({ type, qty: type === 'source' ? Number(movement?.outQty) : type === 'destination' ? Number(movement?.inQty) : NaN, productId: String(product?.id ?? ''), baseProductId: String(product?.baseProductId || product?.id || ''), warehouseId: String(product?.warehouseId ?? '') });
         });
       });
-      const activeInvoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(invoice => invoice && invoice.status === 'active' && ['sale','purchase'].includes(invoice.type));
+      const activeInvoices = (Array.isArray(auditState.invoices) ? auditState.invoices : []).filter(invoice => invoice && invoice.status === 'active' && ['sale','purchase'].includes(invoice.type));
       let checkedInvoiceKardexLines = 0;
       activeInvoices.forEach(invoice => {
         const expectedDoc = (invoice.type === 'sale' ? 'فاکتور فروش #' : 'فاکتور خرید #') + String(invoice.id);
@@ -11099,6 +11100,150 @@
       [['کالای دارای اختلاف موجودی با سری ساخت',r.batchQuantityMismatches],['مقادیر نامعتبر سری ساخت',r.invalidBatchValues],['فاکتور فروش بدون سند',r.missingSaleVouchers],['سند فروش تکراری',r.duplicateSaleVouchers],['مغایرت بهای تمام‌شده با دفترکل',r.cogsAmountMismatches],['بهای تمام‌شده ثبت‌نشده در ردیف فاکتور',r.missingCogsValues],['مغایرت ورود خرید با سری ساخت',r.purchaseBatchMismatches]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});
       r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0); return r;
     }
+    function buildInventoryControlAccountReconciliation() {
+      const products = Array.isArray(state.products) ? state.products : [];
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const details = [];
+      let inventoryValue = 0, unverifiedProducts = 0;
+      products.forEach(product => {
+        const value = getInventoryBookValue(product);
+        const stock = Number(product?.stock);
+        const valid = value !== null && Number.isFinite(value) && Number.isFinite(stock) && stock >= 0;
+        if (!valid) unverifiedProducts++;
+        else inventoryValue += value;
+        details.push({ productId: String(product?.id ?? ''), productName: String(product?.name || product?.id || 'کالای بدون نام'),
+          warehouseId: String(product?.warehouseId ?? ''), stock: Number.isFinite(stock) ? stock : null,
+          value: valid ? value : null, unitValue: valid && stock > 0 ? value / stock : (valid ? 0 : null), verified: valid });
+      });
+      let controlDebit = 0, controlCredit = 0, relevantVouchers = 0, invalidControlVouchers = 0;
+      vouchers.forEach(voucher => {
+        const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+        const controlLines = lines.filter(line => String(line?.code || '').trim() === '1105');
+        if (!controlLines.length) return;
+        relevantVouchers++;
+        const rawDate = voucher?.date || voucher?.operationDate;
+        const dateValid = !!rawDate && jalaliDateOrdinal(rawDate) !== null;
+        const validation = inspectTrialBalanceVoucher(voucher);
+        if (!dateValid || validation.invalidLines || validation.invalidStructure || validation.unbalanced) invalidControlVouchers++;
+        controlLines.forEach(line => {
+          const debit = Number(line?.debit ?? 0), credit = Number(line?.credit ?? 0);
+          if (Number.isFinite(debit) && Number.isFinite(credit) && debit >= 0 && credit >= 0) {
+            controlDebit += debit; controlCredit += credit;
+          }
+        });
+      });
+      const inventoryVerified = unverifiedProducts === 0 && Number.isFinite(inventoryValue);
+      const ledgerVerified = invalidControlVouchers === 0 && Number.isFinite(controlDebit) && Number.isFinite(controlCredit);
+      const controlBalance = ledgerVerified ? controlDebit - controlCredit : null;
+      const difference = inventoryVerified && ledgerVerified ? inventoryValue - controlBalance : null;
+      const status = difference === null ? 'unverified' : Math.abs(difference) <= 1 ? 'matched' : 'mismatch';
+      details.sort((a,b) => a.value === null ? (b.value === null ? a.productName.localeCompare(b.productName) : 1) : b.value === null ? -1 : b.value-a.value);
+      return { status, costingMethod: state.costingMethod === 'FIFO' ? 'FIFO' : 'AVG', productsChecked: products.length,
+        inventoryValue: inventoryVerified ? inventoryValue : null, controlDebit, controlCredit, controlBalance, difference,
+        unverifiedProducts, relevantVouchers, invalidControlVouchers, details };
+    }
+
+    function buildInventoryValueDiscrepancySources() {
+      const invoices = new Map((state.invoices || []).map(invoice => [String(invoice.id), invoice]));
+      const grouped = new Map();
+      (state.vouchers || []).forEach(voucher => {
+        const lines = (Array.isArray(voucher?.lines) ? voucher.lines : []).filter(line => String(line?.code || '').trim() === '1105');
+        if (!lines.length) return;
+        const sourceType = String(voucher.sourceType || 'manual');
+        const sourceId = String(voucher.sourceId || '');
+        const key = sourceType + ':' + sourceId;
+        if (!grouped.has(key)) grouped.set(key, { sourceType, sourceId, voucherIds: [], dates: [], debit: 0, credit: 0, descriptions: [], invoiceId: null, invoiceType: null, productLines: [] });
+        const item = grouped.get(key);
+        item.voucherIds.push(String(voucher.id ?? ''));
+        item.dates.push(String(voucher.date || voucher.operationDate || ''));
+        lines.forEach(line => {
+          const debit = Number(line.debit ?? 0), credit = Number(line.credit ?? 0);
+          if (Number.isFinite(debit) && debit >= 0) item.debit += debit;
+          if (Number.isFinite(credit) && credit >= 0) item.credit += credit;
+          if (line.desc) item.descriptions.push(String(line.desc));
+        });
+        if (sourceType === 'invoice') {
+          const invoice = invoices.get(sourceId);
+          if (invoice) {
+            item.invoiceId = String(invoice.id);
+            item.invoiceType = String(invoice.type || '');
+            item.productLines = (invoice.items || []).map(line => ({
+              productId: String(line.productId ?? ''),
+              productName: String((state.products || []).find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
+              quantity: Number(line.kg || 0), cogs: Number(line.costOfGoodsSold || 0), lot: String(line.lot || '')
+            }));
+          }
+        } else if (sourceType === 'invoice_return') {
+          item.returnId = sourceId;
+          item.invoiceId = String(voucher.sourceEvent || '');
+          const invoice = invoices.get(item.invoiceId);
+          item.invoiceType = invoice ? String(invoice.type || '') : '';
+          const returnRecord = invoice && (invoice.returnRefs || []).find(entry => String(entry.id) === sourceId);
+          item.returnItems = returnRecord && Array.isArray(returnRecord.items) ? returnRecord.items.map(line => ({
+            productId: String(line.productId ?? ''),
+            productName: String((state.products || []).find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
+            quantity: Number(line.qty || 0),
+            inventoryCost: Number(line.inventoryCost || 0),
+            batchAllocations: Array.isArray(line.batchAllocations) ? line.batchAllocations : []
+          })) : [];
+          item.returnDescription = returnRecord
+            ? 'جزئیات برگشت از سابقه برگشت فاکتور و تخصیص سری ساخت خوانده شده است.'
+            : 'سابقه جزئیات برگشت در فاکتور پیدا نشد؛ این گردش نیازمند بررسی دستی است.';
+        }
+      });
+      const labels = { invoice: 'فاکتور خرید/فروش', invoice_return: 'برگشت فاکتور', invoice_cancel: 'ابطال فاکتور', stocktake: 'انبارگردانی', import: 'محموله وارداتی', manual: 'سند دستی یا بدون منشأ' };
+      return [...grouped.values()].map(item => ({
+        ...item, label: labels[item.sourceType] || ('منشأ دیگر: ' + item.sourceType), net: item.debit - item.credit,
+        voucherIds: [...new Set(item.voucherIds)], dates: [...new Set(item.dates)], descriptions: [...new Set(item.descriptions)]
+      })).sort((a,b) => Math.abs(b.net) - Math.abs(a.net));
+    }
+
+    function buildWarehouseTransferValueReconciliation() {
+      const groups = new Map();
+      const warehouseNames = new Map((state.warehouses || []).map(item => [String(item.id), String(item.name || item.id)]));
+      (state.products || []).forEach(product => {
+        (Array.isArray(product.kardex) ? product.kardex : []).forEach(movement => {
+          const doc = String(movement?.doc || '');
+          const match = doc.match(/TR-\d+-[a-z0-9]+/i);
+          if (!match) return;
+          const id = match[0];
+          if (!groups.has(id)) groups.set(id, { id, baseProductId: String(product.baseProductId || product.id || ''), productName: String(product.name || product.id || 'کالای نامشخص'), source: null, destination: null, batches: [] });
+          const group = groups.get(id);
+          const row = { productId: String(product.id || ''), warehouseId: String(product.warehouseId || ''), quantity: Number(doc.includes('خروج انتقال') ? movement.outQty : movement.inQty), price: Number(movement.price), date: String(movement.date || ''), doc };
+          if (doc.includes('خروج انتقال')) group.source = row;
+          else if (doc.includes('ورود انتقال')) group.destination = row;
+        });
+        (Array.isArray(product.batches) ? product.batches : []).forEach(batch => {
+          const id = String(batch?.sourceRef || '');
+          if (!id || batch?.sourceType !== 'warehouse_transfer') return;
+          if (!groups.has(id)) groups.set(id, { id, baseProductId: String(product.baseProductId || product.id || ''), productName: String(product.name || product.id || 'کالای نامشخص'), source: null, destination: null, batches: [] });
+          groups.get(id).batches.push({ quantity: Number(batch.quantity), unitCost: Number(batch.unitCost), batchId: String(batch.id || ''), sourceBatchId: String(batch.sourceBatchId || '') });
+        });
+      });
+      return [...groups.values()].map(group => {
+        const sourceQty = group.source && Number.isFinite(group.source.quantity) ? group.source.quantity : null;
+        const destinationQty = group.destination && Number.isFinite(group.destination.quantity) ? group.destination.quantity : null;
+        const quantityDifference = sourceQty === null || destinationQty === null ? null : destinationQty - sourceQty;
+        const fifoValue = group.batches.length && group.batches.every(batch => Number.isFinite(batch.quantity) && batch.quantity >= 0 && Number.isFinite(batch.unitCost) && batch.unitCost >= 0)
+          ? group.batches.reduce((sum, batch) => sum + batch.quantity * batch.unitCost, 0) : null;
+        const sourceValue = state.costingMethod === 'FIFO'
+          ? fifoValue
+          : (group.source && Number.isFinite(group.source.price) && sourceQty !== null ? sourceQty * group.source.price : null);
+        const destinationValue = state.costingMethod === 'FIFO'
+          ? fifoValue
+          : (group.destination && Number.isFinite(group.destination.price) && destinationQty !== null ? destinationQty * group.destination.price : null);
+        const valueDifference = sourceValue === null || destinationValue === null ? null : destinationValue - sourceValue;
+        const valid = quantityDifference !== null && Math.abs(quantityDifference) < 0.000001 &&
+          valueDifference !== null && Math.abs(valueDifference) < 1;
+        return {
+          ...group, sourceQty, destinationQty, quantityDifference, sourceValue, destinationValue, valueDifference,
+          sourceWarehouse: group.source ? warehouseNames.get(group.source.warehouseId) || group.source.warehouseId : 'ثبت‌نشده',
+          destinationWarehouse: group.destination ? warehouseNames.get(group.destination.warehouseId) || group.destination.warehouseId : 'ثبت‌نشده',
+          status: valid ? 'matched' : 'review'
+        };
+      }).sort((a,b) => (a.status === b.status ? 0 : a.status === 'review' ? -1 : 1));
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -11122,6 +11267,42 @@
       const audit = buildGeneralLedgerAuditSummary();
       const inventoryAudit = buildInventoryAccountingAuditSummary();
       const inventoryAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق انبار با حسابداری</strong><b class="block">'+(inventoryAudit.issueCount?faNum(inventoryAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کالاهای بررسی‌شده',inventoryAudit.productsChecked],['اختلاف موجودی و سری ساخت',inventoryAudit.batchQuantityMismatches],['مقادیر نامعتبر سری ساخت',inventoryAudit.invalidBatchValues],['فاکتور فروش بررسی‌شده',inventoryAudit.saleInvoicesChecked],['فروش بدون سند',inventoryAudit.missingSaleVouchers],['سند فروش تکراری',inventoryAudit.duplicateSaleVouchers],['مغایرت بهای تمام‌شده',inventoryAudit.cogsAmountMismatches],['بهای تمام‌شده نامشخص',inventoryAudit.missingCogsValues],['مغایرت ورود خرید و سری ساخت',inventoryAudit.purchaseBatchMismatches]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(inventoryAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+inventoryAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق انبار و حسابداری بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش فقط خواندنی است و موجودی یا اسناد را تغییر نمی‌دهد.</p></div>';
+      const inventoryValueReconciliation = buildInventoryControlAccountReconciliation();
+      const inventoryValuePanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق ارزش ریالی موجودی با حساب کنترل ۱۱۰۵</strong><b class="block">' +
+        (inventoryValueReconciliation.status === 'matched' ? 'ارزش انبار و مانده دفترکل برابر است' :
+         inventoryValueReconciliation.status === 'mismatch' ? 'اختلاف ارزش شناسایی شد' : 'تطبیق قطعی ممکن نیست؛ اطلاعات ناقص است') +
+        '</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">' +
+        [['روش قیمت‌گذاری',inventoryValueReconciliation.costingMethod],['ارزش موجودی انبار',inventoryValueReconciliation.inventoryValue === null ? 'نامشخص' : money(inventoryValueReconciliation.inventoryValue)],
+         ['بدهکار حساب ۱۱۰۵',money(inventoryValueReconciliation.controlDebit)],['بستانکار حساب ۱۱۰۵',money(inventoryValueReconciliation.controlCredit)],
+         ['مانده خالص حساب ۱۱۰۵',inventoryValueReconciliation.controlBalance === null ? 'نامشخص' : money(inventoryValueReconciliation.controlBalance)],
+         ['اختلاف انبار و دفترکل',inventoryValueReconciliation.difference === null ? 'نامشخص' : money(inventoryValueReconciliation.difference)],
+         ['کالای نیازمند بررسی',inventoryValueReconciliation.unverifiedProducts],['سند کنترلی نامعتبر',inventoryValueReconciliation.invalidControlVouchers]].map(x=>'<span>'+x[0]+': <b>'+x[1]+'</b></span>').join('') +
+        '</div>' +
+        (inventoryValueReconciliation.status === 'mismatch' ? '<p class="text-xs text-amber-800">اختلاف مثبت یعنی ارزش انبار از مانده خالص حساب ۱۱۰۵ بیشتر است؛ اختلاف منفی یعنی مانده دفترکل بیشتر است.</p>' : '') +
+        (inventoryValueReconciliation.unverifiedProducts || inventoryValueReconciliation.invalidControlVouchers ? '<p class="text-xs text-amber-800">تا رفع اطلاعات ناقص کالاها یا اسناد دارای ردیف ۱۱۰۵، نتیجه قطعی اعلام نمی‌شود.</p>' : '') +
+        '<div class="overflow-x-auto"><table class="w-full text-[10px] text-right"><thead><tr><th class="p-1">کالا</th><th class="p-1">انبار</th><th class="p-1">موجودی</th><th class="p-1">ارزش ریالی</th><th class="p-1">ارزش واحد</th></tr></thead><tbody>' +
+        inventoryValueReconciliation.details.map(x=>'<tr><td class="p-1 border-t">'+escapeLedgerText(x.productName)+'</td><td class="p-1 border-t">'+escapeLedgerText(x.warehouseId || '—')+'</td><td class="p-1 border-t">'+(x.stock === null ? 'نامعتبر' : faNum(x.stock))+'</td><td class="p-1 border-t">'+(x.value === null ? 'نامشخص' : money(x.value))+'</td><td class="p-1 border-t">'+(x.unitValue === null ? '—' : money(x.unitValue))+'</td></tr>').join('') +
+        '</tbody></table></div><p class="text-[10px]">گزارش فقط‌خواندنی است. اختلاف به‌صورت کل حساب ۱۱۰۵ محاسبه می‌شود؛ انتساب اختلاف به کالای مشخص بدون شناسه کالا در ردیف‌های دفترکل قابل اتکا نیست.</p></div>';
+      const warehouseTransferAudit = buildWarehouseTransferValueReconciliation();
+      const warehouseTransferAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق مقداری و ریالی انتقال بین انبارها</strong><p class="text-[10px] text-slate-500">انتقال داخلی نباید ارزش کل موجودی شرکت یا حساب ۱۱۰۵ را تغییر دهد؛ مقدار و بهای مبدأ و مقصد جداگانه کنترل می‌شود.</p>' +
+        (warehouseTransferAudit.length ? warehouseTransferAudit.map(item =>
+          '<div class="border rounded-lg p-2 space-y-1"><div class="flex flex-wrap justify-between gap-2"><b>'+escapeLedgerText(item.productName)+'</b><span class="text-[10px]">'+escapeLedgerText(item.id)+'</span></div>' +
+          '<div class="text-[10px]">مبدأ: '+escapeLedgerText(item.sourceWarehouse)+' | مقصد: '+escapeLedgerText(item.destinationWarehouse)+'</div>' +
+          '<div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]"><span>خروج: <b>'+ (item.sourceQty === null ? 'نامشخص' : faNum(item.sourceQty))+'</b></span><span>ورود: <b>'+ (item.destinationQty === null ? 'نامشخص' : faNum(item.destinationQty))+'</b></span><span>ارزش انتقال: <b>'+(item.sourceValue === null ? 'غیرقابل‌تأیید' : money(item.sourceValue))+'</b></span><span>اختلاف ارزش: <b>'+(item.valueDifference === null ? 'غیرقابل‌تأیید' : money(item.valueDifference))+'</b></span></div>' +
+          '<p class="text-[10px] '+(item.status === 'matched' ? 'text-emerald-700' : 'text-amber-800')+'">'+(item.status === 'matched' ? 'مقدار و ارزش انتقال تطبیق دارد.' : 'ناقص یا دارای اختلاف؛ بررسی کاردکس و سری ساخت لازم است.')+'</p></div>'
+        ).join('') : '<p class="text-xs text-slate-500">حواله انتقال دارای شناسه TR پیدا نشد.</p>') + '</div>';
+      const inventoryValueSources = buildInventoryValueDiscrepancySources();
+      const inventoryValueSourcesPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ردیابی منشأ گردش حساب ۱۱۰۵</strong><p class="text-[10px] text-slate-500">گردش‌های حساب کنترل بر اساس منشأ سند گروه‌بندی شده‌اند؛ این فهرست برای تعیین مسیر بررسی است و به‌تنهایی انتساب قطعی اختلاف به کالا محسوب نمی‌شود.</p>' +
+        (inventoryValueSources.length ? '<div class="space-y-2">' + inventoryValueSources.map(item =>
+          '<div class="border rounded-lg p-2 space-y-1"><div class="flex flex-wrap justify-between gap-2"><b>'+escapeLedgerText(item.label)+'</b><span class="text-[10px]">شناسه منشأ: '+escapeLedgerText(item.sourceId || 'ثبت‌نشده')+'</span></div>' +
+          '<div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]"><span>بدهکار: <b>'+money(item.debit)+'</b></span><span>بستانکار: <b>'+money(item.credit)+'</b></span><span>خالص: <b>'+money(item.net)+'</b></span><span>شماره سند: <b>'+escapeLedgerText(item.voucherIds.join('، '))+'</b></span></div>' +
+          (item.invoiceId ? '<p class="text-[10px]">فاکتور مرتبط: '+escapeLedgerText(item.invoiceId)+' | نوع: '+escapeLedgerText(item.invoiceType || 'نامشخص')+'</p>' : '') +
+          (item.productLines.length ? '<div class="text-[10px]">اقلام فاکتور: '+item.productLines.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، بهای تمام‌شده '+money(line.cogs)+')').join('؛ ')+'</div>' : '') +
+          (item.returnItems && item.returnItems.length ? '<div class="text-[10px]">اقلام برگشتی: '+item.returnItems.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، ارزش برگشتی '+money(line.inventoryCost)+'، سری ساخت '+faNum(line.batchAllocations.length)+')').join('؛ ')+'</div>' : '') +
+          (item.returnDescription ? '<p class="text-[10px] text-amber-800">'+escapeLedgerText(item.returnDescription)+'</p>' : '') +
+          '<p class="text-[10px] text-slate-500">شرح: '+escapeLedgerText(item.descriptions.slice(0,3).join(' | ') || 'بدون شرح')+'</p></div>'
+        ).join('') + '</div>' : '<p class="text-xs text-slate-500">گردش ثبت‌شده‌ای برای حساب ۱۱۰۵ پیدا نشد.</p>') +
+        '<p class="text-[10px]">برای تطبیق قطعی هر کالا، شناسه کالا و شناسه سری ساخت باید در جزئیات سند و گردش انبار به‌صورت مشترک موجود باشد؛ گزارش از حدس‌زدن انتساب جلوگیری می‌کند.</p></div>';
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
@@ -11138,7 +11319,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
@@ -11155,10 +11336,11 @@
         '<p class="text-[10px] text-slate-500">گردش‌ها فقط مربوط به بازه انتخابی‌اند؛ مانده‌ها شامل تمام گردش‌های ثبت‌شده از ابتدای سوابق تا تاریخ پایان هستند. این گزارش صرفاً خواندنی است و هیچ سندی ایجاد یا اصلاح نمی‌کند.</p></div>';
     }
 
-    function getFiscalYearCloseRecord(year) {
+    function getFiscalYearCloseRecord(year, options = {}) {
       const key = normalizeAccountingDate(year);
       const stored = (state.fiscalYearClosures || []).find(item => normalizeAccountingDate(item.year) === key && item.status !== 'reopened');
-      const voucher = (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === key && (item.sourceEvent || 'default') === 'closing');
+      const excludedVoucherId = options.excludeVoucherId == null ? null : String(options.excludeVoucherId);
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === key && (item.sourceEvent || 'default') === 'closing' && (!excludedVoucherId || String(item.id) !== excludedVoucherId));
       if (!stored && !voucher) return null;
       return { ...(stored || {}), year: key, voucherId: stored?.voucherId || voucher?.id || null, voucher: voucher || null };
     }
@@ -11168,13 +11350,14 @@
       return jalaliDateOrdinal(candidate30) !== null ? candidate30 : String(year) + '/12/29';
     }
 
-    function buildFiscalYearCarryForwardSummary(year, projectedProfit = 0) {
+    function buildFiscalYearCarryForwardSummary(year, projectedProfit = 0, options = {}) {
       const fiscalYear = normalizeAccountingDate(year);
       const endDate = getFiscalYearEndDate(fiscalYear);
       const endKey = normalizeLedgerDate(endDate);
       const accounts = new Map();
       let invalidDateVouchers = 0, invalidAmountLines = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0;
       (state.vouchers || []).forEach(voucher => {
+        if (options.excludeVoucherId != null && String(voucher.id) === String(options.excludeVoucherId)) return;
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
@@ -11199,7 +11382,7 @@
       return { year: fiscalYear, endDate, assets, liabilitiesAndEquity, difference: assets - liabilitiesAndEquity, accountCount: accounts.size, invalidDateVouchers, invalidAmountLines, invalidStructureVouchers, unbalancedVouchers };
     }
 
-    function buildFiscalYearClosePreview(year) {
+    function buildFiscalYearClosePreview(year, options = {}) {
       const fiscalYear = normalizeAccountingDate(year);
       if (!/^14\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
       const from = fiscalYear + '/01/01';
@@ -11209,7 +11392,7 @@
       if (jalaliDateOrdinal(today) === null || normalizeLedgerDate(today) < normalizeLedgerDate(to)) {
         throw new Error('بستن سال مالی فقط پس از پایان واقعی سال (' + to + ') مجاز است.');
       }
-      const existing = getFiscalYearCloseRecord(fiscalYear);
+      const existing = getFiscalYearCloseRecord(fiscalYear, options);
       if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.voucherId, closureRecord: existing, rows: [], profit: 0, blocked: false, warnings: [], incomeSummary: null, carryForward: buildFiscalYearCarryForwardSummary(fiscalYear) };
 
       const balances = new Map();
@@ -11218,6 +11401,7 @@
       const incomeSummary = { revenue: 0, cogs: 0, expenses: 0, netProfit: 0 };
       const openingResultIssues = [];
       (state.vouchers || []).forEach(voucher => {
+        if (options.excludeVoucherId != null && String(voucher.id) === String(options.excludeVoucherId)) return;
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) {
@@ -11273,7 +11457,7 @@
       if (Math.abs(profit - incomeSummary.netProfit) > 0.5) warnings.push('محاسبه سود و زیان با مانده حساب‌های نتیجه‌دار تطبیق ندارد؛ اختلاف: ' + money(profit - incomeSummary.netProfit));
       const retainedEarningsAccount = (CHART_ACCOUNTS || []).find(account => String(account.code) === '3102');
       if (!retainedEarningsAccount) warnings.push('حساب سود (زیان) انباشته ۳۱۰۲ در سرفصل‌های حسابداری تعریف نشده است.');
-      const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit);
+      const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit, options);
       if (carryForward.invalidDateVouchers) warnings.push(carryForward.invalidDateVouchers + ' سند در دفترکل تاریخ نامعتبر دارد؛ تا تعیین تکلیف تاریخ، بستن سال مجاز نیست.');
       if (carryForward.invalidAmountLines) warnings.push(carryForward.invalidAmountLines + ' ردیف سند در دفترکل مبلغ نامعتبر دارد؛ تا اصلاح ردیف‌ها، بستن سال مجاز نیست.');
       if (carryForward.invalidStructureVouchers) warnings.push(carryForward.invalidStructureVouchers + ' سند در دفترکل ساختار نامعتبر دارد؛ ابتدا ساختار سند اصلاح شود.');
@@ -11325,7 +11509,7 @@
           voucher.locked = true;
           voucher.fiscalYearClose = { year, from: preview.from, to: preview.to, profit: preview.profit, carryForwardDifference: preview.carryForward.difference, actor: state.activeRole || 'mehran', closedAt: new Date().toISOString() };
         }
-        const freshPreview = buildFiscalYearClosePreview(year);
+        const freshPreview = buildFiscalYearClosePreview(year, { excludeVoucherId: voucherId });
         if (freshPreview.alreadyClosed || freshPreview.blocked || Math.abs(Number(freshPreview.profit) - Number(preview.profit)) > 0.5 || Math.abs(Number(freshPreview.carryForward?.difference || 0)) > 0.5) {
           throw new Error('کنترل نهایی اختتامیه با پیش‌نمایش اولیه یکسان نیست؛ عملیات برای جلوگیری از ثبت بر مبنای اطلاعات تغییرکرده متوقف شد.');
         }

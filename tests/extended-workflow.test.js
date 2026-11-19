@@ -113,6 +113,9 @@ function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAcc
   let saves = 0;
   const submit = load(extractFunction('submitInvoice', 'function renderInvoicesModule()'), 'submitInvoice', {
     state, invDraft: draft, document: fakeDocument(values), getTodayJalaliDate() { return '1405/09/02'; },
+    normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
+    jalaliDateOrdinal(value) { return /^1405\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; },
+    getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; },
     addStockBatch(product, details) { product.batches = product.batches || []; product.batches.push({ ...details, id: 'TEST-BATCH-' + product.batches.length, remainingQty: details.quantity }); },
     consumeFifoStock(product, quantity) {
       product.batches = product.batches || [];
@@ -238,6 +241,9 @@ function runInvoiceWithJournalFailure(type) {
   let saves=0;const messages=[];
   const submit=load(extractFunction('submitInvoice','function renderInvoicesModule()'),'submitInvoice',{
     state,invDraft:draft,document:fakeDocument(values),getTodayJalaliDate(){return '1405/09/02';},
+    normalizeAccountingDate(value){return String(value||'').trim().replace(/-/g,'/');},
+    jalaliDateOrdinal(value){return /^1405\/\d{2}\/\d{2}$/.test(String(value||''))?1:null;},
+    getAccountingPeriodLockForDate(){return null;},getFiscalYearCloseRecord(){return null;},
     addStockBatch(p,details){p.batches=p.batches||[];p.batches.push({...details,id:'TEST-BATCH-'+p.batches.length,remainingQty:details.quantity});},
     consumeFifoStock(p,quantity){
       p.batches=p.batches||[];
@@ -282,6 +288,9 @@ test('sales invoice rechecks available stock before any live mutation',()=>{
   let posted=0,saves=0;
   const submit=load(extractFunction('submitInvoice','function renderInvoicesModule()'),'submitInvoice',{
     state,invDraft:draft,document:fakeDocument(values),getTodayJalaliDate(){return '1405/09/02';},
+    normalizeAccountingDate(value){return String(value||'').trim().replace(/-/g,'/');},
+    jalaliDateOrdinal(value){return /^1405\/\d{2}\/\d{2}$/.test(String(value||''))?1:null;},
+    getAccountingPeriodLockForDate(){return null;},getFiscalYearCloseRecord(){return null;},
     consumeFifoStock(p,quantity){if(quantity>p.stock)throw new Error('insufficient stock');return {totalCost:quantity*10,allocations:[]};},
     addStockBatch(){},postVoucher(){posted++;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
   });
@@ -295,12 +304,12 @@ test('sales invoice rechecks available stock before any live mutation',()=>{
 // Unpaid invoice cancellation must reverse stock exactly once and post a reversal.
 test('unpaid sales invoice cancellation restores stock and marks invoice cancelled', () => {
   const state = {
-    invoices: [{ id: 1001, type: 'sale', status: 'active', warehouseId: 'WH1', paidAmount: 0, partyId: 'P1', grandTotal: 100, items: [{ productId: 'TX-1', kg: 5, returnedKg: 0 }] }],
+    invoices: [{ id: 1001, type: 'sale', status: 'active', date: '1405/09/01', warehouseId: 'WH1', paidAmount: 0, partyId: 'P1', grandTotal: 100, items: [{ productId: 'TX-1', kg: 5, returnedKg: 0 }] }],
     products: [{ id: 'TX-1', warehouseId: 'WH1', stock: 5 }]
   };
   const posted = [];
   const cancel = load(extractFunction('cancelInvoice', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, restoreFifoAllocations(product, allocations, qty, fallbackCost, sourceRef) { product.batches = product.batches || []; product.batches.push({ id: 'RETURN-' + sourceRef, quantity: qty, remainingQty: qty, unitCost: fallbackCost }); return [{ batchId: 'RETURN-' + sourceRef, quantity: qty }]; }, consumeFifoStock() {}, postVoucher(...args) { posted.push(args); }, saveState() {}, renderAll() {}, showToast() {}, faNum: String
+    state, getTodayJalaliDate() { return '1405/09/02'; }, prompt() { return 'ابطال به دلیل اشتباه'; }, jalaliDateOrdinal(value) { return /^1405\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, restoreFifoAllocations(product, allocations, qty, fallbackCost, sourceRef) { product.batches = product.batches || []; product.batches.push({ id: 'RETURN-' + sourceRef, quantity: qty, remainingQty: qty, unitCost: fallbackCost }); return [{ batchId: 'RETURN-' + sourceRef, quantity: qty }]; }, consumeFifoStock() {}, postVoucher(...args) { posted.push(args); }, saveState() {}, renderAll() {}, showToast() {}, faNum: String
   });
   cancel(1001);
   assert.equal(state.invoices[0].status, 'cancelled');

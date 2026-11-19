@@ -59,7 +59,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [{ id: 7 }] };
   let saves = 0;
   const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', {
-    state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() { saves++; }
+    state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, addAudit() {}, saveState() { saves++; }
   });
   assert.equal(post('test', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }]), 1);
   assert.throws(() => post('bad', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 99 }]));
@@ -67,7 +67,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
 });
 test('same source event is idempotent; separate check events remain distinct', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, addAudit() {}, saveState() {} });
   const lines = [{ code: '1102', debit: 50, credit: 0 }, { code: '1104', debit: 0, credit: 50 }];
   const first = post('clear', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
   const repeated = post('clear again', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
@@ -78,7 +78,7 @@ test('same source event is idempotent; separate check events remain distinct', (
 test('invoice journal stores its source voucher reference', () => {
   const invoice = { id: 7 };
   const state = { fiscalYear: '1405', vouchers: [], checks: [], invoices: [invoice] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, addAudit() {}, saveState() {} });
   post('invoice', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }], undefined, { type: 'invoice', id: 7 });
   assert.equal(invoice.voucherId, 1);
 });
@@ -91,7 +91,7 @@ function runTreasury(amount) {
   const posted = [];
   let saves = 0;
   const save = loadFunction(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    document, state, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); return 1; }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
+    document, state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); return 1; }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
   });
   save();
   return { state, posted, saves };
@@ -162,10 +162,13 @@ test('opening balance labels include first-period inventory but exclude ordinary
 
 // 7. Inventory reconciliation evaluates kardex in chronological date order without mutating stored rows.
 test('kardex reconciliation sorts dated movements and preserves an earlier opening balance', () => {
-  const source = section('function inspectInventoryReconciliation(products, warehouses)', 'function ensureProductBatches(product)');
+  const source = section('function inspectInventoryReconciliation(products, warehouses, appState', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 15, tracked: 15, difference: 0 }; },
     inspectWarehouseProductTopology() { return { issues: [], checkedBaseProducts: 0, companyTotalStock: 0, summaries: [] }; },
+    inspectStocktakingAuditTrail() { return { issues: [], checkedOperations: 0, checkedItems: 0 }; },
+    inspectWarehouseTransferBatchLinks() { return { issues: [], checkedTransferBatchGroups: 0 }; },
+    inspectInventoryOperationAudit() { return { issues: [], checkedOperations: 0 }; },
     jalaliDateOrdinal(value) {
       const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
@@ -184,10 +187,13 @@ test('kardex reconciliation sorts dated movements and preserves an earlier openi
 });
 
 test('kardex baseline remains unverified when the earliest dated movement is an ordinary receipt', () => {
-  const source = section('function inspectInventoryReconciliation(products, warehouses)', 'function ensureProductBatches(product)');
+  const source = section('function inspectInventoryReconciliation(products, warehouses, appState', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 4200, tracked: 4200, difference: 0 }; },
     inspectWarehouseProductTopology() { return { issues: [], checkedBaseProducts: 0, companyTotalStock: 0, summaries: [] }; },
+    inspectStocktakingAuditTrail() { return { issues: [], checkedOperations: 0, checkedItems: 0 }; },
+    inspectWarehouseTransferBatchLinks() { return { issues: [], checkedTransferBatchGroups: 0 }; },
+    inspectInventoryOperationAudit() { return { issues: [], checkedOperations: 0 }; },
     jalaliDateOrdinal(value) {
       const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
@@ -224,7 +230,8 @@ test('party control reconciliation lists legacy rows with missing or unknown par
     getPartyLedgerControlCodes(party) { return new Set([party.ledgerAccountCode || '1103']); },
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
     jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
-    countInvalidReportVoucherLines() { return 0; }
+    countInvalidReportVoucherLines() { return 0; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
   });
   const result = build('1405/01/01', '1405/01/31');
   assert.equal(result.unassignedLines, 2);
@@ -280,6 +287,124 @@ test('bank statement review prioritizes exact matches and exposes single-dimensi
   assert.equal(exact[0].amountMatch, true);
   assert.equal(exact[0].dateMatch, true);
   assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/02' }).length, 0);
+});
+
+test('inventory valuation reconciles to GL control account 1105 and withholds unverified totals', () => {
+  const source = section('function buildInventoryControlAccountReconciliation()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildInventoryControlAccountReconciliation', {
+    state: { costingMethod: 'FIFO', products: [
+      { id: 'P1', name: 'کالای اول', warehouseId: 'W1', stock: 5, bookValue: 250 },
+      { id: 'P2', name: 'کالای دوم', warehouseId: 'W2', stock: 3, bookValue: 150 }
+    ], vouchers: [
+      { id: 1, date: '1405/01/01', lines: [{ code: '1105', debit: 500, credit: 0 }, { code: '3101', debit: 0, credit: 500 }] },
+      { id: 2, date: '1405/01/02', lines: [{ code: '6101', debit: 100, credit: 0 }, { code: '1105', debit: 0, credit: 100 }] }
+    ] },
+    getInventoryBookValue(product) { return product.bookValue; },
+    jalaliDateOrdinal(value) { return String(value || '').startsWith('1405/01/') ? 1 : null; },
+    inspectTrialBalanceVoucher(voucher) { return voucher.validation || { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  const matched = build();
+  assert.equal(matched.status, 'matched');
+  assert.equal(matched.inventoryValue, 400);
+  assert.equal(matched.controlBalance, 400);
+  assert.equal(matched.difference, 0);
+  assert.equal(matched.details[0].productId, 'P1');
+
+  const mismatchBuild = loadFunction(source, 'buildInventoryControlAccountReconciliation', {
+    state: { costingMethod: 'AVG', products: [{ id: 'P1', name: 'کالا', stock: 5, bookValue: 500 }], vouchers: [
+      { id: 3, date: '1405/01/01', lines: [{ code: '1105', debit: 400, credit: 0 }, { code: '3101', debit: 0, credit: 400 }] }
+    ] },
+    getInventoryBookValue(product) { return product.bookValue; },
+    jalaliDateOrdinal() { return 1; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  const mismatch = mismatchBuild();
+  assert.equal(mismatch.status, 'mismatch');
+  assert.equal(mismatch.difference, 100);
+
+  const unverifiedBuild = loadFunction(source, 'buildInventoryControlAccountReconciliation', {
+    state: { costingMethod: 'FIFO', products: [{ id: 'P2', name: 'سری ساخت نامعتبر', stock: 5, bookValue: null }], vouchers: [
+      { id: 4, date: '1405/01/01', lines: [{ code: '1105', debit: 300, credit: 0 }, { code: '3101', debit: 0, credit: 300 }] }
+    ] },
+    getInventoryBookValue(product) { return product.bookValue; },
+    jalaliDateOrdinal() { return 1; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  assert.equal(unverifiedBuild().status, 'unverified');
+});
+ 
+test('inventory control ledger drilldown groups 1105 movements by source and links invoice product lines', () => {
+  const source = section('function buildInventoryValueDiscrepancySources()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildInventoryValueDiscrepancySources', {
+    state: {
+      products: [{ id: 'P1', name: 'کالای نمونه' }],
+      invoices: [{ id: 42, type: 'purchase', items: [{ productId: 'P1', kg: 8, costOfGoodsSold: 0, lot: 'LOT-42' }], returnRefs: [{ id: 'RET-1', items: [{ productId: 'P1', qty: 2, inventoryCost: 180, batchAllocations: [{ batchId: 'B1', quantity: 2 }] }] }] }],
+      vouchers: [
+        { id: 100, sourceType: 'invoice', sourceId: '42', date: '1405/01/01', lines: [{ code: '1105', debit: 800, credit: 0, desc: 'خرید کالا' }] },
+        { id: 101, sourceType: 'invoice_return', sourceId: 'RET-1', sourceEvent: '42', date: '1405/01/02', lines: [{ code: '1105', debit: 0, credit: 100, desc: 'برگشت خرید' }] },
+        { id: 102, sourceType: 'stocktake', sourceId: 'STK-1', date: '1405/01/03', lines: [{ code: '1105', debit: 50, credit: 0, desc: 'اضافه انبار' }] },
+        { id: 103, date: '1405/01/04', lines: [{ code: '1105', debit: 20, credit: 0, desc: 'سند دستی' }] }
+      ]
+    }
+  });
+  const rows = build();
+  assert.equal(rows.length, 4);
+  const invoice = rows.find(row => row.sourceType === 'invoice');
+  assert.equal(invoice.invoiceId, '42');
+  assert.equal(invoice.productLines[0].productId, 'P1');
+  assert.equal(invoice.productLines[0].productName, 'کالای نمونه');
+  assert.equal(invoice.net, 800);
+  const returned = rows.find(row => row.sourceType === 'invoice_return');
+  assert.equal(returned.invoiceId, '42');
+  assert.equal(returned.returnItems[0].productId, 'P1');
+  assert.equal(returned.returnItems[0].quantity, 2);
+  assert.equal(returned.returnItems[0].inventoryCost, 180);
+  assert.equal(returned.returnItems[0].batchAllocations[0].batchId, 'B1');
+  assert.equal(returned.net, -100);
+  assert.equal(rows.find(row => row.sourceType === 'stocktake').net, 50);
+  assert.equal(rows.find(row => row.sourceType === 'manual').net, 20);
+});
+
+test('warehouse transfer reconciliation detects quantity and value differences without changing total inventory', () => {
+  const source = section('function buildWarehouseTransferValueReconciliation()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildWarehouseTransferValueReconciliation', {
+    state: {
+      costingMethod: 'AVG',
+      warehouses: [{ id: 'W1', name: 'انبار مبدأ' }, { id: 'W2', name: 'انبار مقصد' }],
+      products: [
+        { id: 'P1', name: 'کالای نمونه', warehouseId: 'W1', kardex: [{ doc: 'حواله خروج انتقال TR-123-abcd به انبار مقصد', outQty: 5, inQty: 0, price: 100 }] },
+        { id: 'P2', baseProductId: 'P1', name: 'کالای نمونه', warehouseId: 'W2', kardex: [{ doc: 'حواله ورود انتقال TR-123-abcd از انبار مبدأ', inQty: 4, outQty: 0, price: 110 }] }
+      ]
+    }
+  });
+  const rows = build();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].sourceWarehouse, 'انبار مبدأ');
+  assert.equal(rows[0].destinationWarehouse, 'انبار مقصد');
+  assert.equal(rows[0].quantityDifference, -1);
+  assert.equal(rows[0].sourceValue, 500);
+  assert.equal(rows[0].destinationValue, 440);
+  assert.equal(rows[0].valueDifference, -60);
+  assert.equal(rows[0].status, 'review');
+});
+
+test('FIFO warehouse transfer reconciliation values transferred layers from destination batches', () => {
+  const source = section('function buildWarehouseTransferValueReconciliation()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildWarehouseTransferValueReconciliation', {
+    state: {
+      costingMethod: 'FIFO',
+      warehouses: [{ id: 'W1', name: 'مبدأ' }, { id: 'W2', name: 'مقصد' }],
+      products: [
+        { id: 'P1', name: 'کالا', warehouseId: 'W1', kardex: [{ doc: 'حواله خروج انتقال TR-456-efgh', outQty: 3, inQty: 0, price: 90 }] },
+        { id: 'P2', baseProductId: 'P1', name: 'کالا', warehouseId: 'W2', batches: [{ id: 'B-TR', sourceType: 'warehouse_transfer', sourceRef: 'TR-456-efgh', sourceBatchId: 'B1', quantity: 3, remainingQty: 2, unitCost: 75 }], kardex: [{ doc: 'حواله ورود انتقال TR-456-efgh', inQty: 3, outQty: 0, price: 75 }] }
+      ]
+    }
+  });
+  const row = build()[0];
+  assert.equal(row.sourceValue, 225);
+  assert.equal(row.destinationValue, 225);
+  assert.equal(row.valueDifference, 0);
+  assert.equal(row.status, 'matched');
 });
 
 console.log(`PASS: ${results.length} accounting smoke tests`);

@@ -19,6 +19,11 @@ function sourceOf(name) {
 
 function createContext({ saveResult = true } = {}) {
   const sandbox = {
+    CHART_ACCOUNTS: [{ code: '3102', name: 'سود انباشته' }],
+    normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
+    getAccountingPeriodLockForDate() { return null; },
+    money(value) { return String(value); },
+    confirm() { return true; },
     state: {
       fiscalYear: '1404',
       vouchers: [
@@ -45,10 +50,15 @@ function createContext({ saveResult = true } = {}) {
   sandbox.showToast = (message, type) => { sandbox.lastToast = { message, type }; };
   vm.createContext(sandbox);
   for (const name of [
+    'normalizeAccountingDate',
     'jalaliDateOrdinal',
     'normalizeLedgerDate',
+    'countInvalidReportVoucherLines',
     'inspectTrialBalanceVoucher',
     'getFiscalYearEndDate',
+    'getFiscalYearCloseRecord',
+    'isOpeningKardexDocument',
+    'buildFiscalYearCarryForwardSummary',
     'buildFiscalYearClosePreview',
     'postVoucher',
     'closeFiscalYear'

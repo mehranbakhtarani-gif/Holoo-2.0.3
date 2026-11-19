@@ -176,8 +176,8 @@ assert.equal(
 const html = fs.readFileSync('index.html', 'utf8');
 assert.ok(html.includes('<script src="./warehouse-audit-domain.js"></script>'));
 assert.ok(html.includes('function renderWarehouseMovementAuditPanel(product, movement)'));
-assert.ok(html.includes('renderWarehouseMovementAuditPanel(p, k)'));
-assert.ok(html.includes("/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || ''))"), 'audit panel condition must use the transfer ID matcher');
+assert.ok(html.includes('renderWarehouseMovementAuditPanel(p, m)'));
+assert.ok(html.includes("/TR-\\d+-[a-z0-9]+/i.test(String(m?.doc || ''))"), 'audit panel condition must use the transfer ID matcher');
 assert.ok(html.includes('function applyWarehouseTransferCorrection('));
 assert.ok(html.includes('warehouseTransferCorrection = {'));
 assert.ok(html.includes('state.auditLogs[0].warehouseTransferCorrection'));

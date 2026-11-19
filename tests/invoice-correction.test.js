@@ -14,9 +14,10 @@ function extract(name, endMarker) {
   return html.slice(start, end);
 }
 function load(source, fnName, context) {
-  const sandbox = context;
+  const sandbox = { jalaliDateOrdinal: () => 1, normalizeLedgerDate: value => String(value || '1405/08/29').replace(/-/g, '/'), getAccountingPeriodLockForDate: () => null, getFiscalYearCloseRecord: () => null, ...context };
   vm.createContext(sandbox);
   vm.runInContext(source + `; this.__fn = ${fnName};`, sandbox);
+  Object.defineProperty(sandbox.__fn, '__sandbox', { value: sandbox });
   return sandbox.__fn;
 }
 const passed = [];
@@ -88,9 +89,10 @@ test('correction form carries purchase type and original lines into draft', () =
   open(61);
   assert.equal(values.type, 'purchase');
   assert.equal(document.getElementById('inv-pay-method').value, 'credit');
-  assert.equal(testContext.invDraft.type, 'purchase');
-  assert.equal(testContext.invDraft.correctionOfInvoiceId, 61);
-  assert.equal(testContext.invDraft.lines[0].productId, 'X1');
+  const draft = vm.runInContext('invDraft', open.__sandbox);
+  assert.equal(draft.type, 'purchase');
+  assert.equal(draft.correctionOfInvoiceId, 61);
+  assert.equal(draft.lines[0].productId, 'X1');
 });
 
 console.log('Passed ' + passed.length + ' invoice correction tests:');

@@ -18,6 +18,7 @@ function functionSource(name) {
 function load(name, context) {
   const sandbox = { ...context, fetchWithTimeout: context.fetchWithTimeout || ((url, options) => context.fetch(url, options)) };
   vm.createContext(sandbox);
+  if (name === 'getPartyNetBalance') vm.runInContext(functionSource('getPartyAccountNetBalance'), sandbox);
   if (name !== 'cloudAuthHeaders') {
     const authHelper = html.match(/function cloudAuthHeaders[\s\S]*?return headers;\s*\}/)?.[0];
     assert.ok(authHelper, 'missing cloud auth header helper');
@@ -68,8 +69,10 @@ async function test(name, fn) { await fn(); passed.push(name); }
         {lines:[{code:'1103',partyId:'P2',debit:900,credit:0}]}
       ]
     };
-    const getAccount=load('getPartyAccountNetBalance',{state});
-    const get=load('getPartyNetBalance',{state,getPartyAccountNetBalance:getAccount});
+    const getAccount = (partyId, accountCode) => state.vouchers.reduce((net, voucher) =>
+      net + (voucher.lines || []).filter(line => String(line.partyId) === String(partyId) && String(line.code) === String(accountCode))
+        .reduce((sum, line) => sum + Number(line.debit || 0) - Number(line.credit || 0), 0), 0);
+    const get=load('getPartyNetBalance',{state});
     assert.equal(get('P1'),350);
     assert.equal(get('P2'),900);
     assert.equal(getAccount('P1','1103'),350);
