@@ -3,8 +3,11 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
-  if (match[1].trim()) new vm.Script(match[1], { filename: `index.html:inline-${i}` });
+for (const [i, tag] of html.split('<script').slice(1).entries()) {
+  const openingEnd = tag.indexOf('>');
+  const closingStart = tag.indexOf('</script>');
+  const source = openingEnd >= 0 && closingStart > openingEnd ? tag.slice(openingEnd + 1, closingStart) : '';
+  if (source.trim()) new vm.Script(source, { filename: `index.html:inline-${i}` });
 }
 function load(context) {
   const sandbox = { ...context };
