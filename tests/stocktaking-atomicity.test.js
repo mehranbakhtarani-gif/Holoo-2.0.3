@@ -119,4 +119,29 @@ assert.equal(original.products[0].stock, 10, 'successful preparation must not mu
 assert.equal(original.products[1].stock, 5);
 assert.equal(original.vouchers.length, 0);
 
+
+const warehouseScoped = fixture();
+warehouseScoped.warehouses = [{ id: 'WH-A', name: 'انبار الف' }, { id: 'WH-B', name: 'انبار ب' }];
+warehouseScoped.products[0].warehouseId = 'WH-A';
+warehouseScoped.products[1].warehouseId = 'WH-B';
+const scopedCounts = sandbox.parsePhysicalStocktakingCounts(warehouseScoped.products, [
+  { productId: 'P1', rawValue: '6' }
+], 'WH-A');
+assert.deepEqual(Array.from(scopedCounts), [{ productId: 'P1', real: 6 }], 'only products from the selected warehouse may be counted');
+sandbox.state = warehouseScoped;
+voucherCalls = 0;
+const scopedDraft = sandbox.buildPhysicalStocktakingDraft(warehouseScoped, [
+  { productId: 'P1', rawValue: '6' }
+], 'STK-WH-A', '1405/08/28', 'WH-A');
+assert.equal(scopedDraft.state.products[0].stock, 6, 'selected warehouse product must receive the count');
+assert.equal(scopedDraft.state.products[1].stock, 5, 'product in another warehouse must remain untouched');
+assert.equal(scopedDraft.auditItems[0].warehouseId, 'WH-A');
+assert.equal(scopedDraft.state.auditLogs[0].meta.warehouseId, 'WH-A', 'audit operation must identify the selected warehouse');
+assert.throws(() => sandbox.buildPhysicalStocktakingDraft(warehouseScoped, [
+  { productId: 'P1', rawValue: '6' }, { productId: 'P2', rawValue: '5' }
+], 'STK-CROSS', '1405/08/28', 'WH-A'), /ناقص|نامعتبر|خالی/);
+assert.throws(() => sandbox.buildPhysicalStocktakingDraft(warehouseScoped, [
+  { productId: 'P1', rawValue: '6' }
+], 'STK-MISSING-WH', '1405/08/28', 'WH-MISSING'), /وجود ندارد/);
+
 console.log('PASS: stocktaking validation, FIFO staging, voucher balancing, and all-or-nothing draft behavior');
