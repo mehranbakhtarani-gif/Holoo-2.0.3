@@ -4286,24 +4286,23 @@
           actor: draft.activeRole || 'mehran', deviceId: DEVICE_ID, createdAt: now.toISOString()
         });
 
-        draft.warehouseTransferCorrections = Array.isArray(draft.warehouseTransferCorrections)
-          ? draft.warehouseTransferCorrections : [];
-        draft.warehouseTransferCorrections.unshift({
-          id: reversalId, originalTransferId: plan.transferId, replacementTransferId: replacementId,
-          date, createdAt: now.toISOString(), actor: draft.activeRole || 'mehran',
-          deviceId: DEVICE_ID, reason: String(reason).trim(),
-          sourceProductId: plan.sourceProductId, sourceWarehouseId: plan.sourceWarehouseId,
-          originalDestinationProductId: plan.destinationProductId,
-          originalDestinationWarehouseId: plan.destinationWarehouseId,
-          replacementDestinationWarehouseId: newDestinationId,
-          originalQuantity: plan.quantity, replacementQuantity: qty,
-          fifo: plan.fifo, fifoRestores: plan.fifoRestores
-        });
-
         state = draft;
         addAudit('اصلاح اتمیک حواله ' + plan.transferId + ' با برگشت دوطرفه و حواله جایگزین ' + replacementId + '؛ علت: ' + String(reason).trim(), {
           sourceType: 'warehouse_transfer_correction', operationDate: date
         });
+        if (Array.isArray(state.auditLogs) && state.auditLogs[0]) {
+          state.auditLogs[0].warehouseTransferCorrection = {
+            id: reversalId, originalTransferId: plan.transferId, replacementTransferId: replacementId,
+            date, createdAt: now.toISOString(), actor: state.auditLogs[0].actor || state.activeRole || 'mehran',
+            deviceId: DEVICE_ID, reason: String(reason).trim(),
+            sourceProductId: plan.sourceProductId, sourceWarehouseId: plan.sourceWarehouseId,
+            originalDestinationProductId: plan.destinationProductId,
+            originalDestinationWarehouseId: plan.destinationWarehouseId,
+            replacementDestinationWarehouseId: newDestinationId,
+            originalQuantity: plan.quantity, replacementQuantity: qty,
+            fifo: plan.fifo, fifoRestores: plan.fifoRestores
+          };
+        }
         if (!saveState()) {
           state = originalState;
           return { ok: false, reason: 'ذخیره محلی عملیات انجام نشد؛ وضعیت قبلی حفظ شد.' };
