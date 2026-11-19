@@ -77,4 +77,75 @@ testCase('requires an explicit destination and rejects invalid stock', () => {
   assert.equal(buildWarehouseAssignmentPlan(state({ id: 'P1', name: 'کالا', stock: 'bad' }), 'P1', 'B').ok, false);
 });
 
+
+const { inspectWarehouseAssignmentHistory } = require('../warehouse-assignment-domain.js');
+
+testCase('reports a history-free zero-stock product as eligible for the existing controlled path', () => {
+  const source = state({ id: 'P1', name: 'کالا', stock: 0, warehouseId: null, kardex: [], batches: [] });
+  const before = JSON.stringify(source);
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.ok, true);
+  assert.equal(report.classification, 'no-history-found');
+  assert.equal(report.canAutoReassign, true);
+  assert.equal(report.movementCount, 0);
+  assert.equal(JSON.stringify(source), before);
+});
+
+testCase('traces Kardex rows and explicit historical warehouse IDs without mutation', () => {
+  const source = state({
+    id: 'P1', name: 'کالا', stock: 2, warehouseId: 'GONE', batches: [],
+    kardex: [{ date: '1405/02/01', doc: 'فاکتور خرید', inQty: 2, outQty: 0, bal: 2, warehouseId: 'A' }]
+  });
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.classification, 'historical-evidence');
+  assert.equal(report.movementCount, 1);
+  assert.deepEqual(report.warehouseIds, ['A']);
+  assert.equal(report.canAutoReassign, false);
+  assert.equal(source.products[0].warehouseId, 'GONE');
+});
+
+testCase('traces batch lineage and identifies missing warehouse provenance', () => {
+  const source = state({
+    id: 'P1', name: 'کالا', stock: 0, warehouseId: 'GONE', kardex: [],
+    batches: [{ id: 'LOT-1', lot: 'L-1', sourceType: 'warehouse_transfer', sourceRef: 'TR-1-ab', sourceBatchId: 'LOT-0', quantity: 5, remainingQty: 0 }]
+  });
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.batchCount, 1);
+  assert.equal(report.batches[0].sourceBatchId, 'LOT-0');
+  assert.equal(report.unresolvedWarehouseEvidenceCount, 1);
+  assert.equal(report.canAutoReassign, false);
+});
+
+testCase('finds document references across invoice, voucher and order records', () => {
+  const source = state({ id: 'P1', name: 'کالا', stock: 0, kardex: [], batches: [] }, {
+    invoices: [{ id: 'INV-1', date: '1405/01/01', items: [{ productId: 'P1' }] }],
+    vouchers: [{ id: 'V-1', lines: [{ product_id: 'P1' }] }],
+    orders: [{ id: 'O-1', items: [{ stockProductId: 'P1' }] }]
+  });
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.documentReferenceCount, 3);
+  assert.equal(report.canAutoReassign, false);
+});
+
+testCase('includes append-only audit references in the historical evidence report', () => {
+  const source = state({ id: 'P1', name: 'کالا', stock: 0, kardex: [], batches: [] }, {
+    auditLogs: [{ sourceId: 'P1', operationId: 'op-1', sourceType: 'warehouse_assignment', action: 'انتساب کالا' }]
+  });
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.auditReferenceCount, 1);
+  assert.equal(report.auditReferences[0].operationId, 'op-1');
+  assert.equal(report.canAutoReassign, false);
+});
+
+testCase('rejects ambiguous product IDs instead of selecting one history', () => {
+  const source = { warehouses, products: [
+    { id: 'P1', name: 'کالا', stock: 0 },
+    { id: 'P1', name: 'کالای دوم', stock: 0 }
+  ] };
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.ok, false);
+  assert.equal(report.classification, 'unresolved');
+});
+
+console.log('PASS: 6 historical warehouse assignment inspection tests');
 console.log('PASS: 8 controlled warehouse assignment tests');
