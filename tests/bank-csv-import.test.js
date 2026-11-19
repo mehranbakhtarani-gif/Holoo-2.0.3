@@ -49,7 +49,6 @@ const integration = load({
   showToast(message,type){messages.push({message,type});},faNum:String
 });
 integration.parseBankCSV();
-console.log('CSV DEBUG', JSON.stringify({ items: state.bankReconcileItems, messages }));
 assert.equal(state.bankReconcileItems.length, 3);
 assert.equal(state.bankReconcileItems[0].ref,'REF-3');
 assert.equal(state.bankReconcileItems[0].desc,'شرح چند\nخطی');
@@ -59,7 +58,7 @@ assert.equal(saves,1);
 assert.equal(renders,1);
 assert.equal(closes,1);
 assert.match(messages[0].message,/2 تراکنش وارد شد/);
-assert.match(messages[0].message,/1 تکراری/);
+assert.match(messages[0].message,/1 شماره پیگیری تکراری/);
 assert.match(messages[0].message,/1 نامعتبر/);
 console.log('PASS: bank statement CSV parser supports quoted commas, escaped quotes and multiline fields');
 console.log('PASS: malformed quoted CSV is rejected before import');
