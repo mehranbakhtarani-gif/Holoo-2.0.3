@@ -4269,6 +4269,7 @@
 
     function inspectWarehouseTransferBatchLinks(products) {
       const items = Array.isArray(products) ? products : [];
+      const auditState = appState || { products: items, warehouses: Array.isArray(warehouses) ? warehouses : [], invoices: [], vouchers: [], auditLogs: [] };
       const issues = [];
       const batchOwners = new Map();
       const transferBatches = new Map();
@@ -4395,17 +4396,17 @@
       return { checkedOperations, issues };
     }
 
-    function inspectInventoryReconciliation(products, warehouses) {
+    function inspectInventoryReconciliation(products, warehouses, appState = (typeof state !== 'undefined' ? state : null)) {
       const items = Array.isArray(products) ? products : [];
       const issues = [];
       const unverified = [];
       const transferGroups = new Map();
       const warehouseTopology = inspectWarehouseProductTopology(items, warehouses);
       issues.push(...warehouseTopology.issues);
-      const stocktakeAudit = inspectStocktakingAuditTrail(state);
+      const stocktakeAudit = inspectStocktakingAuditTrail(auditState);
       issues.push(...stocktakeAudit.issues);
       const transferBatchAudit = inspectWarehouseTransferBatchLinks(items);
-      const inventoryOperationAudit = inspectInventoryOperationAudit(state);
+      const inventoryOperationAudit = inspectInventoryOperationAudit(auditState);
       issues.push(...inventoryOperationAudit.issues);
       issues.push(...transferBatchAudit.issues);
       let checkedBatches = 0;
@@ -4516,7 +4517,7 @@
           transferGroups.get(transferId).push({ type, qty: type === 'source' ? Number(movement?.outQty) : type === 'destination' ? Number(movement?.inQty) : NaN, productId: String(product?.id ?? ''), baseProductId: String(product?.baseProductId || product?.id || ''), warehouseId: String(product?.warehouseId ?? '') });
         });
       });
-      const activeInvoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(invoice => invoice && invoice.status === 'active' && ['sale','purchase'].includes(invoice.type));
+      const activeInvoices = (Array.isArray(auditState.invoices) ? auditState.invoices : []).filter(invoice => invoice && invoice.status === 'active' && ['sale','purchase'].includes(invoice.type));
       let checkedInvoiceKardexLines = 0;
       activeInvoices.forEach(invoice => {
         const expectedDoc = (invoice.type === 'sale' ? 'فاکتور فروش #' : 'فاکتور خرید #') + String(invoice.id);
