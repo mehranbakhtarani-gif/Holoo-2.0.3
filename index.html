@@ -1613,7 +1613,7 @@
   </div>
 
   <div id="modal-kardex" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
-    <div class="bg-white rounded-3xl w-full max-w-lg max-h-[85dvh] overflow-y-auto p-4 space-y-2.5 text-xs">
+    <div class="bg-white rounded-3xl w-full max-w-5xl max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-3 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 id="kardex-modal-title" class="font-black text-sm">کاردکس گردش کالا</h3><button onclick="closeModal('modal-kardex')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
       <div class="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-50 border">
         <div><label for="kardex-from-date" class="block text-[10px] font-bold mb-1">از تاریخ (شمسی)</label><input id="kardex-from-date" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱" class="w-full border rounded-lg px-2 py-2 tabular-nums" /></div>
@@ -2268,7 +2268,10 @@
       { code: '6101', name: 'هزینه‌های عمومی، پورسانت و کارمزد بانکی' },
       { code: '6102', name: 'هزینه حقوق و دستمزد' },
       { code: '6103', name: 'هزینه استهلاک دارایی‌ها' },
-      { code: '6104', name: 'کسری انبارگردانی و زیان تسعیر ارز' }
+      { code: '6104', name: 'هزینه‌های تجمیعی تعدیلات قدیمی (کسری انبار و تسعیر)' },
+      { code: '6105', name: 'هزینه کسری انبارگردانی' },
+      { code: '6106', name: 'زیان تسعیر ارز' },
+      { code: '4199', name: 'سایر درآمدها و سود اضافه انبارگردانی' }
     ];
 
     function buildAccountCatalog() {
@@ -3402,8 +3405,9 @@
         code.startsWith('21') ? sum + (account.credBal || 0) : sum, 0);
       const fxGain = (bal['4104']?.periodCredTurn || 0) - (bal['4104']?.periodDebTurn || 0);
       const costOfSales = bal['5101']?.periodDebTurn || 0;
-      const operatingExpenses = ['6101', '6102', '6103', '6104'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0), 0);
-      const netProfit = sales + fxGain - costOfSales - operatingExpenses;
+      const otherIncome = (bal['4199']?.periodCredTurn || 0) - (bal['4199']?.periodDebTurn || 0);
+      const operatingExpenses = ['6101', '6102', '6103', '6104', '6105', '6106'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0) - (bal[code]?.periodCredTurn || 0), 0);
+      const netProfit = sales + otherIncome + fxGain - costOfSales - operatingExpenses;
       const inventoryValueText = invVal === null ? 'نیازمند تطبیق موجودی' : money(invVal);
       const profitColor = netProfit < 0 ? 'text-rose-200' : 'text-emerald-100';
       const fiscalYearLabel = balanceAudit.fiscalYear || 'نامعتبر';
@@ -5041,112 +5045,171 @@
 
     function openKardexModal(id) {
       selectedKardexProductId = id;
-      const p = state.products.find(x => String(x.id) === String(id));
+      const p = (state.products || []).find(x => String(x.id) === String(id));
       if (!p) return;
-      document.getElementById('kardex-modal-title').textContent = `کاردکس گردش: ${p.name}`;
+      document.getElementById('kardex-modal-title').textContent = 'کاردکس گردش: ' + String(p.name || p.id);
       const fromValue = document.getElementById('kardex-from-date')?.value.trim() || '';
       const toValue = document.getElementById('kardex-to-date')?.value.trim() || '';
-      let fromKey = null, toKey = null;
+      let fromOrdinal = null, toOrdinal = null;
       if (fromValue || toValue) {
-        fromKey = normalizeLedgerDate(fromValue); toKey = normalizeLedgerDate(toValue);
-        if (!fromValue || !toValue || !fromKey || !toKey || fromKey > toKey || jalaliDateOrdinal(fromValue) === null || jalaliDateOrdinal(toValue) === null) {
+        const fromKey = normalizeLedgerDate(fromValue), toKey = normalizeLedgerDate(toValue);
+        fromOrdinal = jalaliDateOrdinal(fromValue); toOrdinal = jalaliDateOrdinal(toValue);
+        if (!fromValue || !toValue || !fromKey || !toKey || fromKey > toKey ||
+            fromOrdinal === null || toOrdinal === null || fromOrdinal > toOrdinal) {
           showToast('تاریخ شروع و پایان شمسی معتبر را وارد کنید؛ شروع نباید بعد از پایان باشد.', 'error'); return;
         }
       }
 
-      // This view is intentionally read-only: do not call ensureProductBatches here,
-      // because that helper may initialize or normalize product data.
-      const batches = Array.isArray(p.batches) ? p.batches : [];
-      const batchRows = batches.map(b => `
-        <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap justify-between gap-2">
-          <div><strong>سری ساخت ${escapeKardexText(b.lot || '—')}</strong><span class="block text-[10px] text-slate-500">ورود: ${escapeKardexText(b.receivedDate || '—')} | تولید: ${escapeKardexText(b.productionDate || '—')} | انقضا: ${escapeKardexText(b.expiryDate || '—')}</span></div>
-          <div class="text-left tabular-nums font-bold"><span>${faNum(b.remainingQty)} KG باقی‌مانده</span><span class="block text-[10px] text-slate-500">بهای واحد: ${money(b.unitCost || 0)}</span></div>
-        </div>
-      `).join('');
-
-      const batchSection = batches.length
-        ? `<section class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2"><div class="flex items-center justify-between gap-2"><strong class="text-sm text-indigo-950">سری ساخت‌های کالا</strong><span class="text-[10px] text-indigo-700">${faNum(batches.length)} مورد</span></div><div class="space-y-2">${batchRows}</div></section>`
-        : '';
-
+      // Read-only ledger view. Do not initialize or mutate historical batches here.
       const movements = Array.isArray(p.kardex) ? p.kardex : [];
-      const filteredMovements = movements.filter(k => {
-        if (!fromKey && !toKey) return true;
-        const key = normalizeLedgerDate(k.date);
-        return !!key && jalaliDateOrdinal(k.date) !== null && key >= fromKey && key <= toKey;
+      const validQty = value => {
+        const n = Number(value ?? 0);
+        return Number.isFinite(n) && n >= 0 ? n : null;
+      };
+      const ordered = movements.map((movement, index) => {
+        const inQty = validQty(movement?.inQty), outQty = validQty(movement?.outQty);
+        const balance = Number(movement?.bal), ordinal = jalaliDateOrdinal(movement?.date);
+        const valid = inQty !== null && outQty !== null && !(inQty > 0 && outQty > 0) &&
+          Number.isFinite(balance) && balance >= 0;
+        return { movement, index, inQty, outQty, balance, ordinal, valid,
+          delta: inQty !== null && outQty !== null ? inQty - outQty : null };
+      }).sort((a, b) => {
+        if (a.ordinal === null && b.ordinal === null) return a.index - b.index;
+        if (a.ordinal === null) return 1;
+        if (b.ordinal === null) return -1;
+        return a.ordinal - b.ordinal || a.index - b.index;
       });
-      const movementRows = filteredMovements.slice().sort((a, b) => {
-        const aDate = jalaliDateOrdinal(a?.date), bDate = jalaliDateOrdinal(b?.date);
-        if (aDate === null && bDate === null) return 0;
-        if (aDate === null) return 1;
-        if (bDate === null) return -1;
-        return aDate - bDate;
-      }).map(k => {
-        const docMatch = String(k.doc || '').match(/#(\d+)/);
-        const invoice = docMatch
-          ? (state.invoices || []).find(inv => String(inv.id) === String(docMatch[1]))
-          : null;
-        const invoiceLine = invoice && Array.isArray(invoice.items)
-          ? invoice.items.find(item => String(item.productId) === String(p.id))
-          : null;
-        const party = invoice
-          ? (state.parties || []).find(item => String(item.id) === String(invoice.partyId))
-          : null;
-        const isSale = invoice?.type === 'sale' || String(k.doc || '').includes('فروش');
-        const transactionPrice = invoiceLine && Number.isFinite(Number(invoiceLine.price))
-          ? `قیمت فروش: ${money(invoiceLine.price)} / کیلو`
-          : (k.price != null ? `فی ثبت‌شده: ${money(k.price)}` : 'قیمت: —');
-        const partyLabel = invoice
-          ? `${isSale ? 'مشتری' : 'تأمین‌کننده'}: ${escapeKardexText(party?.name || 'نامشخص')}`
-          : '';
-        const invoiceTotal = invoiceLine && invoiceLine.total != null
-          ? ` | مبلغ ردیف: ${money(invoiceLine.total)}`
-          : '';
-        return `
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-            <div class="flex flex-wrap justify-between gap-2">
-              <div><strong>${escapeKardexText(k.doc || 'گردش کالا')}</strong><span class="block text-[10px] text-slate-500">تاریخ: ${escapeKardexText(k.date || '—')} ${invoice ? `| شماره فاکتور: ${faNum(invoice.id)}` : ''}</span></div>
-              <div class="tabular-nums font-bold">${k.inQty ? `<span class="text-emerald-700">+${faNum(k.inQty)} ورود</span>` : `<span class="text-rose-700">-${faNum(k.outQty)} خروج</span>`}<span class="block text-[10px] text-slate-500">مانده: ${faNum(k.bal)} KG</span></div>
-            </div>
-            <div class="text-[11px] text-slate-700">${transactionPrice}${invoiceTotal}</div>
-            ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
-            ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
-            ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? renderWarehouseMovementAuditPanel(p, k) : ''}
-          </div>
-        `;
+      const periodRows = ordered.filter(row => row.ordinal !== null &&
+        (fromOrdinal === null || row.ordinal >= fromOrdinal) &&
+        (toOrdinal === null || row.ordinal <= toOrdinal));
+      const prior = fromOrdinal === null ? [] : ordered.filter(row => row.ordinal !== null && row.ordinal < fromOrdinal);
+      const firstValid = ordered.find(row => row.ordinal !== null && row.valid);
+      const lastPrior = prior.slice().reverse().find(row => row.valid);
+      let opening = null, openingBasis = '';
+      if (fromOrdinal !== null && lastPrior) {
+        opening = lastPrior.balance;
+        openingBasis = 'مانده ثبت‌شده پیش از شروع بازه';
+      } else if (firstValid) {
+        opening = firstValid.balance - firstValid.delta;
+        openingBasis = 'برآورد از اولین گردش ثبت‌شده؛ مانده افتتاحیه مستقل ثبت نشده است';
+      }
+      const totals = periodRows.reduce((sum, row) => {
+        if (!row.valid) sum.valid = false;
+        else { sum.inQty += row.inQty; sum.outQty += row.outQty; }
+        return sum;
+      }, { inQty: 0, outQty: 0, valid: true });
+      const closing = opening !== null && totals.valid ? opening + totals.inQty - totals.outQty : null;
+      const lastPeriod = periodRows.slice().reverse().find(row => row.valid);
+      const storedClosing = lastPeriod ? lastPeriod.balance : opening;
+      const latest = ordered.slice().reverse().find(row => row.valid);
+      const currentStock = Number(p.stock);
+      const stockMismatch = latest && Number.isFinite(currentStock) &&
+        Math.abs(latest.balance - currentStock) > 0.000001;
+      const balanceMismatch = closing !== null && storedClosing !== null &&
+        Math.abs(closing - storedClosing) > 0.000001;
+      const invalidCount = ordered.filter(row => !row.valid || row.ordinal === null).length;
+      const qtyText = value => value === null || !Number.isFinite(value) ? 'نیازمند تطبیق' : faNum(value) + ' KG';
+      const card = (label, value, note, cls) =>
+        '<div class="rounded-xl border p-3 min-w-0 ' + cls + '"><div class="text-[10px] font-bold">' + label +
+        '</div><strong class="block mt-1 text-sm sm:text-base tabular-nums break-words">' + value +
+        '</strong><div class="mt-1 text-[9px] opacity-75">' + (note || '') + '</div></div>';
+      const summary = '<section class="grid grid-cols-2 xl:grid-cols-4 gap-2">' +
+        card('مانده ابتدای بازه', qtyText(opening), openingBasis, 'bg-slate-50 border-slate-200 text-slate-800') +
+        card('جمع ورود دوره', qtyText(totals.valid ? totals.inQty : null), 'مجموع ورود در بازه انتخابی', 'bg-emerald-50 border-emerald-200 text-emerald-900') +
+        card('جمع خروج دوره', qtyText(totals.valid ? totals.outQty : null), 'مجموع خروج در بازه انتخابی', 'bg-rose-50 border-rose-200 text-rose-900') +
+        card('مانده پایان بازه', qtyText(closing), storedClosing === null ? 'مانده ثبت‌شده در دسترس نیست' : 'مانده ثبت‌شده: ' + qtyText(storedClosing), 'bg-teal-50 border-teal-200 text-teal-900') +
+        '</section>';
+
+      const invoiceInfo = movement => {
+        const match = String(movement?.doc || '').match(/#(\d+)/);
+        const invoice = match ? (state.invoices || []).find(item => String(item.id) === String(match[1])) : null;
+        const line = invoice && Array.isArray(invoice.items)
+          ? invoice.items.find(item => String(item.productId) === String(p.id)) : null;
+        const party = invoice ? (state.parties || []).find(item => String(item.id) === String(invoice.partyId)) : null;
+        return {
+          invoice, line,
+          party: invoice ? (invoice.type === 'sale' ? 'مشتری: ' : 'تأمین‌کننده: ') + escapeKardexText(party?.name || 'نامشخص') : '',
+          price: line && Number.isFinite(Number(line.price))
+            ? (invoice.type === 'sale' ? 'فی فروش: ' : 'فی خرید: ') + money(line.price)
+            : (movement?.price != null && Number.isFinite(Number(movement.price)) ? 'فی ثبت‌شده: ' + money(movement.price) : '—'),
+          amount: line && Number.isFinite(Number(line.total)) ? money(line.total) : '—'
+        };
+      };
+
+      let running = opening;
+      const rows = periodRows.map(row => {
+        if (running !== null) running = row.valid ? running + row.delta : null;
+        const m = row.movement;
+        const mismatch = running !== null && row.valid && Math.abs(running - row.balance) > 0.000001;
+        const info = invoiceInfo(m);
+        const audit = (/TR-\d+-[a-z0-9]+/i.test(String(m?.doc || '')) || /اصلاحیه انبارگردانی/.test(String(m?.doc || '')))
+          ? renderWarehouseMovementAuditPanel(p, m) : '';
+        return '<tr class="border-t border-slate-200 align-top">' +
+          '<td class="p-2 whitespace-nowrap tabular-nums">' + escapeKardexText(m?.date || '—') + '</td>' +
+          '<td class="p-2 min-w-[180px]"><strong class="block">' + escapeKardexText(m?.doc || 'گردش کالا') + '</strong>' +
+          (info.invoice ? '<span class="text-[10px] text-slate-500">فاکتور #' + faNum(info.invoice.id) + '</span>' : '') +
+          (info.party ? '<span class="block text-[10px] text-slate-600">' + info.party + '</span>' : '') +
+          (info.invoice?.salesperson ? '<span class="block text-[10px] text-slate-500">بازاریاب: ' + escapeKardexText(info.invoice.salesperson) + '</span>' : '') +
+          (audit ? '<details class="mt-1"><summary class="cursor-pointer text-[10px] font-bold text-indigo-700">جزئیات حسابرسی / انتقال</summary>' + audit + '</details>' : '') +
+          '</td><td class="p-2 text-left tabular-nums text-emerald-700">' + (row.inQty === null ? 'نامعتبر' : row.inQty ? '+' + faNum(row.inQty) : '—') + '</td>' +
+          '<td class="p-2 text-left tabular-nums text-rose-700">' + (row.outQty === null ? 'نامعتبر' : row.outQty ? '−' + faNum(row.outQty) : '—') + '</td>' +
+          '<td class="p-2 text-left font-bold tabular-nums">' + (running !== null && Number.isFinite(running) ? faNum(running) : row.valid ? faNum(row.balance) : 'نامعتبر') +
+          (mismatch ? '<span class="block text-[9px] text-amber-700">مانده ثبت‌شده: ' + faNum(row.balance) + '</span>' : '') +
+          '</td><td class="p-2 min-w-[120px] text-[10px]">' + info.price +
+          '<span class="block text-slate-500">مبلغ ردیف: ' + info.amount + '</span></td></tr>';
       }).join('');
+
+      const warnings = [];
+      if (invalidCount) warnings.push(faNum(invalidCount) + ' ردیف دارای تاریخ، مقدار یا مانده نامعتبر است.');
+      if (balanceMismatch) warnings.push('مانده محاسباتی با مانده ذخیره‌شده پایان بازه برابر نیست.');
+      if (stockMismatch) warnings.push('مانده آخرین گردش با موجودی فعلی کالا برابر نیست؛ گزارش تطبیق موجودی را اجرا کنید.');
+      if (opening === null) warnings.push('مانده ابتدای بازه قابل اتکا نیست؛ سابقه پایه معتبر پیدا نشد.');
+      const warningPanel = warnings.length
+        ? '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-[10px] text-amber-950 space-y-1">' +
+          warnings.map(item => '<p>• ' + escapeKardexText(item) + '</p>').join('') +
+          '<p class="font-bold">این گزارش فقط‌خواندنی است و هیچ مانده یا سند تاریخی را بازنویسی نمی‌کند.</p></div>'
+        : '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-[10px] text-emerald-900">محاسبه گردش‌ها با مانده ثبت‌شده سازگار است؛ این کنترل جایگزین تطبیق با دفتر کل نیست.</div>';
+
+      const batchRows = (Array.isArray(p.batches) ? p.batches : []).map(batch => {
+        const qty = validQty(batch?.remainingQty ?? batch?.quantity), cost = Number(batch?.unitCost);
+        const valid = qty !== null && Number.isFinite(cost) && cost >= 0;
+        return '<div class="rounded-xl bg-indigo-50 border border-indigo-100 p-2.5 flex flex-wrap justify-between gap-2">' +
+          '<div><strong>سری ساخت ' + escapeKardexText(batch?.lot || '—') + '</strong>' +
+          '<span class="block text-[10px] text-slate-500">ورود: ' + escapeKardexText(batch?.receivedDate || '—') +
+          ' | تولید: ' + escapeKardexText(batch?.productionDate || '—') + ' | انقضا: ' + escapeKardexText(batch?.expiryDate || '—') + '</span></div>' +
+          '<div class="text-left tabular-nums font-bold">' + (valid ? qtyText(qty) : '<span class="text-rose-700">اطلاعات نامعتبر</span>') +
+          '<span class="block text-[10px] text-slate-500">بهای واحد: ' + (valid ? money(cost) : 'نیازمند بررسی') + '</span></div></div>';
+      }).join('');
+      const batchSection = batchRows
+        ? '<section class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2"><strong class="text-sm text-indigo-950">سری ساخت‌های کالا</strong><div class="grid grid-cols-1 md:grid-cols-2 gap-2">' + batchRows + '</div></section>' : '';
 
       const transferGroups = new Map();
       movements.forEach((movement, index) => {
-        const transferMatch = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
-        if (!transferMatch || transferGroups.has(transferMatch[0])) return;
-        transferGroups.set(transferMatch[0], { movement, index });
+        const match = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
+        if (match && !transferGroups.has(match[0])) transferGroups.set(match[0], { movement, index });
       });
-      const transferCorrectionRows = Array.from(transferGroups.entries()).map(([transferId, entry]) => {
-        const { movement, index } = entry;
+      const transferRows = Array.from(transferGroups.entries()).map(([transferId, entry]) => {
         const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferId);
-        return `
-          <div class="rounded-xl border border-indigo-200 bg-white p-2.5 flex flex-wrap items-center justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <strong class="block text-[11px] text-indigo-950">${escapeKardexText(transferId)}</strong>
-              <span class="block text-[10px] text-slate-600">${escapeKardexText(movement.doc || 'حواله انتقال')} • ${escapeKardexText(movement.date || 'بدون تاریخ')}</span>
-              <span class="block text-[10px] ${plan.ok ? 'text-emerald-700' : 'text-rose-700'}">${plan.ok ? 'آماده بررسی و اصلاح' : 'اصلاح مسدود: ' + escapeKardexText(plan.reason)}</span>
-            </div>
-            <button type="button" onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${index})"
-              class="shrink-0 bg-indigo-700 text-white border border-indigo-800 px-3 py-2 rounded-lg font-black text-[11px]">
-              بررسی / اصلاح حواله
-            </button>
-          </div>`;
+        return '<div class="rounded-xl border border-indigo-200 bg-white p-2.5 flex flex-wrap items-center justify-between gap-2">' +
+          '<div class="min-w-0 flex-1"><strong class="block text-[11px] text-indigo-950">' + escapeKardexText(transferId) + '</strong>' +
+          '<span class="block text-[10px] text-slate-600">' + escapeKardexText(entry.movement.doc || 'حواله انتقال') + ' • ' + escapeKardexText(entry.movement.date || 'بدون تاریخ') + '</span>' +
+          '<span class="block text-[10px] ' + (plan.ok ? 'text-emerald-700' : 'text-rose-700') + '">' +
+          (plan.ok ? 'آماده بررسی و اصلاح' : 'اصلاح مسدود: ' + escapeKardexText(plan.reason)) + '</span></div>' +
+          '<button type="button" onclick="requestWarehouseMovementCorrection(\'' + String(p.id).replace(/'/g, '') + '\', ' + entry.index + ')" class="shrink-0 bg-indigo-700 text-white border border-indigo-800 px-3 py-2 rounded-lg font-black text-[11px]">بررسی / اصلاح حواله</button></div>';
       }).join('');
-      const transferCorrectionPanel = `
-        <section class="rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-3 space-y-2">
-          <div class="font-black text-sm text-indigo-950">اصلاح حواله‌های انتقال</div>
-          <p class="text-[10px] leading-5 text-indigo-900">برای پیدا کردن گزینه اصلاح، از این قسمت حواله موردنظر را انتخاب کن. کنترل‌های ایمنی قبل از هر تغییری دوباره اجرا می‌شوند.</p>
-          ${transferCorrectionRows || '<div class="rounded-lg bg-white p-2 text-[10px] text-slate-600">برای این کالا حواله انتقال دارای شناسه قابل‌شناسایی ثبت نشده است.</div>'}
-        </section>`;
-      document.getElementById('kardex-modal-list').innerHTML =
-        transferCorrectionPanel +
-        batchSection +
-        (movementRows || '<div class="p-4 text-center text-slate-500">برای این کالا هنوز گردش ثبت‌شده‌ای وجود ندارد.</div>');
+      const transferPanel = '<section class="rounded-2xl border border-indigo-200 bg-indigo-50 p-3 space-y-2"><div class="font-black text-sm text-indigo-950">اصلاح حواله‌های انتقال</div>' +
+        '<p class="text-[10px] leading-5 text-indigo-900">هر انتقال با شناسه مستقل نمایش داده می‌شود؛ اصلاح فقط پس از کنترل دوباره و ثبت سابقه حسابرسی مجاز است.</p>' +
+        (transferRows || '<div class="rounded-lg bg-white p-2 text-[10px] text-slate-600">حواله انتقال قابل‌شناسایی برای این کالا ثبت نشده است.</div>') + '</section>';
+      const table = '<section class="rounded-2xl border border-slate-200 bg-white overflow-hidden"><div class="flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-slate-50">' +
+        '<strong class="text-sm">دفتر گردش کالا</strong><span class="text-[10px] text-slate-500">' + faNum(periodRows.length) + ' ردیف • ترتیب تاریخ و ترتیب ثبت در همان روز</span></div>' +
+        '<div class="overflow-x-auto"><table class="w-full min-w-[850px] text-right text-[11px]"><thead class="bg-slate-100 text-slate-700"><tr>' +
+        '<th class="p-2">تاریخ</th><th class="p-2">شرح / مرجع</th><th class="p-2 text-left">ورود (KG)</th><th class="p-2 text-left">خروج (KG)</th>' +
+        '<th class="p-2 text-left">مانده (KG)</th><th class="p-2">فی / مبلغ ردیف</th></tr></thead><tbody>' +
+        (rows || '<tr><td colspan="6" class="p-5 text-center text-slate-500">در بازه انتخابی گردش ثبت‌شده‌ای وجود ندارد.</td></tr>') +
+        '</tbody></table></div></section>';
+      const list = document.getElementById('kardex-modal-list');
+      if (!list) return;
+      list.innerHTML = summary + warningPanel + transferPanel + batchSection + table;
       openModal('modal-kardex');
     }
 
@@ -5353,12 +5416,12 @@
 
           const lines = diff < 0
             ? [
-                { code: '6104', partyId: null, desc: 'کسری انبارگردانی ' + product.name, debit: valuation, credit: 0 },
+                { code: '6105', partyId: null, desc: 'کسری انبارگردانی ' + product.name, debit: valuation, credit: 0 },
                 { code: '1105', partyId: null, desc: product.name, debit: 0, credit: valuation }
               ]
             : [
                 { code: '1105', partyId: null, desc: 'اضافه انبارگردانی ' + product.name, debit: valuation, credit: 0 },
-                { code: '3102', partyId: null, desc: product.name, debit: 0, credit: valuation }
+                { code: '4199', partyId: null, desc: 'سود ناشی از اضافه انبارگردانی ' + product.name, debit: 0, credit: valuation }
               ];
           const voucherId = postVoucher(
             'سند مغایرت انبارگردانی: ' + product.name,
@@ -7533,7 +7596,7 @@
         { code: '1102', partyId: null, desc: 'پرداخت ارزی به ذی‌نفع خارجی', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
-      else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      else if (diff < 0) lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
       const previous = { paidAmount: Number(c.paidAmount || 0), status: c.status, payments: [...(c.payments || [])], bankBalance: bank ? Number(bank.balance || 0) : null };
       c.paidAmount = previous.paidAmount + amount;
       c.status = c.paidAmount + 0.000001 >= c.amount ? 'paid' : 'partial';
@@ -7590,7 +7653,7 @@
             lines.push({ code: '2105', partyId: item.partyId, desc: 'کاهش بدهی ارزی ' + item.label, debit: difference, credit: 0 });
             lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر پایان دوره ' + item.label, debit: 0, credit: difference });
           } else if (difference < 0) {
-            lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر پایان دوره ' + item.label, debit: Math.abs(difference), credit: 0 });
+            lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر پایان دوره ' + item.label, debit: Math.abs(difference), credit: 0 });
             lines.push({ code: '2105', partyId: item.partyId, desc: 'افزایش بدهی ارزی ' + item.label, debit: 0, credit: Math.abs(difference) });
           }
           item.ref.carryingRate = currentRate;
@@ -7647,7 +7710,7 @@
         { code: '1102', partyId: null, desc: 'حواله ارزی از بانک', debit: 0, credit: paidRial }
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
-      else if (diff < 0) lines.push({ code: '6104', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      else if (diff < 0) lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
       const previousPaid = Number(shipment.fxPaid || 0);
       const previousPayments = [...(shipment.fxPayments || [])];
       const previousBankBalance = bank ? Number(bank.balance || 0) : null;
