@@ -6214,8 +6214,8 @@
       }
       const settlementAccountCode = payMethod === 'bank' ? '1102' : (payMethod === 'cash' ? '1101' : null);
       const vatRate = Number(document.getElementById('inv-vat-rate').value || 0);
-      const commRate = Number(document.getElementById('inv-commission-rate').value || 0);
-      if (!Number.isFinite(vatRate) || vatRate < 0 || !Number.isFinite(commRate) || commRate < 0) {
+      const commRate = type === 'sale' ? Number(document.getElementById('inv-commission-rate').value || 0) : 0;
+      if (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100 || !Number.isFinite(commRate) || commRate < 0 || commRate > 100) {
         showToast('نرخ مالیات یا پورسانت معتبر نیست.', 'error'); return;
       }
       const invoiceLines = invDraft.lines.map(line => ({ ...line }));
@@ -6258,6 +6258,7 @@
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
         paidAmount: payMethod === 'credit' ? 0 : grandTotal,
         status: 'active', items: invoiceLines,
+        ...(invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? { sourceOrderId: String(invDraft.sourceOrderId) } : {}),
         ...(invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null ? { correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId) } : {})
       };
 
@@ -6407,6 +6408,20 @@
       }
 
       const wasCorrection = invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null;
+      const sourceOrderId = invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? String(invDraft.sourceOrderId) : null;
+      if (sourceOrderId) {
+        const sourceOrder = (state.orders || []).find(order => String(order.id) === sourceOrderId);
+        if (sourceOrder) {
+          sourceOrder.status = 'تکمیل‌شده (تبدیل به فاکتور)';
+          sourceOrder.invoiceId = id;
+          sourceOrder.convertedAt = new Date().toISOString();
+          addAudit('تبدیل پیش‌فاکتور ' + sourceOrderId + ' به فاکتور #' + id, {
+            mode: 'manual', sourceType: 'sales_order_conversion', sourceId: sourceOrderId,
+            previous: { status: sourceOrder.previousStatus || 'باز (در انتظار تبدیل)', invoiceId: null },
+            note: 'وضعیت سفارش فقط پس از ثبت موفق فاکتور و سند حسابداری تکمیل شد.'
+          });
+        }
+      }
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
       invDraft = { type, lines: [] };
       const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
@@ -7010,18 +7025,33 @@
       saveState(); closeModal('modal-new-order'); renderOrdersModule(); showToast('پیش‌فاکتور و سفارش مشتری ثبت شد.');
     }
     function convertOrderToInvoice(ordId) {
-      const o = state.orders.find(x => x.id === ordId);
-      const p = state.products.find(x => x.id === o?.productId);
-      if (!o || !p || p.stock < o.kg) { showToast('موجودی انبار برای تبدیل سفارش کافی نیست.', 'error'); return; }
-      o.status = 'تکمیل‌شده (تبدیل به فاکتور)';
+      const o = (state.orders || []).find(x => String(x.id) === String(ordId));
+      if (!o) { showToast('پیش‌فاکتور پیدا نشد.', 'error'); return; }
+      if (String(o.status || '').includes('تکمیل') || o.invoiceId) {
+        showToast('این پیش‌فاکتور قبلاً به فاکتور متصل شده است.', 'error'); return;
+      }
+      const p = (state.products || []).find(x => String(x.id) === String(o.productId));
+      if (!p || !Number.isFinite(Number(o.kg)) || Number(o.kg) <= 0 || Number(p.stock || 0) < Number(o.kg)) {
+        showToast('موجودی یا مقدار کالای پیش‌فاکتور معتبر و کافی نیست.', 'error'); return;
+      }
       navigateTo('invoices'); openInvoiceForm('sale');
-      document.getElementById('inv-party').value = o.partyId;
-      document.getElementById('inv-line-prod').value = o.productId;
+      const warehouseSelect = document.getElementById('inv-warehouse');
+      if (warehouseSelect && p.warehouseId !== undefined) {
+        warehouseSelect.value = String(p.warehouseId);
+        renderInvoiceProductOptions();
+      }
+      document.getElementById('inv-party').value = String(o.partyId);
+      document.getElementById('inv-line-prod').value = String(o.productId);
       document.getElementById('inv-line-unit-mode').value = 'kg';
       document.getElementById('inv-line-qty').value = o.kg;
       document.getElementById('inv-line-price').value = o.price;
+      invDraft.sourceOrderId = String(o.id);
       addInvLine(false);
-      showToast('اطلاعات سفارش به فرم فاکتور منتقل شد ✔');
+      if (!invDraft.lines.length) {
+        invDraft.sourceOrderId = null;
+        showToast('انتقال اقلام پیش‌فاکتور ناموفق بود؛ وضعیت سفارش تغییر نکرد.', 'error'); return;
+      }
+      showToast('اطلاعات پیش‌فاکتور منتقل شد؛ پس از ثبت موفق فاکتور، سفارش تکمیل می‌شود.', 'info');
     }
 
     // =========================================================================
