@@ -652,7 +652,7 @@
               </select>
               <button onclick="openModal('modal-wh-transfer')" class="touch-btn bg-indigo-700 text-white px-3 rounded-xl font-bold">🔄 حواله انتقال بین انبارها</button>
               <button onclick="openInventoryReconciliation()" class="touch-btn bg-slate-800 text-white px-3 rounded-xl font-bold">🔎 گزارش تطبیق موجودی و کاردکس</button>
-              <button onclick="openModal('modal-stock-adjust')" class="touch-btn bg-amber-500 text-slate-950 px-3 rounded-xl font-extrabold">⚖️ اصلاح موجودی / انبارگردانی</button>
+              <button onclick="openPhysicalStocktaking()" class="touch-btn bg-amber-500 text-slate-950 px-3 rounded-xl font-extrabold">⚖️ اصلاح موجودی / انبارگردانی</button>
             </div>
           </div>
 
@@ -1358,7 +1358,12 @@
   <div id="modal-stock-adjust" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-lg max-h-[85dvh] overflow-y-auto p-4 space-y-3 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">📋 انبارگردانی، شمارش واقعی و صدور سند مغایرت</h3><button onclick="closeModal('modal-stock-adjust')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
-      <p class="text-[10px] text-slate-500">موجودی واقعی همه کالاها را وارد کنید. مقدار خالی، منفی یا نامعتبر قابل ثبت نیست.</p>
+      <p class="text-[10px] text-slate-500">ابتدا انبار را انتخاب کنید. فقط کالاهای ثبت‌شده در همان انبار شمارش و اصلاح می‌شوند.</p>
+      <label class="block text-[11px] font-bold text-slate-700">انبار مورد شمارش
+        <select id="stocktaking-warehouse" onchange="renderPhysicalStocktakingRows()" required class="touch-btn mt-1 w-full border rounded-xl bg-white px-3 font-bold">
+          <option value="">ابتدا انبار را انتخاب کنید</option>
+        </select>
+      </label>
       <div id="stocktaking-rows" class="space-y-2"></div>
       <button onclick="submitPhysicalStocktaking()" class="touch-btn w-full bg-emerald-600 text-white font-extrabold rounded-xl">✔ ثبت شمارش واقعی و صدور سند اصلاحی</button>
     </div>
@@ -4295,11 +4300,49 @@
 
       document.getElementById('tr-prod').innerHTML = state.products.map(p => `<option value="${escapeKardexText(p.id)}">${escapeKardexText(p.name)} (${escapeKardexText(getWhName(p.warehouseId))} - ${faNum(p.stock)} KG)</option>`).join('');
       document.getElementById('tr-dest-wh').innerHTML = state.warehouses.map(w => `<option value="${escapeKardexText(w.id)}">${escapeKardexText(w.name)}</option>`).join('');
-      document.getElementById('stocktaking-rows').innerHTML = state.products.map(p => `
+      renderPhysicalStocktakingRows();
+    }
+
+    function openPhysicalStocktaking() {
+      const warehouseSelect = document.getElementById('stocktaking-warehouse');
+      if (!Array.isArray(state.warehouses) || !state.warehouses.length) {
+        showToast('برای شروع انبارگردانی، ابتدا حداقل یک انبار معتبر تعریف کنید.', 'error');
+        return;
+      }
+      warehouseSelect.value = '';
+      renderPhysicalStocktakingRows();
+      openModal('modal-stock-adjust');
+    }
+
+    function renderPhysicalStocktakingRows() {
+      const warehouseSelect = document.getElementById('stocktaking-warehouse');
+      const rows = document.getElementById('stocktaking-rows');
+      if (!warehouseSelect || !rows) return;
+      const selectedWarehouseId = String(warehouseSelect.value || '');
+      const warehouses = Array.isArray(state.warehouses) ? state.warehouses : [];
+      warehouseSelect.innerHTML = '<option value="">ابتدا انبار را انتخاب کنید</option>' +
+        warehouses.map(warehouse => '<option value="' + escapeKardexText(warehouse.id) + '">' +
+          escapeKardexText(warehouse.name) + '</option>').join('');
+      warehouseSelect.value = selectedWarehouseId;
+      if (!selectedWarehouseId) {
+        rows.innerHTML = '<div class="rounded-xl border border-dashed p-4 text-center text-slate-500">برای نمایش اقلام شمارش، یک انبار انتخاب کنید.</div>';
+        return;
+      }
+      const warehouseExists = warehouses.some(warehouse => String(warehouse.id) === selectedWarehouseId);
+      if (!warehouseExists) {
+        rows.innerHTML = '<div class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">انبار انتخاب‌شده معتبر نیست؛ دوباره انتخاب کنید.</div>';
+        return;
+      }
+      const products = (state.products || []).filter(product => String(product.warehouseId ?? '') === selectedWarehouseId);
+      if (!products.length) {
+        rows.innerHTML = '<div class="rounded-xl border border-dashed p-4 text-center text-slate-500">در این انبار کالایی برای شمارش ثبت نشده است.</div>';
+        return;
+      }
+      rows.innerHTML = products.map(product => `
         <div class="p-3 rounded-xl bg-slate-50 border flex justify-between items-center gap-3">
-          <div class="min-w-0 flex-1"><strong class="block break-words">${escapeKardexText(p.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(p.stock)} KG</span><span class="block text-[10px] text-slate-400">${escapeKardexText(getWhName(p.warehouseId))}</span></div>
+          <div class="min-w-0 flex-1"><strong class="block break-words">${escapeKardexText(product.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(product.stock)} KG</span><span class="block text-[10px] text-slate-400">کد کالا: ${escapeKardexText(product.id)} • ${escapeKardexText(getWhName(product.warehouseId))}</span></div>
           <label class="w-28 shrink-0 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
-            <input type="number" inputmode="decimal" min="0" step="any" required id="st-real-${p.id}" value="${Number(p.stock || 0)}" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
+            <input type="number" inputmode="decimal" min="0" step="any" required id="st-real-${String(product.id).replace(/"/g, '&quot;')}" value="${Number(product.stock || 0)}" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
           </label>
         </div>
       `).join('');
@@ -4947,13 +4990,18 @@
       showToast('انتقال ثبت شد؛ موجودی و سری‌های ساختی هر دو انبار و کاردکس به‌روزرسانی شد ✔');
     }
 
-    function parsePhysicalStocktakingCounts(products, entries) {
-      if (!Array.isArray(products) || !Array.isArray(entries) || products.length !== entries.length) {
-        throw new Error('اطلاعات شمارش کامل نیست؛ همه کالاها باید بررسی شوند.');
+    function parsePhysicalStocktakingCounts(products, entries, warehouseId = null) {
+      const scopedProducts = Array.isArray(products)
+        ? (warehouseId === null ? products : products.filter(product => String(product?.warehouseId ?? '') === String(warehouseId)))
+        : [];
+      if (!Array.isArray(entries) || !scopedProducts.length || scopedProducts.length !== entries.length) {
+        throw new Error(warehouseId === null
+          ? 'اطلاعات شمارش کامل نیست؛ همه کالاها باید بررسی شوند.'
+          : 'فهرست شمارش این انبار خالی یا ناقص است؛ هیچ تغییری اعمال نشد.');
       }
       const productIds = new Set();
       const entryMap = new Map();
-      products.forEach(product => {
+      scopedProducts.forEach(product => {
         const id = String(product?.id ?? '');
         if (!id || productIds.has(id)) throw new Error('شناسه کالای انبارگردانی خالی یا تکراری است.');
         productIds.add(id);
@@ -4972,11 +5020,14 @@
         entryMap.set(id, real);
       });
       if (entryMap.size !== productIds.size) throw new Error('برای بعضی کالاها مقدار شمارش وارد نشده است.');
-      return products.map(product => ({ productId: String(product.id), real: entryMap.get(String(product.id)) }));
+      return scopedProducts.map(product => ({ productId: String(product.id), real: entryMap.get(String(product.id)) }));
     }
 
-    function buildPhysicalStocktakingDraft(baseState, entries, operationId, postingDate) {
-      const counts = parsePhysicalStocktakingCounts(baseState.products || [], entries);
+    function buildPhysicalStocktakingDraft(baseState, entries, operationId, postingDate, warehouseId = null) {
+      if (warehouseId !== null && !(baseState.warehouses || []).some(warehouse => String(warehouse.id) === String(warehouseId))) {
+        throw new Error('انبار انتخاب‌شده در اطلاعات شرکت وجود ندارد؛ انبارگردانی متوقف شد.');
+      }
+      const counts = parsePhysicalStocktakingCounts(baseState.products || [], entries, warehouseId);
       const draft = JSON.parse(JSON.stringify(baseState));
       const originalState = state;
       let changes = 0;
@@ -5074,6 +5125,7 @@
             sourceId: operationId,
             operationDate: postingDate,
             sourceType: 'stocktake',
+            warehouseId: warehouseId === null ? null : String(warehouseId),
             previous: auditPrevious,
             relatedVoucherIds: relatedVoucherIds.slice(),
             details: auditItems
@@ -5087,13 +5139,19 @@
 
     function submitPhysicalStocktaking() {
       try {
-        const entries = state.products.map(product => {
+        const warehouseId = String(document.getElementById('stocktaking-warehouse')?.value || '');
+        if (!warehouseId || !(state.warehouses || []).some(warehouse => String(warehouse.id) === warehouseId)) {
+          throw new Error('پیش از ثبت، انبار مورد شمارش را انتخاب کنید.');
+        }
+        const warehouseProducts = (state.products || []).filter(product => String(product.warehouseId ?? '') === warehouseId);
+        if (!warehouseProducts.length) throw new Error('در انبار انتخاب‌شده کالایی برای شمارش وجود ندارد.');
+        const entries = warehouseProducts.map(product => {
           const input = document.getElementById(`st-real-${product.id}`);
           return { productId: String(product.id), rawValue: input ? input.value : '' };
         });
         const operationId = createStableId('stocktake');
         const postingDate = getTodayJalaliDate();
-        const prepared = buildPhysicalStocktakingDraft(state, entries, operationId, postingDate);
+        const prepared = buildPhysicalStocktakingDraft(state, entries, operationId, postingDate, warehouseId);
         if (!prepared.changes) {
           closeModal('modal-stock-adjust');
           showToast('مغایرتی در موجودی مشاهده نشد.');
