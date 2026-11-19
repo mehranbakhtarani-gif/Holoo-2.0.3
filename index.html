@@ -1686,6 +1686,16 @@
     const SNAP_KEY = 'holoo_textile_import_snaps_v2';
     const CLOUD_CFG_KEY = 'holoo_supabase_cfg_v1';
 
+    // Publishable keys are API keys, not JWTs. Send them via apikey only;
+    // keep Authorization: Bearer for legacy JWT anon keys.
+    function cloudAuthHeaders(extra = {}) {
+      const headers = { apikey: cloudConfig.key, ...extra };
+      if (!String(cloudConfig.key || '').startsWith('sb_publishable_')) {
+        headers.Authorization = 'Bearer ' + cloudConfig.key;
+      }
+      return headers;
+    }
+
     let cloudConfig = (() => {
       try {
         const saved = JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || 'null');
@@ -1946,7 +1956,7 @@
         const baseEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
         const checkRes = await fetchWithTimeout(baseEndpoint, {
           method: 'GET',
-          headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
+          headers: cloudAuthHeaders()
         });
         if (!checkRes.ok) throw new Error(`HTTP ${checkRes.status} هنگام بررسی تعارض`);
         const currentRows = await checkRes.json();
@@ -1987,12 +1997,10 @@
           const conditionalEndpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&updated_at=eq.${encodeURIComponent(currentRemote.updated_at)}`;
           res = await fetchWithTimeout(conditionalEndpoint, {
             method: 'PATCH',
-            headers: {
-              'apikey': cloudConfig.key,
-              'Authorization': `Bearer ${cloudConfig.key}`,
+            headers: cloudAuthHeaders({
               'Content-Type': 'application/json',
               'Prefer': 'return=representation'
-            },
+            }),
             body: JSON.stringify({ data: payload.data, updated_at: payload.updated_at })
           });
           if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
@@ -2000,7 +2008,7 @@
           if (!Array.isArray(changedRows) || changedRows.length === 0) {
             const latestRes = await fetchWithTimeout(baseEndpoint, {
               method: 'GET',
-              headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
+              headers: cloudAuthHeaders()
             });
             if (!latestRes.ok) throw new Error('بررسی نسخه جدیدتر ابری ناموفق بود.');
             const latestRows = await latestRes.json();
@@ -2022,12 +2030,10 @@
           const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?on_conflict=id`;
           res = await fetchWithTimeout(endpoint, {
             method: 'POST',
-            headers: {
-              'apikey': cloudConfig.key,
-              'Authorization': `Bearer ${cloudConfig.key}`,
+            headers: cloudAuthHeaders({
               'Content-Type': 'application/json',
               'Prefer': 'resolution=ignore-duplicates,return=representation'
-            },
+            }),
             body: JSON.stringify(payload)
           });
           if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
@@ -2107,7 +2113,7 @@
         const endpoint = `${cloudConfig.url.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(cloudConfig.table)}?id=eq.${encodeURIComponent(cloudConfig.recordId)}&select=data,updated_at`;
         const res = await fetchWithTimeout(endpoint, {
           method: 'GET',
-          headers: { 'apikey': cloudConfig.key, 'Authorization': `Bearer ${cloudConfig.key}` }
+          headers: cloudAuthHeaders()
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const rows = await res.json();
@@ -2362,11 +2368,9 @@
       for (const operation of operations) {
         const response = await fetchWithTimeout(rpcUrl, {
           method: 'POST',
-          headers: {
-            'apikey': cloudConfig.key,
-            'Authorization': 'Bearer ' + cloudConfig.key,
+          headers: cloudAuthHeaders({
             'Content-Type': 'application/json'
-          },
+          }),
           body: JSON.stringify({
             p_record_id: operation.companyRecordId || cloudConfig.recordId,
             p_expected_updated_at: expectedUpdatedAt,
@@ -2399,7 +2403,7 @@
               encodeURIComponent(cloudConfig.table) + '?id=eq.' +
               encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
             const readRes = await fetchWithTimeout(readUrl, {
-              headers: { 'apikey': cloudConfig.key, 'Authorization': 'Bearer ' + cloudConfig.key }
+              headers: cloudAuthHeaders()
             });
             if (readRes.ok) {
               const rows = await readRes.json();
@@ -2443,7 +2447,7 @@
           encodeURIComponent(cloudConfig.table) + '?id=eq.' +
           encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
         const readRes = await fetchWithTimeout(readUrl, {
-          headers: { 'apikey': cloudConfig.key, 'Authorization': 'Bearer ' + cloudConfig.key }
+          headers: cloudAuthHeaders()
         });
         if (!readRes.ok) throw new Error('دریافت نسخه ادغام‌شده پس از ثبت عملیات ناموفق بود.');
         const rows = await readRes.json();
