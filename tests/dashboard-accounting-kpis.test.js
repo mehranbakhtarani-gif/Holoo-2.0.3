@@ -12,7 +12,9 @@ function sliceBetween(startText, endText) {
 }
 const balanced = (id, date, lines) => ({ id, date, lines });
 const state = {
-  fiscalYear: '1405', currency: 'IRR', checks: [], products: [], invoices: [], imports: [],
+  fiscalYear: '1405', currency: 'IRR',
+  checks: Array.from({length:6},(_,i)=>({id:i+1,status:'overdue',sayad:'1234567890'+i,dueDate:'1405/02/01',amount:100+i})),
+  products: [], invoices: [], imports: [],
   vouchers: [
     balanced(1, '1404/12/29', [{code:'1101',debit:1000,credit:0},{code:'3101',debit:0,credit:1000}]),
     balanced(2, '1405/01/02', [{code:'1102',debit:500,credit:0},{code:'4101',debit:0,credit:500}]),
@@ -49,14 +51,21 @@ const sandbox = {
   },
   getTodayJalaliDate:()=> '1405/02/29',
   money:n=>String(n), faNum:n=>String(n), getProductDaysSinceLastMovement:()=>null,
-  document:{getElementById:()=>({innerHTML:''})}
+  dashboardNodes: Object.fromEntries(['dash-period-from','dash-period-to','dash-kpis','dash-alerts','dash-alert-count','dash-alert-toggle','dashChart'].map(id=>[id,{
+    id,innerHTML:'',value:'',textContent:'',classList:{toggle(name,force){this[name]=force;},add(){},remove(){}},
+    destroy(){}
+  }])),
+  document:{getElementById(id){return this.owner.dashboardNodes[id] || null;},owner:null},
+  Chart: class { constructor(ctx,config){ this.ctx=ctx; this.config=config; sandbox.lastChart=this; } destroy(){} },
+  getInvoiceReturnedAmount:()=>0
 };
+sandbox.document.owner=sandbox;
 vm.createContext(sandbox);
 vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function buildAccountLedger('),sandbox);
 vm.runInContext(sliceBetween('    function buildDashboardAccountBalances()', '    // Backward-compatible single-ledger balance helper'),sandbox);
 vm.runInContext(sliceBetween('    function countInvalidReportVoucherLines(', '    function buildAccountLedger('),sandbox);
 vm.runInContext(sliceBetween('    let pnlFromDate = null;', '    function renderProfitLossReport()'),sandbox);
-vm.runInContext(sliceBetween('    let dashChartInst = null;', '    async function runSystemDiagnostics()')+'; this.api={buildDashboardAccountBalances,dashboardAccountNetBalance,buildDashboardMonthlySeries,renderDashboard};',sandbox);
+vm.runInContext(sliceBetween('    let dashChartInst = null;', '    async function runSystemDiagnostics()')+'; this.api={buildDashboardAccountBalances,dashboardAccountNetBalance,buildDashboardMonthlySeries,renderDashboard,toggleDashboardAlerts};',sandbox);
 const api=sandbox.api;
 const quality=api.buildDashboardAccountBalances();
 assert.equal(api.dashboardAccountNetBalance(quality.balances,'1101'),880);
@@ -83,6 +92,21 @@ assert.doesNotMatch(html,/Math\.max\(0, netProfit\)/);
 assert.match(html,/dash-period-from/);
 assert.match(html,/invoice\.status !== 'cancelled'[\s\S]{0,160}getInvoiceReturnedAmount\(invoice\)/);
 assert.match(html,/shipment\.status !== 'cancelled'/);
+
+// Exercise the actual dashboard renderer against the same accounting fixture.
+// KPI sales/profit must equal the canonical P&L report and chart totals must reconcile.
+api.renderDashboard();
+assert.match(sandbox.dashboardNodes['dash-kpis'].innerHTML,/>970</);
+assert.match(sandbox.dashboardNodes['dash-kpis'].innerHTML,/>230</);
+assert.equal(sandbox.lastChart.config.data.datasets[0].data.reduce((sum,value)=>sum+value,0),pnl.revenue);
+assert.equal(sandbox.lastChart.config.data.datasets[3].data.reduce((sum,value)=>sum+value,0),pnl.netProfit);
+assert.match(sandbox.dashboardNodes['dash-alert-count'].textContent,/^[0-9۰-۹]+ مورد$/);
+assert.equal((sandbox.dashboardNodes['dash-alerts'].innerHTML.match(/چک سررسیدشده/g)||[]).length,3);
+assert.equal(sandbox.dashboardNodes['dash-alert-toggle'].classList.hidden,false);
+sandbox.api.toggleDashboardAlerts();
+assert.equal((sandbox.dashboardNodes['dash-alerts'].innerHTML.match(/چک سررسیدشده/g)||[]).length,6);
+console.log('PASS: rendered dashboard sales and net-profit KPIs match canonical P&L and monthly chart totals');
+console.log('PASS: alerts prioritize critical items, show a concise preview and expand on demand');
 console.log('PASS: dashboard balances use net debit/credit for cash, inventory, receivables and all six current-liability accounts');
 console.log('PASS: dashboard period sales and net profit use the canonical P&L engine, including FX and custom 61xx expenses');
 console.log('PASS: monthly revenue, COGS, expenses and profit reconcile to the selected-period P&L');

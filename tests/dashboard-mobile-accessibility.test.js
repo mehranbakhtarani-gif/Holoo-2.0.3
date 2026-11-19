@@ -24,7 +24,7 @@ assert.match(html, /id="dash-period-to"[^>]*aria-label="تاریخ پایان ب
 assert.match(html, /id="dash-kpis"[^>]*aria-live="polite"/);
 assert.match(html, /id="dash-alerts"[^>]*role="status"[^>]*aria-live="polite"/);
 assert.match(html, /id="dashChart" role="img" aria-label="نمودار روند ماهانه/);
-assert.match(html, /<div class="h-64 sm:h-72 w-full">/);
+assert.match(html, /<div class="h-64 sm:h-72 w-full min-w-0">/);
 
 for (const [index, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new (require('node:vm').Script)(match[1], { filename: `index.html:inline-${index}` });
