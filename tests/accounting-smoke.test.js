@@ -293,7 +293,7 @@ test('inventory valuation reconciles to GL control account 1105 and withholds un
       { id: 2, date: '1405/01/02', lines: [{ code: '6101', debit: 100, credit: 0 }, { code: '1105', debit: 0, credit: 100 }] }
     ] },
     getInventoryBookValue(product) { return product.bookValue; },
-    jalaliDateOrdinal(value) { return /^1405\\/01\\/\\d{2}$/.test(String(value || '')) ? 1 : null; },
+    jalaliDateOrdinal(value) { return String(value || '').startsWith('1405/01/') ? 1 : null; },
     inspectTrialBalanceVoucher(voucher) { return voucher.validation || { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
   });
   const matched = build();
