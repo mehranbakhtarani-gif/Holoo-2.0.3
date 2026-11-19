@@ -4484,6 +4484,9 @@
             if (index > 0 && previousBalance === null && chainInterrupted) chainInterrupted = false;
             if (chronologyVerified && previousBalance !== null) {
               const expectedBalance = previousBalance + incoming - outgoing;
+              if (expectedBalance < -0.000001) {
+                issues.push({ type: 'negative-stock', productId, productName, message: 'خروج کالا باعث منفی‌شدن موجودی در توالی کاردکس شده است؛ موجودی کافی پیش از خروج وجود نداشته است.', detail: `ردیف: ${index + 1} | تاریخ: ${movement?.date || '—'} | مانده قبل: ${previousBalance} | خروج: ${outgoing} | مانده محاسباتی: ${expectedBalance} | سند: ${movement?.doc || 'بدون شرح'}` });
+              }
               if (Math.abs(expectedBalance - balance) > 0.000001) {
                 issues.push({ type: 'kardex-sequence', productId, productName, message: 'مانده این ردیف با مانده ردیف قبل به‌علاوه ورود و کسر خروج سازگار نیست.', detail: `ردیف: ${index + 1} | تاریخ: ${movement?.date || '—'} | مانده مورد انتظار: ${expectedBalance} | مانده ثبت‌شده: ${balance}` });
               }
@@ -5053,6 +5056,7 @@
         'transfer-batch': 'مغایرت پیوند سری ساخت انتقال بین انبارها',
         'invoice-kardex': 'مغایرت گردش فاکتور با کاردکس',
         'inventory-operation-audit': 'مغایرت سابقه اصلاح موجودی',
+        'negative-stock': 'خروج بیش از موجودی / مانده منفی',
         'warehouse-product-identity': 'شناسه کالای پایه نامعتبر',
         'warehouse-product-reference': 'ارجاع به انبار نامعتبر',
         'warehouse-product-id-duplicate': 'شناسه رکورد کالا تکراری',
