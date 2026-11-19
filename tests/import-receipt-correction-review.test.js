@@ -5,7 +5,7 @@ assert.ok(html.includes('function getImportReceiptCorrectionBlockReason(shipment
 assert.ok(html.includes('function requestImportReceiptCorrection(importId)'));
 assert.ok(html.includes("voucher.sourceType === 'import'"));
 assert.ok(html.includes("String(batch.sourceRef || '') === String(shipment.id)"));
-assert.ok(html.includes("String(row.batchRef || '') === String(shipment.id)"));
+assert.ok(html.includes("String(entry.row.batchRef || '') === String(shipment.id)"));
 assert.ok(html.includes('بچ‌های FIFO، کاردکس و بهای تمام‌شده میانگین'));
 assert.ok(html.includes('ویرایش یا حذف مستقیم رسید مسدود است'));
 assert.ok(html.includes('requestImportReceiptCorrection'));
