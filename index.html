@@ -3131,12 +3131,13 @@
       if (!results || !hint) return;
       if (input && input.dataset.keyboardReady !== '1') {
         input.dataset.keyboardReady = '1';
-        input.addEventListener('keydown', event => {
+        const handleSearchKeys = event => {
           const options = Array.from(results.querySelectorAll('[role="option"]'));
           if (event.key === 'Escape') {
             results.classList.add('hidden');
             input.setAttribute('aria-expanded', 'false');
             input.removeAttribute('aria-activedescendant');
+            input.focus();
             return;
           }
           if (!options.length) return;
@@ -3154,7 +3155,9 @@
             event.preventDefault();
             (activeIndex >= 0 ? options[activeIndex] : options[0]).click();
           }
-        });
+        };
+        input.addEventListener('keydown', handleSearchKeys);
+        results.addEventListener('keydown', handleSearchKeys);
       }
       const q = normalizeDashboardSearch(query);
       results.replaceChildren();
