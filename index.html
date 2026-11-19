@@ -4030,7 +4030,7 @@
       document.getElementById('stocktaking-rows').innerHTML = state.products.map(p => `
         <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center gap-2">
           <div class="min-w-0"><strong class="block break-words">${escapeKardexText(p.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(p.stock)} KG</span></div>
-          <input type="number" id="st-real-${String(p.id).replace(/[^a-zA-Z0-9_-]/g, '')}" value="${Number(p.stock || 0)}" class="w-24 shrink-0 border rounded-lg px-2 py-1 text-center font-bold tabular-nums" />
+          <input type="number" id="st-real-${p.id}" value="${Number(p.stock || 0)}" class="w-24 shrink-0 border rounded-lg px-2 py-1 text-center font-bold tabular-nums" />
         </div>
       `).join('');
     }
