@@ -1045,5 +1045,54 @@ test('manual voucher correction posts a reversal and balanced replacement withou
   assert.equal(audits,1);
 });
 
+
+test('treasury correction is available only for unallocated cash and bank movements', () => {
+  const state={
+    parties:[{id:'P1',name:'مشتری'}],
+    bankAccounts:[{id:'BANK-1',type:'bank',balance:500}],
+    checks:[],
+    treasuryTxs:[{id:'TR-OLD',dir:'receive',partyId:'P1',method:'حواله بانکی',amount:100,allocations:[]}],
+    vouchers:[{id:70,sourceType:'treasury',sourceId:'TR-OLD',sourceEvent:'posted',locked:false,lines:[{code:'1102',bankAccountId:'BANK-1',debit:100,credit:0},{code:'1103',partyId:'P1',debit:0,credit:100}]}]
+  };
+  const canCorrect=load(section('function getTreasuryTxAccount(tx)','function renderTreasuryModule()'),'canCorrectTreasuryTx',{state});
+  assert.equal(canCorrect(state.treasuryTxs[0]),true);
+  state.treasuryTxs[0].allocations=[{invoiceId:1001,amount:50}];
+  assert.equal(canCorrect(state.treasuryTxs[0]),false);
+});
+
+test('treasury correction reverses the original voucher and posts a replacement in one save', () => {
+  const state={
+    parties:[{id:'P1',name:'طرف حساب'}],
+    bankAccounts:[{id:'BANK-1',type:'bank',balance:500},{id:'CASH-1',type:'cash',balance:200}],
+    checks:[],
+    treasuryTxs:[{id:'TR-OLD',dir:'receive',partyId:'P1',method:'حواله بانکی',amount:100,allocInv:'—',allocInvId:null,allocations:[]}],
+    vouchers:[{id:70,sourceType:'treasury',sourceId:'TR-OLD',sourceEvent:'posted',locked:false,desc:'دریافت بانکی',lines:[
+      {code:'1102',bankAccountId:'BANK-1',desc:'بانک اول',debit:100,credit:0},
+      {code:'1103',partyId:'P1',desc:'دریافت از مشتری',debit:0,credit:100}
+    ]}]
+  };
+  const values={'tc-dir':'pay','tc-party':'P1','tc-method':'cash','tc-account':'CASH-1','tc-amount':'80','tc-desc':'پرداخت اصلاح‌شده'};
+  const modal={dataset:{txId:'TR-OLD'}};
+  const posted=[];let saves=0;let audits=0;let id=0;
+  const correct=load(section('function getTreasuryTxAccount(tx)','function renderTreasuryModule()'),'saveTreasuryCorrection',{
+    state,document:{getElementById(key){if(key==='modal-treasury-correction')return modal;return {value:values[key] ?? '',classList:{add(){},remove(){}},textContent:''};}},
+    createStableId(){id++;return 'CORR-'+id;},getTodayJalaliDate(){return '1405/09/03';},
+    postVoucher(...args){posted.push(args);return posted.length===1?80:81;},
+    addAudit(){audits++;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+  });
+  correct();
+  assert.equal(posted.length,2);
+  assert.equal(posted[0][3].event,'reversal');
+  assert.equal(posted[1][3].event,'replacement');
+  assert.equal(posted[0][1][0].debit,0);
+  assert.equal(posted[0][1][0].credit,100);
+  assert.equal(posted[1][1][0].code,'2101');
+  assert.equal(posted[1][1][0].debit,80);
+  assert.equal(posted[1][1][1].code,'1101');
+  assert.equal(posted[1][1][1].credit,80);
+  assert.equal(saves,1);
+  assert.equal(audits,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
