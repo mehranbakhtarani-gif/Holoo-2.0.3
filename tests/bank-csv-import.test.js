@@ -7,7 +7,7 @@ for (const [i, tag] of html.split('<script').slice(1).entries()) {
   const openingEnd = tag.indexOf('>');
   const closingStart = tag.indexOf('</script>');
   const source = openingEnd >= 0 && closingStart > openingEnd ? tag.slice(openingEnd + 1, closingStart) : '';
-  if (source.trim()) new vm.Script(source, { filename: \`index.html:inline-\${i}\` });
+  if (source.trim()) new vm.Script(source, { filename: 'index.html:inline-' + i });
 }
 function load(context) {
   const sandbox = { ...context };
