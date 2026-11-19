@@ -4030,6 +4030,9 @@
 
     function renderWarehouseMovementAuditPanel(product, movement) {
       const audit = HolooWarehouseAudit.getWarehouseMovementAuditView(state.products, state.warehouses, product, movement, state.vouchers);
+      const correctionPlan = audit.kind === 'transfer'
+        ? HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, audit.transferId)
+        : { ok: false, reason: 'انبارگردانی از مسیر اصلاح حواله انتقال قابل برگشت نیست.' };
       const esc = HolooWarehouseAudit.escapeAuditText;
       if (audit.kind === 'stocktake') {
         const voucherRows = audit.voucherCandidates.length
@@ -4059,7 +4062,7 @@
         ' • تطبیق تاریخ: ' + (audit.dateMatches ? 'بله' : 'خیر') + '</div>' +
         '<div class="font-bold">' + esc(audit.reason) + '</div><div class="border-t border-indigo-100 pt-1"><strong>پیوند بچ‌های FIFO:</strong>' + batchRows + '</div>' +
         '<div>snapshot قبل از انتقال، کاربر و دستگاه در رکورد قدیمی موجود نیست؛ این گزارش بازسازی محدود است.</div>' +
-        '<div class="font-bold text-rose-800">اصلاح یا برگشت مستقیم تا پیاده‌سازی معکوس‌سازی اتمیک دو انبار و اسناد وابسته مسدود است.</div></div>';
+        '<div class="font-bold ${correctionPlan.ok ? 'text-emerald-800' : 'text-rose-800'}">${correctionPlan.ok ? 'این حواله شرایط اولیه برگشت را دارد؛ با انتخاب «بررسی اصلاح گردش انبار» می‌توانید علت، مقصد و مقدار جایگزین را ثبت کنید.' : 'برگشت فعلاً مسدود است: ' + esc(correctionPlan.reason)}</div></div>';
     }
 
     function getWarehouseMovementCorrectionBlockReason(product, movement) {
