@@ -6259,7 +6259,16 @@
         return [{
           id: v.id, desc: v.desc || v.description || v.memo || 'سند بانکی',
           date: v.date || v.operationDate || '', debit, credit, bankAccountId: voucherBankId,
-          amountMatch, dateMatch
+          amountMatch, dateMatch,
+          lines: (v.lines || []).map(entry => {
+            const code = String(entry.code || '');
+            const accountName = CHART_ACCOUNTS.find(a => String(a.code) === code)?.name ||
+              (state.accountCatalog || []).find(a => String(a.code) === code)?.name || code || 'حساب نامشخص';
+            return {
+              code, accountName, desc: entry.desc || entry.description || entry.memo || '',
+              debit: Number(entry.debit || 0), credit: Number(entry.credit || 0)
+            };
+          })
         }];
       }).sort((a, b) => Number(b.amountMatch) - Number(a.amountMatch) || Number(b.dateMatch) - Number(a.dateMatch)).slice(0, 5);
     }
@@ -6367,7 +6376,10 @@
           ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="text-xs font-bold text-amber-900 cursor-pointer">🔎 بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار' + (reviewCandidates.length ? ' (' + faNum(reviewCandidates.length) + ')' : '') + '</summary><div class="mt-2 space-y-2">' +
             (reviewCandidates.length
               ? reviewCandidates.map(v => '<div class="rounded border bg-white p-2 text-xs"><strong>سند #' + faNum(v.id) + '</strong> — ' + window.escapeBankReconcileText(v.desc) +
-                '<div>تاریخ سند: ' + faNum(v.date) + ' | بدهکار: ' + money(v.debit) + ' | بستانکار: ' + money(v.credit) + '</div>' +
+                '<div>تاریخ سند: ' + faNum(v.date) + ' | بدهکار بانک: ' + money(v.debit) + ' | بستانکار بانک: ' + money(v.credit) + '</div>' +
+                '<div class="mt-2 border-t pt-2 space-y-1"><strong>سایر ردیف‌های سند و طرف حساب:</strong>' +
+                v.lines.filter(line => line.code !== '1102').map(line => '<div class="flex flex-wrap justify-between gap-2"><span>' + window.escapeBankReconcileText(line.accountName) + ' (' + window.escapeBankReconcileText(line.code) + ')' + (line.desc ? ' — ' + window.escapeBankReconcileText(line.desc) : '') + '</span><span>بدهکار: ' + money(line.debit) + ' | بستانکار: ' + money(line.credit) + '</span></div>').join('') +
+                (v.lines.filter(line => line.code !== '1102').length ? '' : '<div>برای این سند ردیف طرف حساب دیگری ثبت نشده است.</div>') + '</div>' +
                 '<div class="font-bold text-amber-800">' + (v.amountMatch ? 'مبلغ برابر است' : 'مبلغ متفاوت است') + '؛ ' + (v.dateMatch ? 'تاریخ برابر است' : 'تاریخ متفاوت است') +
                 (v.bankAccountId ? '؛ شناسه حساب: ' + window.escapeBankReconcileText(v.bankAccountId) : '؛ سند شناسه حساب بانکی ندارد') + '</div></div>').join('')
               : '<div class="rounded border bg-white p-2 text-xs text-slate-700">با معیارهای فعلی سند احتمالی پیدا نشد. تاریخ، مبلغ و حساب بانکی تراکنش و اسناد ثبت‌شده باید کنترل شوند.</div>') +
