@@ -80,7 +80,7 @@ test('FIFO skips expired lots and uses only non-expired stock', () => {
   assert.equal(p.batches[0].remainingQty, 4);
   assert.equal(p.batches[1].remainingQty, 0);
   p.stock -= 6;
-  assert.throws(() => consumeFifoStock(p, 1), /غیرمنقضی/);
+  assert.throws(() => consumeFifoStock(p, 1), /منقضی‌نشده/);
 });
 
 test('insufficient batch balance is rejected without partial consumption', () => {
