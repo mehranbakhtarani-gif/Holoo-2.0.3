@@ -9707,10 +9707,18 @@
       const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
       const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
       let unassignedDebit = 0, unassignedCredit = 0, unknownDebit = 0, unknownCredit = 0;
-      let openingDebit = 0, openingCredit = 0, invalidBankLines = 0;
-      const unassignedLines = [], unknownLines = [], openingBalanceLines = [];
+      let openingDebit = 0, openingCredit = 0, invalidBankLines = 0, invalidBankVoucherDates = 0, invalidBankVoucherStructures = 0, unbalancedBankVouchers = 0;
+      const unassignedLines = [], unknownLines = [], openingBalanceLines = [], inspectedBankVouchers = new Set();
       (state.vouchers || []).forEach(voucher => (voucher.lines || []).forEach((line, lineIndex) => {
         if (String(line.code) !== '1102') return;
+        const voucherKey = String(voucher.id ?? 'row-' + lineIndex);
+        if (!inspectedBankVouchers.has(voucherKey)) {
+          inspectedBankVouchers.add(voucherKey);
+          if (!bankTxDateKey(voucher.date || voucher.operationDate)) invalidBankVoucherDates++;
+          const integrity = inspectTrialBalanceVoucher(voucher);
+          if (integrity.invalidStructure) invalidBankVoucherStructures++;
+          if (integrity.unbalanced) unbalancedBankVouchers++;
+        }
         const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
         if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
           invalidBankLines++;
@@ -9742,7 +9750,9 @@
         unknownNet: unknownDebit - unknownCredit,
         openingNet: openingDebit - openingCredit,
         unassignedDebit, unassignedCredit, unknownDebit, unknownCredit, openingDebit, openingCredit,
-        unassignedLines, unknownLines, openingBalanceLines, invalidBankLines
+        unassignedLines, unknownLines, openingBalanceLines, invalidBankLines,
+        invalidBankVoucherDates, invalidBankVoucherStructures, unbalancedBankVouchers,
+        inspectedBankVoucherCount: inspectedBankVouchers.size
       };
     }
     function renderReconcileModule() {
@@ -9776,9 +9786,18 @@
       const invalidBankWarning = bankBalances.invalidBankLines
         ? `<div class="col-span-full rounded-lg bg-amber-900/30 p-2 text-amber-200">توجه: ${faNum(bankBalances.invalidBankLines)} ردیف حساب بانکی به دلیل مبلغ نامعتبر، منفی یا ثبت هم‌زمان بدهکار و بستانکار در مانده دفتری محاسبه نشده است.</div>`
         : '';
+      const bankVoucherIntegrityWarnings = [
+        bankBalances.invalidBankVoucherDates ? faNum(bankBalances.invalidBankVoucherDates) + ' سند بانکی تاریخ نامعتبر دارد.' : '',
+        bankBalances.invalidBankVoucherStructures ? faNum(bankBalances.invalidBankVoucherStructures) + ' سند بانکی ساختار ناقص دارد.' : '',
+        bankBalances.unbalancedBankVouchers ? faNum(bankBalances.unbalancedBankVouchers) + ' سند بانکی نامتوازن است.' : ''
+      ].filter(Boolean);
+      const bankVoucherIntegrityWarningHtml = bankVoucherIntegrityWarnings.length
+        ? `<div class="col-span-full rounded-lg bg-rose-900/30 p-2 text-rose-100"><strong>هشدار کنترل دفترکل بانک:</strong> ${bankVoucherIntegrityWarnings.join(' ')}</div>`
+        : '';
       document.getElementById('reconcile-summary-bar').innerHTML = `
         <div class="col-span-full"><span class="text-slate-400 block mb-1">مانده دفتری هر حساب بانکی (بر اساس ردیف‌های دارای شناسه):</span><div class="grid grid-cols-2 md:grid-cols-3 gap-2">${bankRows || '<span class="text-slate-400">حساب بانکی تعریف نشده است.</span>'}${openingBalance}${unassigned}${unknown}</div></div>
         ${invalidBankWarning}
+        ${bankVoucherIntegrityWarningHtml}
         <div><span class="text-slate-400 block">تراکنش‌های وصل‌شده به سند:</span><strong class="text-emerald-300">${faNum(verified.length)}</strong></div>
         <div><span class="text-slate-400 block">نیازمند بررسی:</span><strong class="text-amber-300">${faNum(pending)} مورد</strong></div>
         <div><span class="text-slate-400 block">تطبیق‌های قدیمی بدون مرجع سند:</span><strong class="text-amber-300">${faNum(legacy)} مورد</strong></div>
