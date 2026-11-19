@@ -358,5 +358,47 @@ test('inventory control ledger drilldown groups 1105 movements by source and lin
   assert.equal(rows.find(row => row.sourceType === 'manual').net, 20);
 });
 
+test('warehouse transfer reconciliation detects quantity and value differences without changing total inventory', () => {
+  const source = section('function buildWarehouseTransferValueReconciliation()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildWarehouseTransferValueReconciliation', {
+    state: {
+      costingMethod: 'AVG',
+      warehouses: [{ id: 'W1', name: 'انبار مبدأ' }, { id: 'W2', name: 'انبار مقصد' }],
+      products: [
+        { id: 'P1', name: 'کالای نمونه', warehouseId: 'W1', kardex: [{ doc: 'حواله خروج انتقال TR-123-abcd به انبار مقصد', outQty: 5, inQty: 0, price: 100 }] },
+        { id: 'P2', baseProductId: 'P1', name: 'کالای نمونه', warehouseId: 'W2', kardex: [{ doc: 'حواله ورود انتقال TR-123-abcd از انبار مبدأ', inQty: 4, outQty: 0, price: 110 }] }
+      ]
+    }
+  });
+  const rows = build();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].sourceWarehouse, 'انبار مبدأ');
+  assert.equal(rows[0].destinationWarehouse, 'انبار مقصد');
+  assert.equal(rows[0].quantityDifference, -1);
+  assert.equal(rows[0].sourceValue, 500);
+  assert.equal(rows[0].destinationValue, 440);
+  assert.equal(rows[0].valueDifference, -60);
+  assert.equal(rows[0].status, 'review');
+});
+
+test('FIFO warehouse transfer reconciliation values transferred layers from destination batches', () => {
+  const source = section('function buildWarehouseTransferValueReconciliation()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildWarehouseTransferValueReconciliation', {
+    state: {
+      costingMethod: 'FIFO',
+      warehouses: [{ id: 'W1', name: 'مبدأ' }, { id: 'W2', name: 'مقصد' }],
+      products: [
+        { id: 'P1', name: 'کالا', warehouseId: 'W1', kardex: [{ doc: 'حواله خروج انتقال TR-456-efgh', outQty: 3, inQty: 0, price: 90 }] },
+        { id: 'P2', baseProductId: 'P1', name: 'کالا', warehouseId: 'W2', batches: [{ id: 'B-TR', sourceType: 'warehouse_transfer', sourceRef: 'TR-456-efgh', sourceBatchId: 'B1', quantity: 3, remainingQty: 2, unitCost: 75 }], kardex: [{ doc: 'حواله ورود انتقال TR-456-efgh', inQty: 3, outQty: 0, price: 75 }] }
+      ]
+    }
+  });
+  const row = build()[0];
+  assert.equal(row.sourceValue, 225);
+  assert.equal(row.destinationValue, 225);
+  assert.equal(row.valueDifference, 0);
+  assert.equal(row.status, 'matched');
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
