@@ -3210,7 +3210,7 @@
 
     function buildDashboardAccountBalances() {
       const fiscalYear = String(state.fiscalYear || '').trim();
-      const fiscalYearNumber = /^\\d{4}$/.test(fiscalYear) ? Number(fiscalYear) : NaN;
+      const fiscalYearNumber = /^\d{4}$/.test(fiscalYear) ? Number(fiscalYear) : NaN;
       const periodStart = Number.isFinite(fiscalYearNumber) ? jalaliDateOrdinal(fiscalYear + '/01/01') : null;
       const nextYearStart = Number.isFinite(fiscalYearNumber) ? jalaliDateOrdinal(String(fiscalYearNumber + 1) + '/01/01') : null;
       const periodEnd = nextYearStart === null ? null : nextYearStart - 1;
@@ -3350,7 +3350,7 @@
       const receivables = (bal['1103']?.debBal || 0) + (bal['1104']?.debBal || 0);
       const payables = Object.entries(bal).reduce((sum, [code, account]) =>
         code.startsWith('21') ? sum + (account.credBal || 0) : sum, 0);
-      const fxGain = bal['4104']?.periodCredTurn || 0;
+      const fxGain = (bal['4104']?.periodCredTurn || 0) - (bal['4104']?.periodDebTurn || 0);
       const costOfSales = bal['5101']?.periodDebTurn || 0;
       const operatingExpenses = ['6101', '6102', '6103', '6104'].reduce((sum, code) => sum + (bal[code]?.periodDebTurn || 0), 0);
       const netProfit = sales + fxGain - costOfSales - operatingExpenses;
