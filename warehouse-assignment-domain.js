@@ -47,9 +47,10 @@
         String(other && other.warehouseId != null ? other.warehouseId : '').trim() === targetId)) {
         reasons.push('برای همین کالای پایه در انبار مقصد رکورد دیگری وجود دارد؛ از ایجاد رکورد تکراری جلوگیری شد.');
       }
-      const linkedCollections = ['invoices', 'orders', 'imports', 'vouchers'];
-      const linked = linkedCollections.some(key => hasDocumentReference(data[key], id));
-      if (linked) reasons.push('در اسناد یا عملیات ثبت‌شده ارجاعی به این کالا وجود دارد؛ تغییر انتساب خودکار مسدود شد.');
+      const history = inspectWarehouseAssignmentHistory(data, id);
+      if (history.ok && (history.documentReferenceCount || history.auditReferenceCount)) {
+        reasons.push('در اسناد یا سوابق حسابرسی ارجاعی به این کالا وجود دارد؛ تغییر انتساب خودکار مسدود شد.');
+      }
     }
     if (product && target && reasons.length === 0) {
       return {
@@ -106,29 +107,34 @@
       warehouseIds: extractWarehouseIds(batch)
     }));
     const documents = [];
+    let documentReferenceCount = 0;
     const seen = new Set();
     const excludedRoots = new Set(['products', 'warehouses', 'auditLogs']);
-    function visit(value, path) {
+    function visit(value, path, inheritedWarehouseIds = []) {
       if (!value || typeof value !== 'object' || seen.has(value)) return;
       seen.add(value);
+      const warehouseIds = Array.from(new Set(inheritedWarehouseIds.concat(extractWarehouseIds(value))));
       if (Array.isArray(value)) {
-        value.forEach((item, index) => visit(item, path + '[' + index + ']'));
+        value.forEach((item, index) => visit(item, path + '[' + index + ']', warehouseIds));
         return;
       }
       const referencesProduct = Object.entries(value).some(([key, child]) =>
         ['productId', 'product_id', 'stockProductId', 'stock_product_id', 'itemProductId'].includes(key) &&
         child != null && String(child).trim() === id
       );
+      if (referencesProduct) {
+        documentReferenceCount++;
+      }
       if (referencesProduct && documents.length < 100) {
         documents.push({
           path,
           recordId: String(value.id || value.voucherId || value.invoiceId || value.orderId || ''),
           date: String(value.date || value.operationDate || value.createdAt || ''),
           description: String(value.desc || value.description || value.doc || ''),
-          warehouseIds: extractWarehouseIds(value)
+          warehouseIds
         });
       }
-      Object.entries(value).forEach(([key, child]) => visit(child, path ? path + '.' + key : key));
+      Object.entries(value).forEach(([key, child]) => visit(child, path ? path + '.' + key : key, warehouseIds));
     }
     Object.entries(data).forEach(([key, value]) => {
       if (!excludedRoots.has(key)) visit(value, key);
@@ -145,7 +151,7 @@
       action: String(entry.action || ''),
       time: String(entry.time || entry.createdAt || '')
     }));
-    const evidenceCount = movements.length + batches.length + documents.length + auditReferences.length;
+    const evidenceCount = movements.length + batches.length + documentReferenceCount + auditReferences.length;
     const warehouseIds = Array.from(new Set([
       ...movements.flatMap(item => item.warehouseIds),
       ...batches.flatMap(item => item.warehouseIds),
@@ -161,7 +167,7 @@
       stock: Number(product.stock),
       movementCount: movements.length,
       batchCount: batches.length,
-      documentReferenceCount: documents.length,
+      documentReferenceCount,
       auditReferenceCount: auditReferences.length,
       unresolvedWarehouseEvidenceCount: movements.concat(batches, documents).filter(item => !item.warehouseIds.length).length,
       warehouseIds,
@@ -169,7 +175,7 @@
       batches: batches.slice(0, 20),
       documents: documents.slice(0, 30),
       auditReferences: auditReferences.slice(0, 20),
-      truncated: movements.length > 20 || batches.length > 20 || documents.length > 30 || auditReferences.length > 20
+      truncated: movements.length > 20 || batches.length > 20 || documentReferenceCount > 30 || auditReferences.length > 20
     };
   }
 
