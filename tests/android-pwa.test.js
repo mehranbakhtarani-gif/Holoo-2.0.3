@@ -59,6 +59,13 @@ assert.match(html, /محیط محلی باز شد؛ آماده‌سازی حاف
 assert.match(html, /محیط حسابداری باز است؛ بررسی صف کامل نشد و همگام‌سازی خودکار متوقف شد/);
 assert.match(html, /اتصال خودکار ناموفق؛ نسخه محلی حفظ شد/);
 assert.match(html, /else await pullFromSupabase\(false\)/);
+assert.match(html, /if \(typeof navigator !== 'undefined' && navigator\.onLine === false\)/, 'manual cloud pull must not run while the browser reports offline');
+assert.match(html, /📴 آفلاین؛ نسخه محلی فعال است/, 'offline startup must clearly report that the local snapshot remains active');
+const offlineStartupGuard = html.indexOf("if (typeof navigator !== 'undefined' && navigator.onLine === false)", html.indexOf("window.addEventListener('DOMContentLoaded'"));
+const startupCloudAttempt = html.indexOf("در حال اتصال و بررسی Supabase...", html.indexOf("window.addEventListener('DOMContentLoaded'"));
+assert.ok(offlineStartupGuard >= 0 && offlineStartupGuard < startupCloudAttempt, 'offline startup must exit before any automatic Supabase request');
+assert.match(html, /const diagnostic = String\(err\?\.message \|\| err \|\| 'خطای نامشخص'\)\.slice\(0, 180\)/, 'cloud pull failures must retain a concise diagnostic');
+assert.match(html, /else pullFromSupabase\(false\)/, 'reconnecting without a pending outbox must retry cloud pull');
 const releaseGuide = fs.readFileSync('docs/ANDROID_PWA_RELEASE_READINESS.md', 'utf8');
 assert.match(releaseGuide, /not a native Android project/i);
 assert.match(releaseGuide, /three-device acceptance test/i);
