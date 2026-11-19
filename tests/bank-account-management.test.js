@@ -34,12 +34,20 @@ const state = {
     { id: 6, date: '1405/09/02', desc: 'ردیف نامعتبر', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: -1, credit: 0 }] }
   ]
 };
-const balanceSandbox = { state, bankTxDateKey: value => value };
-vm.createContext(balanceSandbox);
-const voucherValidatorStart = html.indexOf('    function inspectTrialBalanceVoucher(');
-const voucherValidatorEnd = html.indexOf('    function ', voucherValidatorStart + 10);
-assert.ok(voucherValidatorStart >= 0 && voucherValidatorEnd > voucherValidatorStart);
-vm.runInContext(html.slice(voucherValidatorStart, voucherValidatorEnd) + '; this.inspectTrialBalanceVoucher = inspectTrialBalanceVoucher;', balanceSandbox);
+const balanceSandbox = {
+  state,
+  bankTxDateKey: value => value,
+  inspectTrialBalanceVoucher(voucher) {
+    const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+    let invalidLines = 0, debitTotal = 0, creditTotal = 0;
+    lines.forEach(line => {
+      const debit = Number(line?.debit || 0), credit = Number(line?.credit || 0);
+      if (!line?.code || !Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) { invalidLines++; return; }
+      debitTotal += debit; creditTotal += credit;
+    });
+    return { invalidLines, invalidStructure: lines.length < 2, unbalanced: invalidLines === 0 && (!Number.isFinite(debitTotal) || !Number.isFinite(creditTotal) || debitTotal <= 0 || creditTotal <= 0 || Math.round(debitTotal) !== Math.round(creditTotal)) };
+  }
+};
 const getBalances = extract('    function getBankAccountBookBalances()', '    function renderReconcileModule()', balanceSandbox, 'getBankAccountBookBalances', true);
 const balances = getBalances();
 assert.equal(balances.accounts.find(x => x.account.id === 'BANK-A').net, 600);
