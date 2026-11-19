@@ -146,7 +146,7 @@ test('chart catalog contains group/general/subsidiary levels and custom accounts
 
 // 6. Kardex opening-document labels are recognized narrowly and normalized safely.
 test('opening balance labels include first-period inventory but exclude ordinary receipts', () => {
-  const helperSource = section('function isOpeningKardexDocument(value)', 'function inspectInventoryReconciliation(products)');
+  const helperSource = section('function isOpeningKardexDocument(value)', 'function inspectWarehouseProductTopology(products, warehouses)');
   const isOpening = loadFunction(helperSource, 'isOpeningKardexDocument', {});
   assert.equal(isOpening('موجودی اول دوره'), true);
   assert.equal(isOpening('موجودی اول‌دوره'), true);
@@ -158,7 +158,7 @@ test('opening balance labels include first-period inventory but exclude ordinary
 
 // 7. Inventory reconciliation evaluates kardex in chronological date order without mutating stored rows.
 test('kardex reconciliation sorts dated movements and preserves an earlier opening balance', () => {
-  const source = section('function inspectInventoryReconciliation(products)', 'function ensureProductBatches(product)');
+  const source = section('function inspectWarehouseProductTopology(products, warehouses)', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 15, tracked: 15, difference: 0 }; },
     jalaliDateOrdinal(value) {
@@ -179,7 +179,7 @@ test('kardex reconciliation sorts dated movements and preserves an earlier openi
 });
 
 test('kardex baseline remains unverified when the earliest dated movement is an ordinary receipt', () => {
-  const source = section('function inspectInventoryReconciliation(products)', 'function ensureProductBatches(product)');
+  const source = section('function inspectWarehouseProductTopology(products, warehouses)', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 4200, tracked: 4200, difference: 0 }; },
     jalaliDateOrdinal(value) {
