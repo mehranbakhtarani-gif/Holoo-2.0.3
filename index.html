@@ -4541,7 +4541,7 @@
         if (!party) { showToast('طرف حساب برای ویرایش پیدا نشد؛ تغییری ذخیره نشد.', 'error'); return; }
         const previous = { name: party.name, phone: party.phone, ecoCode: party.ecoCode, creditLimit: party.creditLimit, terms: party.terms };
         Object.assign(party, { name, phone, ecoCode, creditLimit, terms });
-        addAudit('ویرایش مشخصات طرف حساب: ' + party.name, { mode: 'manual', sourceType: 'party', sourceId: party.id, previous, note: 'شناسه تفصیلی و گردش‌های ثبت‌شده طرف حساب تغییر نکردند.' });
+        addAudit('ویرایش مشخصات طرف حساب', { mode: 'manual', sourceType: 'party', sourceId: party.id, previous, note: 'شناسه تفصیلی و گردش‌های ثبت‌شده طرف حساب تغییر نکردند.' });
         saveState(); closeModal('modal-new-party'); renderAll(); showToast('مشخصات طرف حساب ذخیره و همگام‌سازی شد.');
         editingPartyId = null;
         return;
