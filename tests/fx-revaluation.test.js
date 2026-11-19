@@ -31,7 +31,7 @@ function runRevaluation(state, postVoucher) {
     getTodayJalaliDate: () => '1405/09/02',
     postVoucher(...args) { posted.push(args); if (postVoucher) return postVoucher(...args); },
     addAudit() {},
-    saveState() {},
+    saveState() { return true; },
     renderFxModule() {},
     renderImportsModule() {},
     showToast(message, type) { messages.push({ message, type }); }
@@ -108,7 +108,7 @@ const pay = load(paySource, 'payFxCommitmentStage', {
   document: fakeDocument({ 'fx-pay-amount-FXC-PAY': '5', 'fx-pay-bank-FXC-PAY': 'BANK-1' }),
   createStableId: () => 'PAY-1',
   postVoucher(...args) { payVouchers.push(args); },
-  addAudit() {}, saveState() {}, renderFxModule() {}, showToast() {}
+  addAudit() {}, saveState() { return true; }, renderFxModule() {}, showToast() {}
 });
 pay('FXC-PAY');
 assert.equal(payVouchers.length, 1);
@@ -134,7 +134,7 @@ const save = load(saveSource, 'saveFxCommitment', {
   getTodayJalaliDate: () => '1405/09/02',
   createStableId: () => 'FXC-NEW',
   postVoucher(...args) { openingVouchers.push(args); },
-  addAudit() {}, saveState() {}, closeModal() {}, renderFxModule() {}, showToast() {}
+  addAudit() {}, saveState() { return true; }, closeModal() {}, renderFxModule() {}, showToast() {}
 });
 save();
 assert.equal(saveState.fxCommitments.length, 1);
