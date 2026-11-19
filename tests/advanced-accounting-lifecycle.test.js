@@ -1094,5 +1094,53 @@ test('treasury correction reverses the original voucher and posts a replacement 
   assert.equal(audits,1);
 });
 
+
+test('cheque correction is limited to pending cheques without invoice allocations', () => {
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'BANK-1',type:'bank'}],
+    treasuryTxs:[{id:'TR-OLD',method:'چک صیادی'}],
+    checks:[{id:'CHK-OLD',status:'in_progress',dir:'receive',partyId:'P1',bankAccountId:'BANK-1',sourceTxId:'TR-OLD',allocations:[]}],
+    vouchers:[{id:90,sourceType:'check',sourceId:'CHK-OLD',sourceEvent:'issued',locked:false,lines:[{code:'1104',debit:100,credit:0},{code:'1103',debit:0,credit:100}]}]
+  };
+  const canCorrect=load(section('function canCorrectCheck(check)','function renderTreasuryModule()'),'canCorrectCheck',{state});
+  assert.equal(canCorrect(state.checks[0]),true);
+  state.checks[0].allocations=[{invoiceId:2001,amount:50}];
+  assert.equal(canCorrect(state.checks[0]),false);
+});
+
+test('pending cheque correction reverses original issue voucher and posts a replacement cheque', () => {
+  const state={
+    parties:[{id:'P1',name:'طرف حساب'}],
+    bankAccounts:[{id:'BANK-1',type:'bank'},{id:'BANK-2',type:'bank'}],
+    treasuryTxs:[{id:'TR-OLD',method:'چک صیادی',amount:100,partyId:'P1'}],
+    checks:[{id:'CHK-OLD',dir:'receive',sayad:'111122223333444455556666',amount:100,bank:'بانک اول',bankAccountId:'BANK-1',partyId:'P1',status:'in_progress',sourceTxId:'TR-OLD',allocations:[]}],
+    vouchers:[{id:90,sourceType:'check',sourceId:'CHK-OLD',sourceEvent:'issued',locked:false,desc:'چک قبلی',lines:[
+      {code:'1104',partyId:'P1',desc:'چک قبلی',debit:100,credit:0},
+      {code:'1103',partyId:'P1',desc:'بستانکار مشتری',debit:0,credit:100}
+    ]}]
+  };
+  const values={'cc-dir':'pay','cc-party':'P1','cc-sayad':'999988887777666655554444','cc-amount':'150','cc-bank-name':'بانک دوم','cc-bank-account':'BANK-2','cc-due-date':'1405/09/20'};
+  const modal={dataset:{checkId:'CHK-OLD'}};
+  const posted=[];let saves=0;let audits=0;let id=0;
+  const correct=load(section('function canCorrectCheck(check)','function renderTreasuryModule()'),'saveCheckCorrection',{
+    state,document:{getElementById(key){if(key==='modal-check-correction')return modal;return {value:values[key] ?? '',classList:{add(){},remove(){}},textContent:''};}},
+    jalaliDateOrdinal(){return 1;},getTodayJalaliDate(){return '1405/09/03';},createStableId(){id++;return 'CHECK-CORR-'+id;},
+    postVoucher(...args){posted.push(args);return posted.length===1?91:92;},
+    addAudit(){audits++;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+  });
+  correct();
+  assert.equal(posted.length,2);
+  assert.equal(posted[0][3].event,'reversal');
+  assert.equal(posted[1][3].event,'replacement');
+  assert.equal(posted[0][1][0].debit,0);
+  assert.equal(posted[0][1][0].credit,100);
+  assert.equal(posted[1][1][0].code,'2101');
+  assert.equal(posted[1][1][0].debit,150);
+  assert.equal(posted[1][1][1].code,'2102');
+  assert.equal(posted[1][1][1].credit,150);
+  assert.equal(saves,1);
+  assert.equal(audits,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
