@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
+for (const [i, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new vm.Script(match[1], { filename: `index.html:inline-${i}` });
 }
 function extract(name, endMarker) {
@@ -14,7 +14,7 @@ function extract(name, endMarker) {
   return html.slice(start, end);
 }
 function load(source, fnName, context) {
-  const sandbox = { ...context };
+  const sandbox = context;
   vm.createContext(sandbox);
   vm.runInContext(source + `; this.__fn = ${fnName};`, sandbox);
   return sandbox.__fn;
@@ -79,19 +79,18 @@ test('correction form carries purchase type and original lines into draft', () =
   const values = {};
   const elements = new Map();
   const document = { getElementById(id) { if (!elements.has(id)) elements.set(id, { value: '', textContent: '', classList: { remove() {}, add() {} }, scrollIntoView() {} }); return elements.get(id); } };
-  let draft = null;
-  const open = load(extract('openInvoiceCorrection', 'function renderInvoicesModule'), 'openInvoiceCorrection', {
-    state, document, canCorrectInvoice: inv => inv.type === 'purchase', openInvoiceForm(type) { values.type = type; },
+  const testContext = {
+    state, document, invDraft: null, canCorrectInvoice: inv => inv.type === 'purchase', openInvoiceForm(type) { values.type = type; },
     renderInvoiceSettlementAccounts() {}, getTodayJalaliDate() { return '1405/09/02'; },
-    checkPartyCredit() {}, renderInvDraftLines() {}, showToast() {},
-    set invDraft(value) { draft = value; }, get invDraft() { return draft; }
-  });
+    checkPartyCredit() {}, renderInvDraftLines() {}, showToast() {}
+  };
+  const open = load(extract('openInvoiceCorrection', 'function renderInvoicesModule'), 'openInvoiceCorrection', testContext);
   open(61);
   assert.equal(values.type, 'purchase');
   assert.equal(document.getElementById('inv-pay-method').value, 'credit');
-  assert.equal(draft.type, 'purchase');
-  assert.equal(draft.correctionOfInvoiceId, 61);
-  assert.equal(draft.lines[0].productId, 'X1');
+  assert.equal(testContext.invDraft.type, 'purchase');
+  assert.equal(testContext.invDraft.correctionOfInvoiceId, 61);
+  assert.equal(testContext.invDraft.lines[0].productId, 'X1');
 });
 
 console.log('Passed ' + passed.length + ' invoice correction tests:');
