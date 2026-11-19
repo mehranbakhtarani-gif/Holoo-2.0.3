@@ -6199,6 +6199,13 @@
     function submitInvoice() {
       if (!invDraft.lines.length) { showToast('حداقل یک کالا اضافه کنید.', 'error'); return; }
       const type = invDraft.type;
+      const pendingSourceOrderId = invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? String(invDraft.sourceOrderId) : null;
+      if (pendingSourceOrderId) {
+        const pendingOrder = (state.orders || []).find(order => String(order.id) === pendingSourceOrderId);
+        if (!pendingOrder || String(pendingOrder.status || '').includes('تکمیل') || pendingOrder.invoiceId) {
+          showToast('پیش‌فاکتور دیگر در وضعیت قابل تبدیل نیست؛ فاکتور ثبت نشد.', 'error'); return;
+        }
+      }
       const partyId = document.getElementById('inv-party').value;
       const warehouseId = document.getElementById('inv-warehouse').value;
       const payMethod = document.getElementById('inv-pay-method').value;
@@ -6412,12 +6419,13 @@
       if (sourceOrderId) {
         const sourceOrder = (state.orders || []).find(order => String(order.id) === sourceOrderId);
         if (sourceOrder) {
+          const previousOrderStatus = sourceOrder.status;
           sourceOrder.status = 'تکمیل‌شده (تبدیل به فاکتور)';
           sourceOrder.invoiceId = id;
           sourceOrder.convertedAt = new Date().toISOString();
           addAudit('تبدیل پیش‌فاکتور ' + sourceOrderId + ' به فاکتور #' + id, {
             mode: 'manual', sourceType: 'sales_order_conversion', sourceId: sourceOrderId,
-            previous: { status: sourceOrder.previousStatus || 'باز (در انتظار تبدیل)', invoiceId: null },
+            previous: { status: previousOrderStatus || 'باز (در انتظار تبدیل)', invoiceId: null },
             note: 'وضعیت سفارش فقط پس از ثبت موفق فاکتور و سند حسابداری تکمیل شد.'
           });
         }
