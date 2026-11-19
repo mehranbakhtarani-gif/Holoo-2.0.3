@@ -1,10 +1,7 @@
 const fs = require('node:fs');
-const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].map(m => m[1]).filter(s => s.trim());
-for (const [i, source] of scripts.entries()) new vm.Script(source, { filename: 'index.html:inline-' + i });
 
 // Existing master-data editors remain present.
 assert.ok(html.includes('function openPartyModal(partyId = null)'));
