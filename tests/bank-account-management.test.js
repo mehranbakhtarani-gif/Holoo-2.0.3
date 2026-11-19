@@ -35,6 +35,11 @@ const state = {
   ]
 };
 const balanceSandbox = { state, bankTxDateKey: value => value };
+vm.createContext(balanceSandbox);
+const voucherValidatorStart = html.indexOf('    function inspectTrialBalanceVoucher(');
+const voucherValidatorEnd = html.indexOf('    function ', voucherValidatorStart + 10);
+assert.ok(voucherValidatorStart >= 0 && voucherValidatorEnd > voucherValidatorStart);
+vm.runInContext(html.slice(voucherValidatorStart, voucherValidatorEnd) + '; this.inspectTrialBalanceVoucher = inspectTrialBalanceVoucher;', balanceSandbox);
 const getBalances = extract('    function getBankAccountBookBalances()', '    function renderReconcileModule()', balanceSandbox, 'getBankAccountBookBalances', true);
 const balances = getBalances();
 assert.equal(balances.accounts.find(x => x.account.id === 'BANK-A').net, 600);
