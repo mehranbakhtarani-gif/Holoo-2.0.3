@@ -8889,9 +8889,17 @@
       if (openingAmount !== 0 && (!CHART_ACCOUNTS.some(item => item.code === openingCounterCode && item.code !== '1102') || !bankTxDateKey(openingDate))) {
         showToast('برای موجودی افتتاحیه، تاریخ معتبر و حساب مقابل معتبر انتخاب کنید.', 'error'); return;
       }
-      const normalizedNumber = accNo.replace(/\s/g, '');
-      if ((state.bankAccounts || []).some(item => item.type === 'bank' && String(item.id) !== String(accountId) && String(item.accNo || '').replace(/\s/g, '') === normalizedNumber)) {
-        showToast('این شماره حساب قبلاً ثبت شده است.', 'error'); return;
+      const normalizeBankNumber = value => String(value || '').normalize('NFKC').replace(/\s/g, '').replace(/[۰-۹٠-٩]/g, digit => {
+        const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        const faIndex = fa.indexOf(digit); return String(faIndex >= 0 ? faIndex : ar.indexOf(digit));
+      });
+      const normalizeBankName = value => String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('fa');
+      if ((state.bankAccounts || []).some(item =>
+        item.type === 'bank' && String(item.id) !== String(accountId) &&
+        normalizeBankNumber(item.accNo) === normalizeBankNumber(accNo) &&
+        normalizeBankName(item.bankName) === normalizeBankName(bankName)
+      )) {
+        showToast('این شماره حساب قبلاً برای همین بانک ثبت شده است.', 'error'); return;
       }
       let account = accountId ? (state.bankAccounts || []).find(item => String(item.id) === String(accountId)) : null;
       if (accountId && !account) { showToast('حساب بانکی برای ویرایش پیدا نشد.', 'error'); return; }
