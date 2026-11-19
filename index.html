@@ -9155,12 +9155,14 @@
         .filter(x => x.id !== item.id && x.matched && x.linkedTreasuryTxId)
         .map(x => String(x.linkedTreasuryTxId)));
       const selectedBankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
-      if (selectedBankId && !(state.bankAccounts || []).some(account => account.type === 'bank' && String(account.id) === selectedBankId)) return [];
+      const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+      const effectiveBankId = selectedBankId || (bankAccounts.length === 1 ? String(bankAccounts[0].id) : '');
+      if (!effectiveBankId || !bankAccounts.some(account => String(account.id) === effectiveBankId)) return [];
       return (state.treasuryTxs || []).filter(tx => {
         if (usedTreasuryIds.has(String(tx.id)) || tx.kind === 'party_credit' || tx.kind === 'party_credit_refund') return false;
         if (tx.method !== 'حواله بانکی' || String(tx.dir || '') !== expectedDirection) return false;
         const bankAccount = getTreasuryTxAccount(tx);
-        if (!bankAccount || (selectedBankId && String(bankAccount.id) !== selectedBankId)) return false;
+        if (!bankAccount || String(bankAccount.id) !== effectiveBankId) return false;
         const txDate = bankTxDateKey(tx.date || tx.operationDate);
         const txAmount = Number(tx.amount);
         return txDate === dateKey && Number.isFinite(txAmount) && Math.abs(txAmount - amount) < 0.01;
@@ -9177,8 +9179,9 @@
       if (!dateKey || !Number.isFinite(signedAmount) || amount <= 0) return [];
       const selectedBankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
       const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
-      const allowLegacyUnassigned = bankAccounts.length === 1 && (!selectedBankId || String(bankAccounts[0].id) === selectedBankId);
-      if (selectedBankId && !bankAccounts.some(account => String(account.id) === selectedBankId)) return [];
+      const effectiveBankId = selectedBankId || (bankAccounts.length === 1 ? String(bankAccounts[0].id) : '');
+      const allowLegacyUnassigned = bankAccounts.length === 1 && effectiveBankId === String(bankAccounts[0].id);
+      if (!effectiveBankId || !bankAccounts.some(account => String(account.id) === effectiveBankId)) return [];
       const usedVoucherIds = new Set((state.bankReconcileItems || [])
         .filter(x => x.id !== item.id && x.matched && x.linkedVoucherId)
         .map(x => String(x.linkedVoucherId)));
@@ -9192,7 +9195,7 @@
         if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) return [];
         if (signedAmount > 0 ? !(debit > 0 && credit === 0) : !(credit > 0 && debit === 0)) return [];
         const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
-        if (selectedBankId ? (voucherBankId ? voucherBankId !== selectedBankId : !allowLegacyUnassigned) : (!voucherBankId && !allowLegacyUnassigned)) return [];
+        if (voucherBankId ? voucherBankId !== effectiveBankId : !allowLegacyUnassigned) return [];
         const description = [v.desc, v.description, v.memo, line.desc, line.description, line.memo].filter(Boolean).join(' ');
         const normalizedDescription = description.replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
         if (normalizedDescription.includes('افتتاحیه') && normalizedDescription.includes('بانک')) return [];
