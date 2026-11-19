@@ -3399,8 +3399,8 @@
         const existing = state.vouchers.find(v => v.sourceType === source.type && String(v.sourceId) === String(source.id) && (v.sourceEvent || 'default') === sourceEvent); if (existing) return existing.id; }
       const id = state.vouchers.length ? Math.max(...state.vouchers.map(v => Number(v.id) || 0)) + 1 : 1;
       const operationMode = source?.mode === 'manual' ? 'manual' : 'automatic';
-      const voucherLines = lines.map(line => line.code === '1102' && source?.bankAccountId
-        ? { ...line, bankAccountId: String(source.bankAccountId) }
+      const voucherLines = lines.map(line => line.code === '1102' && (line.bankAccountId || source?.bankAccountId)
+        ? { ...line, bankAccountId: String(line.bankAccountId || source.bankAccountId) }
         : { ...line });
       state.vouchers.unshift({ id, date, operationDate: date, createdAt: new Date().toISOString(), operationMode, actor: state.activeRole || 'mehran', deviceId: typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : null, locked: false, desc, lines: voucherLines, ...(source ? { sourceType: source.type, sourceId: String(source.id), sourceEvent: source.event || 'default' } : {}) });
       if (source?.type === 'check') { const check = state.checks.find(item => String(item.id) === String(source.id)); if (check) check.voucherRefs = { ...(check.voucherRefs || {}), [source.event || 'initial']: id }; }
@@ -8844,14 +8844,79 @@
         showToast('سند معکوس و چک جایگزین با موفقیت ثبت شدند.', 'success');
       } catch (error) { state = before; showToast('اصلاح چک انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error'); }
     }
+    function openBankAccountModal(accountId = '') {
+      const account = accountId ? (state.bankAccounts || []).find(item => String(item.id) === String(accountId)) : null;
+      if (accountId && !account) { showToast('حساب بانکی برای ویرایش پیدا نشد.', 'error'); return; }
+      let modal = document.getElementById('modal-bank-account-editor');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-bank-account-editor';
+        modal.className = 'hidden fixed inset-0 z-[10050] bg-slate-950/60 p-3 flex items-center justify-center';
+        document.body.appendChild(modal);
+      }
+      modal.innerHTML = `
+        <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl space-y-3" role="dialog" aria-modal="true" aria-labelledby="bank-account-editor-title">
+          <div class="flex items-center justify-between gap-2"><h3 id="bank-account-editor-title" class="font-black">${account ? 'ویرایش حساب بانکی' : 'تعریف حساب بانکی جدید'}</h3><button type="button" onclick="closeModal('modal-bank-account-editor')" class="rounded-lg bg-slate-100 px-3 py-2" aria-label="بستن">✕</button></div>
+          <label class="block text-xs font-bold">نام نمایشی حساب<input id="bank-account-name" maxlength="100" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.name || '')}" placeholder="مثلاً حساب جاری بانک ملت" /></label>
+          <label class="block text-xs font-bold">نام بانک<input id="bank-account-bank" maxlength="80" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.bankName || '')}" placeholder="نام بانک" /></label>
+          <label class="block text-xs font-bold">شماره حساب<input id="bank-account-number" maxlength="40" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.accNo || '')}" placeholder="شماره حساب" /></label>
+          <label class="block text-xs font-bold">شعبه (اختیاری)<input id="bank-account-branch" maxlength="100" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.branch || '')}" placeholder="نام یا کد شعبه" /></label>
+          <p class="rounded-lg bg-amber-50 p-2 text-[11px] leading-6 text-amber-900">مانده از اسناد حسابداری دارای شناسه همین حساب محاسبه می‌شود. این فرم سند افتتاحیه ایجاد نمی‌کند؛ موجودی افتتاحیه باید با سند متوازن و حساب مقابل مشخص ثبت شود.</p>
+          <div class="flex gap-2"><button type="button" onclick="saveBankAccount('${account ? window.escapeBankReconcileText(account.id) : ''}')" class="flex-1 rounded-xl bg-holoo-700 py-3 font-bold text-white">ذخیره حساب</button><button type="button" onclick="closeModal('modal-bank-account-editor')" class="rounded-xl bg-slate-100 px-4 py-3 font-bold">انصراف</button></div>
+        </div>`;
+      openModal('modal-bank-account-editor');
+    }
+
+    function saveBankAccount(accountId = '') {
+      const name = String(document.getElementById('bank-account-name')?.value || '').trim();
+      const bankName = String(document.getElementById('bank-account-bank')?.value || '').trim();
+      const accNo = String(document.getElementById('bank-account-number')?.value || '').trim();
+      const branch = String(document.getElementById('bank-account-branch')?.value || '').trim();
+      if (!name || !bankName || !accNo) { showToast('نام حساب، نام بانک و شماره حساب الزامی است.', 'error'); return; }
+      const normalizedNumber = accNo.replace(/\s/g, '');
+      if ((state.bankAccounts || []).some(item => item.type === 'bank' && String(item.id) !== String(accountId) && String(item.accNo || '').replace(/\s/g, '') === normalizedNumber)) {
+        showToast('این شماره حساب قبلاً ثبت شده است.', 'error'); return;
+      }
+      let account = accountId ? (state.bankAccounts || []).find(item => String(item.id) === String(accountId)) : null;
+      if (accountId && !account) { showToast('حساب بانکی برای ویرایش پیدا نشد.', 'error'); return; }
+      const previous = account ? { name: account.name, bankName: account.bankName, accNo: account.accNo, branch: account.branch } : null;
+      if (!account) {
+        account = { id: createStableId('bank_account'), type: 'bank', name, bankName, accNo, branch, balance: 0, createdAt: new Date().toISOString(), createdBy: state.activeRole || 'mehran' };
+        state.bankAccounts.push(account);
+      } else Object.assign(account, { name, bankName, accNo, branch, updatedAt: new Date().toISOString(), updatedBy: state.activeRole || 'mehran' });
+      addAudit(accountId ? 'ویرایش مشخصات حساب بانکی ' + name : 'تعریف حساب بانکی ' + name, { mode: 'manual', sourceType: 'bank_account', sourceId: String(account.id), previous, details: { bankName, accNo, branch } });
+      if (!saveState()) {
+        if (accountId) Object.assign(account, previous);
+        else state.bankAccounts = state.bankAccounts.filter(item => String(item.id) !== String(account.id));
+        return;
+      }
+      closeModal('modal-bank-account-editor'); renderAll();
+      showToast(accountId ? 'مشخصات حساب بانکی به‌روزرسانی شد.' : 'حساب بانکی جدید ثبت شد.', 'success');
+    }
+
     function renderTreasuryModule() {
        computeCheckRas();
-       document.getElementById('bank-accounts-grid').innerHTML = state.bankAccounts.map(b => `
-        <div class="bg-white rounded-2xl p-3.5 border border-slate-200 flex justify-between items-center text-xs">
-          <div><strong class="block">${b.name}</strong><span class="text-[10px] text-slate-400 tabular-nums">${faNum(b.accNo)}</span></div>
-          <span class="font-black text-holoo-900 tabular-nums">${money(b.balance)}</span>
+       const bookBalances = getBankAccountBookBalances();
+       const balanceById = new Map(bookBalances.accounts.map(row => [String(row.account.id), row]));
+       const bankGrid = document.getElementById('bank-accounts-grid');
+       bankGrid.innerHTML = `
+        <div class="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
+          <div><strong class="text-sm">حساب‌های بانکی شرکت</strong><p class="mt-1 text-[10px] text-slate-500">مانده دفتری بر اساس اسناد حسابداری دارای شناسه حساب</p></div>
+          <button type="button" onclick="openBankAccountModal()" class="touch-btn rounded-xl bg-holoo-700 px-4 py-2.5 text-xs font-bold text-white">+ تعریف حساب بانکی</button>
         </div>
-      `).join('');
+        ${(state.bankAccounts || []).filter(b => b.type === 'bank').map(b => {
+          const row = balanceById.get(String(b.id));
+          const bookBalance = row ? row.net : 0;
+          const storedBalance = Number(b.balance || 0);
+          const mismatch = Number.isFinite(storedBalance) && Math.abs(storedBalance - bookBalance) >= 0.01;
+          return `
+            <div class="bg-white rounded-2xl p-3.5 border border-slate-200 space-y-2 text-xs">
+              <div class="flex justify-between items-start gap-2"><div class="min-w-0"><strong class="block">${window.escapeBankReconcileText(b.name || 'حساب بانکی')}</strong><span class="block text-[10px] text-slate-500">${window.escapeBankReconcileText(b.bankName || '')} • ${window.escapeBankReconcileText(b.branch || 'بدون شعبه')}</span><span class="block text-[10px] text-slate-400 tabular-nums">${faNum(b.accNo || '')}</span></div><button type="button" onclick="openBankAccountModal('${window.escapeBankReconcileText(b.id)}')" class="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-bold text-slate-700">ویرایش</button></div>
+              <div class="border-t pt-2"><span class="block text-[10px] text-slate-500">مانده دفتری</span><strong class="font-black text-holoo-900 tabular-nums">${money(bookBalance)}</strong></div>
+              ${mismatch ? '<div class="rounded-lg bg-amber-50 p-2 text-[10px] leading-5 text-amber-800">مانده ذخیره‌شده قدیمی با دفترکل متفاوت است؛ عدد دفترکل نمایش داده شده و مقدار قدیمی مبنای گزارش نیست.</div>' : ''}
+            </div>`;
+        }).join('') || '<div class="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">هنوز حساب بانکی تعریف نشده است. برای شروع، «تعریف حساب بانکی» را انتخاب کنید.</div>'}
+      `;
 
       const statusLabels = { in_progress: 'در جریان', overdue: 'سررسیدشده', cleared: 'وصول‌شده ✔', bounced: 'برگشتی ❌', endorsed: 'واگذارشده', voided: 'باطل‌شده' };
       document.getElementById('checks-list-container').innerHTML = state.checks.map(c => `
@@ -9285,6 +9350,8 @@
           openingDebit += debit;
           openingCredit += credit;
           openingBalanceLines.push(detail);
+          const openingTarget = id ? byId.get(id) : null;
+          if (openingTarget) { openingTarget.debit += debit; openingTarget.credit += credit; }
           return;
         }
         const target = id ? byId.get(id) : null;
