@@ -153,7 +153,8 @@ assert.ok(html.includes('function renderWarehouseMovementAuditPanel(product, mov
 assert.ok(html.includes('renderWarehouseMovementAuditPanel(p, k)'));
 assert.ok(html.includes("/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || ''))"), 'audit panel condition must use the transfer ID matcher');
 assert.ok(html.includes('function applyWarehouseTransferCorrection('));
-assert.ok(html.includes('warehouseTransferCorrections'));
+assert.ok(html.includes('warehouseTransferCorrection = {'));
+assert.ok(html.includes('state.auditLogs[0].warehouseTransferCorrection'));
 assert.ok(html.includes('reversalOf: plan.transferId'));
 assert.ok(html.includes('correctionOf: plan.transferId'));
 assert.ok(html.includes('actor: draft.activeRole || \'mehran\', deviceId: DEVICE_ID, createdAt: now.toISOString()'));
