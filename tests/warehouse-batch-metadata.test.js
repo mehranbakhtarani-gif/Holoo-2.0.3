@@ -30,7 +30,7 @@ test('accepts consistent initial and remaining batch quantities', () => {
 
 test('detects remaining quantity greater than original quantity', () => {
   const result = inspectBatchMetadata({ quantity: 10, remainingQty: 12 });
-  assert.ok(result.issues.some(issue => issue.includes('بیشتر از مقدار اولیه')));
+  assert.ok(result.issues.some(issue => issue.includes('مقدار باقی‌مانده از مقدار اولیه')));
 });
 
 test('detects invalid Jalali expiry dates instead of treating them as missing', () => {
