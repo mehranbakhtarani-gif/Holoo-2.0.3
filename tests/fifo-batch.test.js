@@ -156,9 +156,10 @@ test('inventory reconciliation detects missing and duplicate batch identifiers',
 });
 
 test('Kardex display sorts dated movements in Jalali chronological order without mutating source history', () => {
-  assert.ok(html.includes('filteredMovements.slice().sort((a, b) =>'));
-  assert.ok(html.includes('return aDate - bDate;'));
-  assert.ok(html.includes('const movementRows = filteredMovements.slice()'));
+  assert.ok(html.includes('const movements = Array.isArray(p.kardex) ? p.kardex : [];'));
+  assert.ok(html.includes('const ordered = movements.map((movement, index) =>'));
+  assert.ok(html.includes('return a.ordinal - b.ordinal || a.index - b.index;'));
+  assert.ok(!html.includes('movements.sort((a, b) =>'), 'sorting must operate on a derived array, not mutate source history');
 });
 
 test('inventory reconciliation detects kardex balance mismatch', () => {
