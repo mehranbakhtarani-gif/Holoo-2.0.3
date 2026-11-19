@@ -3858,14 +3858,18 @@
         if (!warehouseId || !knownWarehouseIds.has(warehouseId)) {
           issues.push({ type: 'warehouse-product-reference', productId: productId || '—', productName, message: 'کالا به انبار معتبر متصل نیست.', detail: 'شناسه انبار: ' + (warehouseId || 'ثبت‌نشده') });
         }
+        const previousProductId = productId ? productIds.get(productId) : null;
         if (productId) {
-          const previous = productIds.get(productId);
-          if (previous) issues.push({ type: 'warehouse-product-id-duplicate', productId, productName, message: 'شناسه رکورد کالا در چند رکورد تکرار شده است.', detail: 'انبارهای ثبت‌شده: ' + previous.warehouseId + ' / ' + warehouseId });
-          else productIds.set(productId, { warehouseId, productName });
+          if (previousProductId) {
+            issues.push({ type: 'warehouse-product-id-duplicate', productId, productName, message: 'شناسه رکورد کالا در چند رکورد تکرار شده است.', detail: 'انبارهای ثبت‌شده: ' + previousProductId.warehouseId + ' / ' + warehouseId });
+            const previousGroup = groups.get(previousProductId.rootId);
+            if (previousGroup) previousGroup.valid = false;
+          } else productIds.set(productId, { warehouseId, productName, rootId });
         }
         if (!rootId) return;
         if (!groups.has(rootId)) groups.set(rootId, { rootId, productName, rows: [], warehouseRows: new Map(), valid: true });
         const group = groups.get(rootId);
+        if (previousProductId) group.valid = false;
         const stock = Number(product?.stock);
         const row = { productId, productName, warehouseId, stock };
         group.rows.push(row);
