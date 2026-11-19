@@ -25,6 +25,17 @@ const passed = [];
 async function test(name, fn) { await fn(); passed.push(name); }
 
 (async () => {
+  await test('publishable Supabase keys are not sent as Bearer JWTs', () => {
+    const modern = load('cloudAuthHeaders', { cloudConfig: { key: 'sb_publishable_demo' } });
+    const modernHeaders = modern({ 'Content-Type': 'application/json' });
+    assert.equal(modernHeaders.apikey, 'sb_publishable_demo');
+    assert.equal(Object.hasOwn(modernHeaders, 'Authorization'), false);
+    const legacy = load('cloudAuthHeaders', { cloudConfig: { key: 'eyJ.legacy.anon' } });
+    const legacyHeaders = legacy();
+    assert.equal(legacyHeaders.apikey, 'eyJ.legacy.anon');
+    assert.equal(legacyHeaders.Authorization, 'Bearer eyJ.legacy.anon');
+  });
+
   // Trial-balance math and party subledger reconciliation using synthetic journal lines.
   await test('account balances calculate debit and credit turnovers and ending balances', () => {
     const state = { vouchers: [
