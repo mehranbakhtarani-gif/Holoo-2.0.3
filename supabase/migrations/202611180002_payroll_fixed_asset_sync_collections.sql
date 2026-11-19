@@ -262,4 +262,4 @@ grant execute on function public.holoo_apply_state_operation(
 comment on function public.holoo_apply_state_operation(
   text, timestamptz, jsonb, jsonb, jsonb, uuid, text, text, bigint, text, text, timestamptz
 ) is
-  'Atomically compare-and-swaps the company snapshot and appends an idempotent operation audit record. Supports payrollRuns and depreciationEntries collections; does not modify RLS policies.';
+  'Atomically compare-and-swaps the company snapshot and appends an idempotent operation audit record. Supports capitalPlans, payrollRuns and depreciationEntries collections; does not modify RLS policies.';
