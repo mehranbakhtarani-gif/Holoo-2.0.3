@@ -731,7 +731,7 @@
               </div>
               <div>
                 <label class="block font-bold mb-1">انبار مبدا/مقصد</label>
-                <select id="inv-warehouse" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50"></select>
+                <select id="inv-warehouse" onchange="renderInvoiceProductOptions(); onInvProductChange()" class="touch-btn w-full border rounded-xl px-2.5 bg-slate-50"></select>
               </div>
               <div>
                 <label class="block font-bold mb-1">سطح قیمت فروش (۱ تا ۱۰)</label>
@@ -5037,7 +5037,7 @@
       document.getElementById('inv-next-no').textContent = faNum(nextNo);
       document.getElementById('inv-party').innerHTML = state.parties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
       document.getElementById('inv-warehouse').innerHTML = state.warehouses.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
-      document.getElementById('inv-line-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name} (موجود: ${faNum(p.stock)} KG)</option>`).join('');
+      renderInvoiceProductOptions();
       document.getElementById('inv-line-unit-mode').innerHTML = (state.customUnits || []).map(u => `<option value="${u.id}">واحد: ${u.name}</option>`).join('');
       renderInvoiceSettlementAccounts();
       checkPartyCredit(); onInvProductChange(); renderInvDraftLines();
@@ -5077,8 +5077,78 @@
       b.textContent = rem <= 0 ? `⚠️ هشدار: مشتری از سقف اعتبار ${money(p.creditLimit)} عبور کرده است!` : `✔ اعتبار باقیمانده مشتری: ${money(rem)}`;
     }
 
+    // Resolve invoice inventory strictly within the invoice warehouse. Purchases may
+    // create a warehouse-specific product record when the item has never been stocked there.
+    function resolveInvoiceWarehouseProduct(productId, warehouseId, products, allowCreate = false) {
+      const source = (products || []).find(item => String(item.id) === String(productId)) ||
+        (products || []).find(item => String(item.baseProductId || item.id) === String(productId));
+      if (!source || !warehouseId) return { product: null, created: false };
+      const rootId = String(source.baseProductId || source.id);
+      const target = (products || []).find(item =>
+        String(item.warehouseId) === String(warehouseId) &&
+        String(item.baseProductId || item.id) === rootId
+      );
+      if (target) return { product: target, created: false };
+      if (!allowCreate) return { product: null, created: false };
+      const id = rootId + '::' + String(warehouseId);
+      const existingId = (products || []).find(item => String(item.id) === id);
+      if (existingId) return { product: existingId, created: false };
+      return {
+        product: {
+          ...source, id, baseProductId: rootId, warehouseId: String(warehouseId),
+          stock: 0, batches: [], kardex: [], lastMoveDays: 0
+        },
+        created: true
+      };
+    }
+
+    function renderInvoiceProductOptions(preferredValue) {
+      const select = document.getElementById('inv-line-prod');
+      const warehouseId = document.getElementById('inv-warehouse')?.value;
+      if (!select || !warehouseId) return;
+      const previous = preferredValue ?? select.value;
+      let options = [];
+      if (invDraft.type === 'sale') {
+        options = (state.products || []).filter(item => String(item.warehouseId) === String(warehouseId))
+          .map(item => ({ value: String(item.id), product: item }));
+      } else {
+        const roots = new Map();
+        (state.products || []).forEach(item => {
+          const rootId = String(item.baseProductId || item.id);
+          const current = roots.get(rootId);
+          if (!current || String(item.warehouseId) === String(warehouseId)) roots.set(rootId, item);
+        });
+        options = [...roots.entries()].map(([rootId, product]) => ({
+          value: rootId,
+          product: (state.products || []).find(item =>
+            String(item.warehouseId) === String(warehouseId) &&
+            String(item.baseProductId || item.id) === rootId
+          ) || product
+        }));
+      }
+      select.innerHTML = options.map(option =>
+        `<option value="${window.escapeBankReconcileText(option.value)}">${window.escapeBankReconcileText(option.product.name)} (موجود در این انبار: ${faNum(option.product.stock || 0)} KG)</option>`
+      ).join('');
+      if (options.some(option => option.value === String(previous))) select.value = String(previous);
+      else if (options.length) select.value = options[0].value;
+      else select.value = '';
+    }
+
+    function getSelectedInvoiceProduct() {
+      const selectedId = document.getElementById('inv-line-prod')?.value;
+      const warehouseId = document.getElementById('inv-warehouse')?.value;
+      if (!selectedId || !warehouseId) return null;
+      if (invDraft.type === 'sale') {
+        const product = (state.products || []).find(item =>
+          String(item.id) === String(selectedId) && String(item.warehouseId) === String(warehouseId)
+        );
+        return product || null;
+      }
+      return resolveInvoiceWarehouseProduct(selectedId, warehouseId, state.products, true).product;
+    }
+
     function onInvProductChange() {
-      const p = state.products.find(x => x.id === document.getElementById('inv-line-prod').value);
+      const p = getSelectedInvoiceProduct();
       if (!p) return;
       const lvl = Number(document.getElementById('inv-price-level').value || 1) - 1;
       document.getElementById('inv-line-price').value = invDraft.type === 'purchase' ? p.buyPrice : (p.prices[lvl] || p.prices[0]);
@@ -5118,8 +5188,11 @@
       const kg = rawQty * factor;
       const cartons = Math.round((kg / p.cartonKg) * 10) / 10;
 
+      if (String(p.warehouseId) !== String(document.getElementById('inv-warehouse').value)) {
+        showToast('کالای انتخاب‌شده متعلق به انبار انتخابی فاکتور نیست.', 'error'); return;
+      }
       if (invDraft.type === 'sale' && kg > p.stock) {
-        showToast(`موجودی انبار کافی نیست (موجود: ${faNum(p.stock)} KG)`, 'error');
+        showToast(`موجودی انبار انتخاب‌شده کافی نیست (موجود: ${faNum(p.stock)} KG)`, 'error');
         return;
       }
 
@@ -5233,11 +5306,24 @@
       // Prepare all stock/batch changes on clones first. A failed preflight leaves live state untouched.
       const productPlans = [];
       const simulatedProducts = new Map();
+      const stagedWarehouseProducts = new Map();
       let cogs = 0;
       try {
         for (const line of invoiceLines) {
-          const product = state.products.find(entry => String(entry.id) === String(line.productId));
-          if (!product) throw new Error('کالای یکی از ردیف‌های فاکتور پیدا نشد.');
+          let resolved = resolveInvoiceWarehouseProduct(line.productId, warehouseId, state.products, type === 'purchase');
+          let product = resolved.product;
+          const source = (state.products || []).find(entry => String(entry.id) === String(line.productId)) ||
+            (state.products || []).find(entry => String(entry.baseProductId || entry.id) === String(line.productId));
+          const rootId = String(source?.baseProductId || source?.id || line.productId);
+          if (resolved.created) {
+            if (stagedWarehouseProducts.has(rootId)) product = stagedWarehouseProducts.get(rootId);
+            else stagedWarehouseProducts.set(rootId, product);
+          }
+          if (!product || String(product.warehouseId) !== String(warehouseId)) {
+            throw new Error('کالای یکی از ردیف‌ها در انبار انتخاب‌شده موجود نیست؛ برای فروش موجودی همان انبار لازم است.');
+          }
+          line.productId = product.id;
+          line.name = product.name;
           if (!simulatedProducts.has(product)) simulatedProducts.set(product, JSON.parse(JSON.stringify(product)));
           const simulated = simulatedProducts.get(product);
           if (type === 'sale') {
@@ -5323,6 +5409,8 @@
         });
       }
 
+      // Add newly created warehouse-specific purchase records only after journal posting succeeds.
+      stagedWarehouseProducts.forEach(product => state.products.push(product));
       // Journal posting succeeded; apply the prevalidated stock/batch plan to live products.
       for (const plan of productPlans) {
         const { product, simulated, line, quantity } = plan;
@@ -5530,7 +5618,7 @@
           showToast('مقدار برگشتی یکی از ردیف‌ها معتبر نیست؛ هیچ تغییری ثبت نشد.', 'error'); return;
         }
         if (q > 0) {
-          const product = state.products.find(x => x.id === it.productId);
+          const product = resolveInvoiceWarehouseProduct(it.productId, inv.warehouseId, state.products, false).product;
           if (!product) { showToast('کالای یکی از ردیف‌های برگشتی پیدا نشد؛ عملیات لغو شد.', 'error'); return; }
           const lineQty = Number(it.kg || 0);
           const previousReturnedQty = Number(it.returnedKg || 0);
@@ -5681,7 +5769,7 @@
         const remainingBase = Math.max(0, lineNetTotal - returnedBase);
         returnedVatAmount += Math.round(returnedBase * invoiceVatRatio);
         if (remainingQty > 0) {
-          const product = state.products.find(entry => entry.id === item.productId);
+          const product = resolveInvoiceWarehouseProduct(item.productId, inv.warehouseId, state.products, false).product;
           if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return false; }
           cancelPlan.push({ item, product, quantity: remainingQty });
         }
