@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/202611180001_multi_device_operation_journal.sql', 'utf8');
-const latestMigration = fs.readFileSync('supabase/migrations/202611180004_same_device_sequential_merge.sql', 'utf8');
+const latestMigration = fs.readFileSync('supabase/migrations/20261119203748_allow_capital_plans_in_sync_merge.sql', 'utf8');
 const sequentialMergeMigration = fs.readFileSync('supabase/migrations/202611180004_same_device_sequential_merge.sql', 'utf8');
 
 function quotedList(source, pattern, label) {
