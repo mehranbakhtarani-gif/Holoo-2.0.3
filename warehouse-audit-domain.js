@@ -254,68 +254,6 @@
     };
   }
 
-
-  function buildWarehouseAssignmentPlan(state, productId, targetWarehouseId) {
-    const products = Array.isArray(state && state.products) ? state.products : [];
-    const warehouses = Array.isArray(state && state.warehouses) ? state.warehouses : [];
-    const matches = products.filter(item => item && String(item.id) === String(productId));
-    if (matches.length !== 1) return { ok: false, reason: 'رکورد کالا یکتا نیست یا پیدا نشد.' };
-    const product = matches[0];
-    const id = String(product.id);
-    const currentWarehouseId = String(product.warehouseId || '');
-    if (currentWarehouseId && warehouses.some(item => item && String(item.id) === currentWarehouseId)) {
-      return { ok: false, reason: 'این کالا هم‌اکنون به یک انبار معتبر متصل است؛ این ابزار فقط برای ارجاع مفقود یا نامعتبر است.' };
-    }
-    const stock = Number(product.stock);
-    if (!Number.isFinite(stock) || stock !== 0) {
-      return { ok: false, reason: 'موجودی کالا صفر نیست یا مقدار آن نامعتبر است؛ انتساب آن می‌تواند موجودی را به‌اشتباه به انبار مقصد منتقل کند. بررسی دستی لازم است.' };
-    }
-    if (Array.isArray(product.kardex) && product.kardex.length) {
-      return { ok: false, reason: 'کالا سابقه کاردکس دارد؛ تغییر انبار بدون بازسازی زنجیره گردش‌ها مجاز نیست.' };
-    }
-    if (Array.isArray(product.batches) && product.batches.length) {
-      return { ok: false, reason: 'کالا دارای سری ساخت/بچ است؛ تغییر انبار بدون تطبیق بچ‌ها مجاز نیست.' };
-    }
-    const duplicateId = products.some(item => item !== product && String(item && item.id) === id);
-    if (duplicateId) return { ok: false, reason: 'شناسه کالا تکراری است؛ ابتدا شناسه‌ها باید رفع مغایرت شوند.' };
-    const baseId = String(product.baseProductId || product.id);
-    const targetMatches = products.filter(item => item !== product &&
-      String(item && (item.baseProductId || item.id)) === baseId &&
-      String(item && item.warehouseId || '') === String(targetWarehouseId || ''));
-    if (targetWarehouseId && targetMatches.length) {
-      return { ok: false, reason: 'برای همین کالای پایه در انبار مقصد رکورد دیگری وجود دارد؛ انتساب می‌تواند رکورد تکراری بسازد.' };
-    }
-    const referenced = ['invoices', 'imports', 'orders', 'warehouseTransfers'].some(collectionName => {
-      const collection = state && state[collectionName];
-      const visit = value => {
-        if (!value || typeof value !== 'object') return false;
-        if (Array.isArray(value)) return value.some(visit);
-        return Object.entries(value).some(([key, nested]) =>
-          (['productId', 'product_id', 'itemProductId'].includes(key) && String(nested) === id) || visit(nested)
-        );
-      };
-      return visit(collection);
-    });
-    if (referenced) return { ok: false, reason: 'در اسناد یا عملیات دیگر به این شناسه کالا ارجاع وجود دارد؛ اصلاح خودکار متوقف شد.' };
-    const fingerprint = JSON.stringify({
-      id: product.id, name: product.name, baseProductId: product.baseProductId || null,
-      warehouseId: product.warehouseId || null, stock: product.stock,
-      kardex: product.kardex || [], batches: product.batches || []
-    });
-    if (!targetWarehouseId) return {
-      ok: true, requiresTarget: true, productId: id, productName: String(product.name || id),
-      previousWarehouseId: product.warehouseId || null, stock, fingerprint
-    };
-    const target = warehouses.find(item => item && String(item.id) === String(targetWarehouseId));
-    if (!target) return { ok: false, reason: 'انبار مقصد معتبر نیست یا دیگر وجود ندارد.' };
-    return {
-      ok: true, productId: id, productName: String(product.name || id),
-      previousWarehouseId: product.warehouseId || null,
-      targetWarehouseId: String(target.id), targetWarehouseName: String(target.name || target.title || target.id),
-      stock, fingerprint, kardexCount: 0, batchCount: 0
-    };
-  }
-
-  root.HolooWarehouseAudit = { getWarehouseMovementAuditView, escapeAuditText, buildWarehouseTransferReversalPlan, buildWarehouseAssignmentPlan };
+  root.HolooWarehouseAudit = { getWarehouseMovementAuditView, escapeAuditText, buildWarehouseTransferReversalPlan };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.HolooWarehouseAudit;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
