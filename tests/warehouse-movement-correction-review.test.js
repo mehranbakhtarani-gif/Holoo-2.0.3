@@ -20,4 +20,6 @@ assert.ok(html.includes('const transferGroups = new Map()'), 'Kardex correction 
 assert.ok(!html.includes("match(/TR-\\\\d"), 'transfer ID matcher must use a digit pattern, not a literal backslash');
 assert.ok(html.includes('بررسی / اصلاح حواله'), 'transfer correction action must be explicitly labeled');
 assert.ok(!html.includes('✏️ اصلاح حواله انتقال</button>'), 'stocktake rows must not show the transfer correction action');
+assert.ok(html.includes('جدول را به چپ و راست بکشید'), 'mobile users must be told the warehouse table scrolls horizontally');
+assert.ok(html.includes('flex flex-wrap items-start justify-between gap-2'), 'warehouse table heading must wrap on narrow screens');
 console.log('PASS: warehouse transfer correction is preflighted and unsafe dependencies remain blocked');
