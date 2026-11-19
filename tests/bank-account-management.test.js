@@ -34,7 +34,7 @@ const state = {
     { id: 6, date: '1405/09/02', desc: 'ردیف نامعتبر', lines: [{ code: '1102', bankAccountId: 'BANK-A', debit: -1, credit: 0 }] }
   ]
 };
-const balanceSandbox = { state };
+const balanceSandbox = { state, bankTxDateKey: value => value };
 const getBalances = extract('    function getBankAccountBookBalances()', '    function renderReconcileModule()', balanceSandbox, 'getBankAccountBookBalances', true);
 const balances = getBalances();
 assert.equal(balances.accounts.find(x => x.account.id === 'BANK-A').net, 600);
