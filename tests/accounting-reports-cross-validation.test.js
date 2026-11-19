@@ -55,6 +55,7 @@ const sandbox = {
   saveState(){}, renderAll(){}, showToast(){}
 };
 vm.createContext(sandbox);
+vm.runInContext(sliceBetween('    function normalizeAccountingDate(', '    function getAccountingPeriodBounds('), sandbox);
 vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()'), sandbox);
 vm.runInContext(sliceBetween('    function buildAgingRows(', '    function renderAgingSummary('), sandbox);
 vm.runInContext(sliceBetween('    function escapeBankReconciliationText(', '    function renderReconcileModule('), sandbox);
