@@ -68,10 +68,10 @@ const active = getReceiptAuditView(deepFreeze({
   postedToWh: true,
   receiptSnapshot: snapshot,
   receiptHistory: []
-}), [frozenVoucher]);
+}), [deepFreeze({ id: 'V-ACTIVE', sourceType: 'import', sourceId: 'IMP-ACTIVE', sourceEvent: 'registration' })]);
 assert.equal(active.isPosted, true);
 assert.equal(active.activeSnapshot.snapshotId, 'SNAP-1');
-assert.equal(active.registrationVoucher.id, 'V-IMP-1');
+assert.equal(active.registrationVoucher.id, 'V-ACTIVE');
 
 const legacy = getReceiptAuditView(deepFreeze({
   id: 'IMP-LEGACY',
@@ -97,6 +97,14 @@ assert.equal(
   'user-controlled audit strings must be HTML escaped'
 );
 assert.equal(escapeReceiptAuditText(null), '');
+
+const malformedNested = getReceiptAuditView(deepFreeze({
+  id: 'IMP-MALFORMED',
+  postedToWh: false,
+  receiptHistory: [{ snapshot: { products: [null], items: [null] }, reversal: null }]
+}), []);
+assert.equal(malformedNested.history[0].snapshot.products[0], null,
+  'malformed nested audit entries are passed through read-only for safe UI fallback');
 
 const html = fs.readFileSync('index.html', 'utf8');
 assert.ok(html.includes('function renderImportReceiptAuditPanel(shipment)'));
