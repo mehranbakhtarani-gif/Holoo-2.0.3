@@ -81,6 +81,8 @@ assert.match(html,/2101', '2102', '2103', '2104', '2105', '2106/);
 assert.match(html,/type: 'line'/);
 assert.doesNotMatch(html,/Math\.max\(0, netProfit\)/);
 assert.match(html,/dash-period-from/);
+assert.match(html,/invoice\.status !== 'cancelled'[\s\S]{0,160}getInvoiceReturnedAmount\(invoice\)/);
+assert.match(html,/shipment\.status !== 'cancelled'/);
 console.log('PASS: dashboard balances use net debit/credit for cash, inventory, receivables and all six current-liability accounts');
 console.log('PASS: dashboard period sales and net profit use the canonical P&L engine, including FX and custom 61xx expenses');
 console.log('PASS: monthly revenue, COGS, expenses and profit reconcile to the selected-period P&L');

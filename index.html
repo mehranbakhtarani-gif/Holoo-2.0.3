@@ -3404,10 +3404,10 @@
         return !!key && key >= period.fromKey && key <= period.toKey && jalaliDateOrdinal(value) !== null;
       };
       const purchases = (Array.isArray(state.invoices) ? state.invoices : [])
-        .filter(invoice => invoice.type === 'purchase' && inRange(invoice.date || invoice.operationDate))
-        .reduce((sum, invoice) => sum + Math.max(0, Number(invoice.grandTotal) || 0), 0) +
+        .filter(invoice => invoice.type === 'purchase' && invoice.status !== 'cancelled' && inRange(invoice.date || invoice.operationDate))
+        .reduce((sum, invoice) => sum + Math.max(0, (Number(invoice.grandTotal) || 0) - getInvoiceReturnedAmount(invoice)), 0) +
         (Array.isArray(state.imports) ? state.imports : [])
-          .filter(shipment => inRange(shipment.date || shipment.operationDate))
+          .filter(shipment => shipment.status !== 'cancelled' && inRange(shipment.date || shipment.operationDate))
           .reduce((sum, shipment) => sum + Math.max(0, Number(shipment.totalLandedRial) || 0), 0);
 
       document.getElementById('dash-kpis').innerHTML = `
