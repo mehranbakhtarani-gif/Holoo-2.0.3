@@ -61,7 +61,7 @@ vm.runInContext(sliceBetween('    function buildAgingRows(', '    function rende
 vm.runInContext(sliceBetween('    function escapeBankReconciliationText(', '    function renderReconcileModule('), sandbox);
 vm.runInContext(sliceBetween('    let actualCashFlowFromDate = null;', '    function saveCustomAccount()') +
   '; this.api={buildAccountLedger,buildBalanceSheetReport,buildProfitLossReport,buildActualCashFlowReport,buildAgingRows,getBankReconciliationCandidates,confirmBankReconcileMatch};', sandbox);
-vm.runInContext("function normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); }\\n" + sliceBetween('    let trialBalanceFromDate = null;', '    function renderAccountingModule()') +
+vm.runInContext("function normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); }\n" + sliceBetween('    let trialBalanceFromDate = null;', '    function renderAccountingModule()') +
   '; this.api.buildTrialBalanceReport=buildTrialBalanceReport;', sandbox);
 const api = sandbox.api;
 
