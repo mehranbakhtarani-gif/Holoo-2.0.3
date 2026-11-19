@@ -241,6 +241,9 @@ function runInvoiceWithJournalFailure(type) {
   let saves=0;const messages=[];
   const submit=load(extractFunction('submitInvoice','function renderInvoicesModule()'),'submitInvoice',{
     state,invDraft:draft,document:fakeDocument(values),getTodayJalaliDate(){return '1405/09/02';},
+    normalizeAccountingDate(value){return String(value||'').trim().replace(/-/g,'/');},
+    jalaliDateOrdinal(value){return /^1405\/\d{2}\/\d{2}$/.test(String(value||''))?1:null;},
+    getAccountingPeriodLockForDate(){return null;},getFiscalYearCloseRecord(){return null;},
     addStockBatch(p,details){p.batches=p.batches||[];p.batches.push({...details,id:'TEST-BATCH-'+p.batches.length,remainingQty:details.quantity});},
     consumeFifoStock(p,quantity){
       p.batches=p.batches||[];
