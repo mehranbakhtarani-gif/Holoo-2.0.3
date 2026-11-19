@@ -67,7 +67,7 @@ const accountSandbox = {
   document: { getElementById: id => ({ value: fields[id] || '' }) },
   createStableId: () => 'BANK-' + (++nextBankId),
   CHART_ACCOUNTS: [{ code: '1101', name: 'صندوق' }, { code: '1102', name: 'بانک' }, { code: '3101', name: 'سرمایه' }],
-  bankTxDateKey: value => /^1405\\/\\d{2}\\/\\d{2}$/.test(String(value || '')) ? value : null,
+  bankTxDateKey: value => /^1405\/\d{2}\/\d{2}$/.test(String(value || '')) ? value : null,
   postVoucher: (...args) => { posted.push(args); return posted.length; },
   addAudit: (...args) => audit.push(args),
   saveState: () => true,
