@@ -331,7 +331,7 @@ test('inventory control ledger drilldown groups 1105 movements by source and lin
   const build = loadFunction(source, 'buildInventoryValueDiscrepancySources', {
     state: {
       products: [{ id: 'P1', name: 'کالای نمونه' }],
-      invoices: [{ id: 42, type: 'purchase', items: [{ productId: 'P1', kg: 8, costOfGoodsSold: 0, lot: 'LOT-42' }] }],
+      invoices: [{ id: 42, type: 'purchase', items: [{ productId: 'P1', kg: 8, costOfGoodsSold: 0, lot: 'LOT-42' }], returnRefs: [{ id: 'RET-1', items: [{ productId: 'P1', qty: 2, inventoryCost: 180, batchAllocations: [{ batchId: 'B1', quantity: 2 }] }] }] }],
       vouchers: [
         { id: 100, sourceType: 'invoice', sourceId: '42', date: '1405/01/01', lines: [{ code: '1105', debit: 800, credit: 0, desc: 'خرید کالا' }] },
         { id: 101, sourceType: 'invoice_return', sourceId: 'RET-1', sourceEvent: '42', date: '1405/01/02', lines: [{ code: '1105', debit: 0, credit: 100, desc: 'برگشت خرید' }] },
@@ -349,6 +349,10 @@ test('inventory control ledger drilldown groups 1105 movements by source and lin
   assert.equal(invoice.net, 800);
   const returned = rows.find(row => row.sourceType === 'invoice_return');
   assert.equal(returned.invoiceId, '42');
+  assert.equal(returned.returnItems[0].productId, 'P1');
+  assert.equal(returned.returnItems[0].quantity, 2);
+  assert.equal(returned.returnItems[0].inventoryCost, 180);
+  assert.equal(returned.returnItems[0].batchAllocations[0].batchId, 'B1');
   assert.equal(returned.net, -100);
   assert.equal(rows.find(row => row.sourceType === 'stocktake').net, 50);
   assert.equal(rows.find(row => row.sourceType === 'manual').net, 20);
