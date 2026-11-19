@@ -2821,7 +2821,7 @@
       saveState(); renderAll();
       showToast(`واحد نمایش مبالغ به «${state.currency === 'IRR' ? 'ریال' : 'تومان'}» تغییر کرد.`);
     }
-    function changeFiscalYear(yr) { state.fiscalYear = yr; addAudit(`تغییر سال مالی به ${yr}`); saveState(); }
+    function changeFiscalYear(yr) { const normalized = normalizeAccountingDate(yr); if (!/^14\\d{2}$/.test(normalized)) { showToast('سال مالی باید یک سال شمسی معتبر چهاررقمی باشد.', 'error'); return; } const previous = String(state.fiscalYear || ''); state.fiscalYear = normalized; addAudit('تغییر سال مالی به ' + normalized, { mode: 'manual', previous: { fiscalYear: previous }, details: { fiscalYear: normalized, actor: state.activeRole || 'mehran' } }); if (!saveState()) { state.fiscalYear = previous; showToast('ذخیره تغییر سال مالی ناموفق بود.', 'error'); return; } renderAll(); }
     function changeUserRole(r) {
       const assignedActor = localStorage.getItem(DEVICE_ACTOR_LOCK_KEY);
       if (isDeviceActorLocked()) {
@@ -10691,46 +10691,111 @@
       return jalaliDateOrdinal(candidate30) !== null ? candidate30 : String(year) + '/12/29';
     }
 
+    function buildFiscalYearCarryForwardSummary(year, projectedProfit = 0) {
+      const fiscalYear = normalizeAccountingDate(year);
+      const endDate = getFiscalYearEndDate(fiscalYear);
+      const endKey = normalizeLedgerDate(endDate);
+      const accounts = new Map();
+      let invalidDateVouchers = 0, invalidAmountLines = 0;
+      (state.vouchers || []).forEach(voucher => {
+        const rawDate = voucher.date || voucher.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
+        if (dateKey > endKey) return;
+        const invalid = countInvalidReportVoucherLines(voucher);
+        if (invalid) { invalidAmountLines += invalid; return; }
+        (voucher.lines || []).forEach(line => {
+          const code = String(line.code || '');
+          if (!/^[123]/.test(code)) return;
+          accounts.set(code, (accounts.get(code) || 0) + Number(line.debit || 0) - Number(line.credit || 0));
+        });
+      });
+      let assets = 0, liabilitiesAndEquity = 0;
+      accounts.forEach((net, code) => {
+        if (code.startsWith('1')) assets += net;
+        else liabilitiesAndEquity -= net;
+      });
+      liabilitiesAndEquity += Number(projectedProfit || 0);
+      return { year: fiscalYear, endDate, assets, liabilitiesAndEquity, difference: assets - liabilitiesAndEquity, accountCount: accounts.size, invalidDateVouchers, invalidAmountLines };
+    }
+
     function buildFiscalYearClosePreview(year) {
-      const fiscalYear = String(year || '');
-      if (!/^14\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
+      const fiscalYear = normalizeAccountingDate(year);
+      if (!/^14\\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
       const from = fiscalYear + '/01/01';
       const to = getFiscalYearEndDate(fiscalYear);
+      if (jalaliDateOrdinal(from) === null || jalaliDateOrdinal(to) === null) throw new Error('تقویم سال مالی انتخاب‌شده معتبر نیست.');
       const today = getTodayJalaliDate();
       if (jalaliDateOrdinal(today) === null || normalizeLedgerDate(today) < normalizeLedgerDate(to)) {
         throw new Error('بستن سال مالی فقط پس از پایان واقعی سال (' + to + ') مجاز است.');
       }
       const existing = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId) === fiscalYear && (v.sourceEvent || 'default') === 'closing');
-      if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.id, rows: [], profit: 0, blocked: false, warnings: [] };
+      if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.id, rows: [], profit: 0, blocked: false, warnings: [], incomeSummary: null, carryForward: buildFiscalYearCarryForwardSummary(fiscalYear) };
 
       const balances = new Map();
       const warnings = [];
+      const yearlyResults = new Map();
+      const incomeSummary = { revenue: 0, cogs: 0, expenses: 0, netProfit: 0 };
+      const openingResultIssues = [];
       (state.vouchers || []).forEach(voucher => {
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) {
-          warnings.push('سند #' + (voucher.id ?? '؟') + ' تاریخ نامعتبر دارد؛ ابتدا تاریخ آن را اصلاح کنید.');
+          warnings.push('سند #' + (voucher.id ?? '؟') + ' تاریخ نامعتبر دارد؛ ابتدا تاریخ آن را تعیین تکلیف کنید.');
           return;
         }
-        if (dateKey < normalizeLedgerDate(from) || dateKey > normalizeLedgerDate(to)) return;
+        if (dateKey > normalizeLedgerDate(to)) return;
+        const voucherYear = dateKey.slice(0, 4);
         const validation = inspectTrialBalanceVoucher(voucher);
         if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) {
-          warnings.push('سند #' + voucher.id + ' نامعتبر، ناقص یا نامتوازن است؛ ابتدا آن را اصلاح کنید.');
+          if (dateKey >= normalizeLedgerDate(from) && dateKey <= normalizeLedgerDate(to)) {
+            warnings.push('سند #' + voucher.id + ' نامعتبر، ناقص یا نامتوازن است؛ ابتدا آن را اصلاح کنید.');
+          }
           return;
         }
+        const isSelectedYear = voucherYear === fiscalYear;
+        const isOpening = isOpeningKardexDocument(voucher.desc || voucher.description || voucher.memo || '');
         (voucher.lines || []).forEach(line => {
-          const code = String(line.code || '');
+          const code = String(line.code || '').trim();
           if (!/^[456]/.test(code)) return;
+          const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+          if (isOpening && isSelectedYear && (debit || credit)) {
+            openingResultIssues.push('سند افتتاحیه #' + voucher.id + ' دارای گردش حساب نتیجه‌دار ' + code + ' است؛ مانده افتتاحیه نباید درآمد یا هزینه سنواتی ایجاد کند.');
+          }
+          if (voucherYear < fiscalYear && voucher.sourceType !== 'fiscal_year_close') {
+            if (!yearlyResults.has(voucherYear)) yearlyResults.set(voucherYear, new Map());
+            const priorMap = yearlyResults.get(voucherYear);
+            priorMap.set(code, (priorMap.get(code) || 0) + debit - credit);
+          }
+          if (!isSelectedYear) return;
           if (!balances.has(code)) balances.set(code, { code, debit: 0, credit: 0 });
           const row = balances.get(code);
-          row.debit += Number(line.debit || 0);
-          row.credit += Number(line.credit || 0);
+          row.debit += debit;
+          row.credit += credit;
+          if (code.startsWith('4')) incomeSummary.revenue += credit - debit;
+          else if (code.startsWith('5')) incomeSummary.cogs += debit - credit;
+          else incomeSummary.expenses += debit - credit;
         });
       });
+      openingResultIssues.forEach(issue => warnings.push(issue));
+      const priorUnclosed = [];
+      yearlyResults.forEach((accountMap, priorYear) => {
+        const net = Array.from(accountMap.values()).reduce((sum, value) => sum + value, 0);
+        const active = Array.from(accountMap.values()).some(value => Math.abs(value) >= 0.5);
+        const priorClose = (state.vouchers || []).some(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId) === priorYear && (v.sourceEvent || 'default') === 'closing');
+        if (active && !priorClose) priorUnclosed.push(priorYear);
+      });
+      if (priorUnclosed.length) warnings.push('سال‌های مالی قبل دارای مانده درآمد/هزینه بسته‌نشده هستند: ' + priorUnclosed.sort().join('، ') + '؛ ابتدا اختتامیه سنواتی آن‌ها را تعیین تکلیف کنید.');
       const rows = Array.from(balances.values()).map(row => ({ ...row, net: row.debit - row.credit }))
         .filter(row => Math.abs(row.net) >= 0.5).sort((a,b) => a.code.localeCompare(b.code));
-      const profit = rows.reduce((sum, row) => sum - row.net, 0);
-      return { year: fiscalYear, from, to, alreadyClosed: false, rows, profit, blocked: warnings.length > 0 || rows.length === 0, warnings };
+      incomeSummary.netProfit = incomeSummary.revenue - incomeSummary.cogs - incomeSummary.expenses;
+      const profit = -rows.reduce((sum, row) => sum + row.net, 0);
+      if (Math.abs(profit - incomeSummary.netProfit) > 0.5) warnings.push('محاسبه سود و زیان با مانده حساب‌های نتیجه‌دار تطبیق ندارد؛ اختلاف: ' + money(profit - incomeSummary.netProfit));
+      const retainedEarningsAccount = (CHART_ACCOUNTS || []).find(account => String(account.code) === '3102');
+      if (!retainedEarningsAccount) warnings.push('حساب سود (زیان) انباشته ۳۱۰۲ در سرفصل‌های حسابداری تعریف نشده است.');
+      const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit);
+      if (Math.abs(carryForward.difference) > 0.5) warnings.push('تراز انتقال مانده حساب‌های دائمی پس از اختتامیه متوازن نیست؛ اختلاف: ' + money(carryForward.difference));
+      return { year: fiscalYear, from, to, alreadyClosed: false, rows, profit, blocked: warnings.length > 0 || rows.length === 0, warnings, incomeSummary, carryForward, priorUnclosed };
     }
 
     function closeFiscalYear() {
