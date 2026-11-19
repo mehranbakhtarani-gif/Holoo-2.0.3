@@ -1012,21 +1012,69 @@
           </div>
         </section>
 
-        <!-- ==================== MODULE 14: IMPORT CAPITAL PLANNER (1 / 2 / 4 CONTAINERS) ==================== -->
+        <!-- ==================== MODULE 14: IMPORT CAPITAL PLANNER ==================== -->
         <section id="mod-planner" class="mod-section hidden space-y-4">
-          <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3 text-xs">
-            <div>
-              <h2 class="text-base font-black text-slate-900">🧮 شبیه‌ساز برنامه‌ریزی سرمایه واردات (۱، ۲ و ۴ کانتینر)</h2>
-              <p class="text-xs text-slate-500">مقایسه سرمایه درگیر، هزینه‌های خرید و ترخیص، زمان حمل و سودآوری خالص هر سناریو</p>
+          <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-4 text-xs">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div><h2 class="text-base font-black text-slate-900">🧮 برنامه‌ریزی و کنترل سرمایه واردات</h2><p class="text-xs text-slate-500 mt-1">برآورد بهای تمام‌شده، سرمایه درگیر، نقطه سربه‌سر، سودآوری و کنترل نسخه‌های تأییدشده</p></div>
+              <div class="flex flex-wrap gap-2"><button type="button" onclick="saveCapitalPlan()" class="touch-btn bg-holoo-700 text-white rounded-xl px-3 py-2 font-bold">ذخیره نسخه برنامه</button><button type="button" onclick="window.print()" class="touch-btn bg-slate-700 text-white rounded-xl px-3 py-2 font-bold">چاپ گزارش</button></div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5 p-3 rounded-xl bg-slate-50 border">
-              <div><label class="block font-bold mb-1">ارزش FOB هر کانتینر ($):</label><input type="number" id="plan-fob" value="42000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
-              <div><label class="block font-bold mb-1">نرخ ارز مبنا (ریال):</label><input type="number" id="plan-fx" value="685000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
-              <div><label class="block font-bold mb-1">هزینه حمل و گمرک هر کانتینر (ریال):</label><input type="number" id="plan-customs" value="4800000000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
-              <div><label class="block font-bold mb-1">فروش پیش‌بینی هر کانتینر (ریال):</label><input type="number" id="plan-sell" value="39500000000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
-              <div><label class="block font-bold mb-1">زمان حمل و ترخیص (روز):</label><input type="number" id="plan-days" value="45" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums font-bold" /></div>
+            <div class="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sky-950 text-[11px] leading-6">این بخش ابزار برنامه‌ریزی است و به‌تنهایی سند حسابداری صادر نمی‌کند. فقط هزینه‌های مستقیم و غیرقابل‌بازیافتِ مرتبط با رساندن کالا به مکان و وضعیت فعلی در بهای تمام‌شده موجودی منظور می‌شوند. مالیات و عوارض قابل‌بازیافت جداگانه نمایش داده می‌شوند؛ هزینه تأمین مالی و فروش نیز از بهای موجودی جداست.</div>
+            <div class="space-y-2">
+              <h3 class="font-black text-sm">۱. مشخصات پروژه و سناریو</h3>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div><label class="block font-bold mb-1">عنوان پروژه</label><input id="plan-name" type="text" value="واردات جدید" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                <div><label class="block font-bold mb-1">تأمین‌کننده / فروشنده خارجی</label><input id="plan-supplier" type="text" placeholder="نام تأمین‌کننده" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" /></div>
+                <div><label class="block font-bold mb-1">تعداد کانتینر</label><input id="plan-count" type="number" min="1" max="1000" step="1" value="1" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">واحد کالا در هر کانتینر</label><input id="plan-units" type="number" min="0" step="1" value="1000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">مدت حمل و ترخیص (روز)</label><input id="plan-days" type="number" min="0" step="1" value="45" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">تاریخ مبنای برنامه (شمسی)</label><input id="plan-date" type="text" placeholder="۱۴۰۵/۰۸/۲۸" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white" dir="ltr" /></div>
+                <div><label class="block font-bold mb-1">ارزش FOB هر کانتینر (دلار)</label><input id="plan-fob" type="number" min="0" step="any" value="42000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">نرخ تبدیل ارز (ریال / دلار)</label><input id="plan-fx" type="number" min="0" step="any" value="685000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">تخفیف قراردادی خرید (%)</label><input id="plan-discount" type="number" min="0" max="100" step="0.01" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+              </div>
             </div>
-            <div id="planner-scenarios-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+            <div class="space-y-2">
+              <h3 class="font-black text-sm">۲. هزینه‌های مستقیم تحصیل و آماده‌سازی کالا (ریال)</h3>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div><label class="block font-bold mb-1">حمل بین‌المللی / هر کانتینر</label><input id="plan-freight" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">بیمه حمل / هر کانتینر</label><input id="plan-insurance" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">حقوق و عوارض غیرقابل‌بازیافت / هر کانتینر</label><input id="plan-duty" type="number" min="0" step="any" value="4800000000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">ترخیص‌کار و خدمات گمرکی / هر کانتینر</label><input id="plan-clearance" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">بندر، تخلیه و بارگیری / هر کانتینر</label><input id="plan-port" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">انبارداری و دموراژ / هر کانتینر</label><input id="plan-storage" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">حمل داخلی / هر کانتینر</label><input id="plan-inland" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">بازرسی و سایر هزینه مستقیم / هر کانتینر</label><input id="plan-inspection" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">کارمزد حواله و انتقال ارز / هر کانتینر</label><input id="plan-transfer" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">سایر هزینه‌های مستقیم کل پروژه</label><input id="plan-other" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">مالیات قابل‌بازیافت کل پروژه (نمایشی)</label><input id="plan-recoverable-tax" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+              </div>
+            </div>
+            <div class="space-y-2">
+              <h3 class="font-black text-sm">۳. فروش، تأمین مالی و هزینه‌های غیرموجودی</h3>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div><label class="block font-bold mb-1">فروش پیش‌بینی هر کانتینر (ریال)</label><input id="plan-sell" type="number" min="0" step="any" value="39500000000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">هزینه تأمین مالی کل پروژه (ریال)</label><input id="plan-finance" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">هزینه فروش و توزیع کل پروژه (ریال)</label><input id="plan-selling" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">نرخ مالیات برآوردی سود (%)</label><input id="plan-tax-rate" type="number" min="0" max="100" step="0.01" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+              </div>
+              <p class="text-[10px] text-slate-500">هزینه تأمین مالی و فروش در بهای موجودی منظور نشده‌اند. مالیات سود صرفاً برآوردی است و جایگزین محاسبه مالیاتی یا اظهارنامه نیست.</p>
+            </div>
+            <div id="planner-validation" class="hidden rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800 text-[11px]"></div>
+            <div id="planner-scenarios-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+            <div class="rounded-xl border border-slate-200 p-3 space-y-2">
+              <h3 class="font-black text-sm">۴. تحلیل حساسیت نرخ ارز</h3>
+              <div id="planner-fx-sensitivity" class="overflow-x-auto"></div>
+            </div>
+            <div class="rounded-xl border border-slate-200 p-3 space-y-2">
+              <h3 class="font-black text-sm">۵. کنترل‌های اتصال به عملیات ثبت‌شده</h3>
+              <div id="planner-reconciliation" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
+              <p class="text-[10px] text-amber-800 bg-amber-50 rounded-lg p-2">تعداد پرونده‌ها و تعهدات فقط شاخص وجود اطلاعات است؛ تا زمانی که شناسه پروژه و مبالغ با اسناد، پرداخت‌ها و حواله‌ها تطبیق داده نشده‌اند، این ارقام تأیید حسابداری محسوب نمی‌شوند.</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 p-3 space-y-2">
+              <h3 class="font-black text-sm">۶. نسخه‌های ذخیره‌شده و سوابق تأیید</h3>
+              <div id="planner-saved-list" class="space-y-2"></div>
+            </div>
           </div>
         </section>
 
@@ -1877,6 +1925,7 @@
         state.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
         lastSavedState = JSON.parse(JSON.stringify(state));
         ensureAuditLogIds(state);
+    if (!Array.isArray(state.capitalPlans)) state.capitalPlans = [];
         lastQueuedAuditId = null;
         const stamp = conflict.remoteUpdatedAt || new Date().toISOString();
         try {
@@ -7745,34 +7794,176 @@
       document.getElementById('aging-payables').innerHTML = renderAgingTable(payables);
     }
 
+    function capitalPlanReadInputs() {
+      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate'];
+      const data = {};
+      ids.forEach(id => { const el = document.getElementById(id); data[id] = el ? (el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value.trim()) : ''; });
+      return data;
+    }
+    function capitalPlanCalculate(input, countOverride) {
+      const v = input || capitalPlanReadInputs();
+      const count = Number(countOverride || v['plan-count'] || 0);
+      const fob = Number(v['plan-fob'] || 0);
+      const fx = Number(v['plan-fx'] || 0);
+      const discount = Number(v['plan-discount'] || 0);
+      const units = Number(v['plan-units'] || 0);
+      const safeCount = Math.max(0, count);
+      const grossForeignPurchase = safeCount * fob * fx;
+      const purchase = grossForeignPurchase * (1 - discount / 100);
+      const perContainerDirect = ['plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer']
+        .reduce((sum, id) => sum + Number(v[id] || 0), 0);
+      const directCost = safeCount * perContainerDirect + Number(v['plan-other'] || 0);
+      const landedCost = purchase + directCost;
+      const recoverableTax = Number(v['plan-recoverable-tax'] || 0);
+      const revenue = safeCount * Number(v['plan-sell'] || 0);
+      const finance = Number(v['plan-finance'] || 0);
+      const selling = Number(v['plan-selling'] || 0);
+      const grossProfit = revenue - landedCost;
+      const profitBeforeTax = grossProfit - finance - selling;
+      const taxRate = Number(v['plan-tax-rate'] || 0);
+      const estimatedTax = Math.max(0, profitBeforeTax) * taxRate / 100;
+      const estimatedAfterTax = profitBeforeTax - estimatedTax;
+      const deployedCapital = landedCost + finance;
+      const totalUnits = safeCount * units;
+      return {
+        count:safeCount, grossForeignPurchase, purchase, directCost, landedCost, recoverableTax,
+        revenue, finance, selling, grossProfit, profitBeforeTax, estimatedTax, estimatedAfterTax,
+        deployedCapital, totalUnits, unitLandedCost:totalUnits > 0 ? landedCost / totalUnits : 0,
+        roi:deployedCapital > 0 ? profitBeforeTax / deployedCapital * 100 : null,
+        breakEvenPerContainer:safeCount > 0 ? (landedCost + finance + selling) / safeCount : 0,
+        margin:revenue > 0 ? profitBeforeTax / revenue * 100 : null,
+        days:Number(v['plan-days'] || 0)
+      };
+    }
+    function capitalPlanValidation(v) {
+      const errors = [];
+      const numeric = ['plan-count','plan-units','plan-days','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate'];
+      numeric.forEach(id => { if (!Number.isFinite(Number(v[id])) || Number(v[id]) < 0) errors.push('مقدار نامعتبر یا منفی در ' + id); });
+      if (!(Number(v['plan-count']) >= 1 && Number.isInteger(Number(v['plan-count'])) && Number(v['plan-count']) <= 1000)) errors.push('تعداد کانتینر باید عدد صحیح بین ۱ تا ۱۰۰۰ باشد.');
+      if (!(Number(v['plan-fx']) > 0)) errors.push('نرخ ارز باید بزرگ‌تر از صفر باشد.');
+      if (!(Number(v['plan-fob']) > 0)) errors.push('ارزش FOB باید بزرگ‌تر از صفر باشد.');
+      if (Number(v['plan-discount']) > 100 || Number(v['plan-tax-rate']) > 100) errors.push('درصد تخفیف و نرخ مالیات نمی‌تواند بیش از ۱۰۰ باشد.');
+      if (!(Number(v['plan-units']) > 0)) errors.push('تعداد واحد کالا در هر کانتینر باید بزرگ‌تر از صفر باشد.');
+      if (!(Number(v['plan-sell']) >= 0)) errors.push('فروش پیش‌بینی‌شده معتبر نیست.');
+      return errors;
+    }
+    function capitalPlanEscape(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
     function renderCapitalPlanner() {
-      const fob = Number(document.getElementById('plan-fob')?.value || 42000);
-      const fx = Number(document.getElementById('plan-fx')?.value || 685000);
-      const customs = Number(document.getElementById('plan-customs')?.value || 4800000000);
-      const sell = Number(document.getElementById('plan-sell')?.value || 39500000000);
-      const days = Number(document.getElementById('plan-days')?.value || 45);
-
-      document.getElementById('planner-scenarios-grid').innerHTML = [1, 2, 4].map(cnt => {
-        const discountFactor = cnt === 4 ? 0.96 : (cnt === 2 ? 0.98 : 1);
-        const purchaseCost = Math.round(cnt * fob * fx * discountFactor);
-        const clearanceCost = cnt * customs;
-        const totalCap = purchaseCost + clearanceCost;
-        const totalRev = cnt * sell;
-        const netProfit = totalRev - totalCap;
-        const roi = Math.round((netProfit / (totalCap || 1)) * 100);
-        return `
-          <div class="rounded-2xl p-4 border-2 ${cnt === 2 ? 'border-holoo-600 bg-holoo-50/40' : 'border-slate-200 bg-white'} space-y-2">
-            <div class="flex justify-between items-center"><span class="font-black text-sm">سناریو واردات ${faNum(cnt)} کانتینر</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-black">ROI: ${faNum(roi)}٪</span></div>
-            <div class="space-y-1 text-[11px] tabular-nums">
-              <div class="flex justify-between"><span>هزینه خرید ارزی:</span><strong>${money(purchaseCost)}</strong></div>
-              <div class="flex justify-between"><span>حمل، گمرک و ترخیص:</span><strong>${money(clearanceCost)}</strong></div>
-              <div class="flex justify-between text-holoo-950 font-black border-t pt-1"><span>کل سرمایه موردنیاز:</span><span>${money(totalCap)}</span></div>
-              <div class="flex justify-between"><span>زمان حمل و ترخیص:</span><strong>${faNum(days)} روز</strong></div>
-              <div class="flex justify-between text-emerald-700 font-black text-xs pt-1"><span>سود خالص پیش‌بینی‌شده:</span><span>${money(netProfit)}</span></div>
-            </div>
-          </div>
-        `;
+      const grid = document.getElementById('planner-scenarios-grid');
+      if (!grid) return;
+      const v = capitalPlanReadInputs();
+      const errors = capitalPlanValidation(v);
+      const validation = document.getElementById('planner-validation');
+      if (validation) {
+        validation.classList.toggle('hidden', errors.length === 0);
+        validation.innerHTML = errors.length ? '<strong>اصلاح ورودی‌ها:</strong><ul class="list-disc pr-5 mt-1">' + errors.map(e => '<li>' + capitalPlanEscape(e) + '</li>').join('') + '</ul>' : '';
+      }
+      if (errors.length) {
+        grid.innerHTML = '<div class="col-span-full rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800">تا زمان اصلاح ورودی‌ها، خروجی مالی نمایش داده نمی‌شود.</div>';
+        const sens = document.getElementById('planner-fx-sensitivity'); if (sens) sens.innerHTML = '—';
+        renderCapitalPlanSavedList();
+        renderCapitalPlanReconciliation();
+        return;
+      }
+      const base = capitalPlanCalculate(v);
+      const counts = Array.from(new Set([1,2,4,base.count])).sort((a,b)=>a-b);
+      grid.innerHTML = counts.map(cnt => {
+        const r = capitalPlanCalculate(v,cnt);
+        const roiText = r.roi === null ? '—' : faNum(r.roi.toFixed(1)) + '٪';
+        const profitClass = r.profitBeforeTax >= 0 ? 'text-emerald-700' : 'text-rose-700';
+        return '<article class="rounded-2xl p-3 md:p-4 border ' + (cnt === base.count ? 'border-holoo-600 bg-holoo-50/40' : 'border-slate-200 bg-white') + ' space-y-2">' +
+          '<div class="flex justify-between items-center gap-2"><strong class="text-sm">سناریو ' + faNum(cnt) + ' کانتینر</strong><span class="rounded-lg bg-slate-100 px-2 py-1 font-black">ROI ' + roiText + '</span></div>' +
+          '<div class="space-y-1 text-[11px] tabular-nums">' +
+          '<div class="flex justify-between gap-2"><span>خرید ارزی پس از تخفیف قراردادی</span><b>' + money(r.purchase) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>هزینه‌های مستقیم قابل‌سرمایه‌ای‌شدن</span><b>' + money(r.directCost) + '</b></div>' +
+          '<div class="flex justify-between gap-2 border-t pt-1 font-black"><span>بهای تمام‌شده واردات</span><b>' + money(r.landedCost) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>فروش پیش‌بینی‌شده</span><b>' + money(r.revenue) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش</span><b>' + money(r.finance + r.selling) + '</b></div>' +
+          '<div class="flex justify-between gap-2 ' + profitClass + ' font-black text-xs border-t pt-1"><span>سود پیش‌بینی‌شده قبل از مالیات</span><b>' + money(r.profitBeforeTax) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>مالیات برآوردی</span><b>' + money(r.estimatedTax) + '</b></div>' +
+          '<div class="flex justify-between gap-2 font-black"><span>سود پس از مالیات برآوردی</span><b>' + money(r.estimatedAfterTax) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>سرمایه موردنیاز (بدون مالیات قابل‌بازیافت)</span><b>' + money(r.deployedCapital) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>بهای تمام‌شده هر واحد</span><b>' + money(r.unitLandedCost) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>فروش سربه‌سر هر کانتینر</span><b>' + money(r.breakEvenPerContainer) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>حمل و ترخیص</span><b>' + faNum(r.days) + ' روز</b></div>' +
+          '</div></article>';
       }).join('');
+      const sensitivity = [-10,-5,0,5,10].map(delta => {
+        const adjusted = Object.assign({},v,{'plan-fx':Number(v['plan-fx'])*(1+delta/100)});
+        const result = capitalPlanCalculate(adjusted);
+        return '<tr class="border-t"><td class="p-2">' + (delta > 0 ? '+' : '') + faNum(delta) + '٪</td><td class="p-2">' + money(adjusted['plan-fx']) + '</td><td class="p-2 font-bold ' + (result.profitBeforeTax >= 0 ? 'text-emerald-700' : 'text-rose-700') + '">' + money(result.profitBeforeTax) + '</td><td class="p-2">' + (result.roi === null ? '—' : faNum(result.roi.toFixed(1)) + '٪') + '</td></tr>';
+      }).join('');
+      const sens = document.getElementById('planner-fx-sensitivity');
+      if (sens) sens.innerHTML = '<table class="w-full text-right text-[11px]"><thead><tr><th class="p-2">تغییر ارز</th><th class="p-2">نرخ جدید</th><th class="p-2">سود قبل از مالیات</th><th class="p-2">ROI</th></tr></thead><tbody>' + sensitivity + '</tbody></table>';
+      renderCapitalPlanReconciliation();
+      renderCapitalPlanSavedList();
+    }
+    function renderCapitalPlanReconciliation() {
+      const el = document.getElementById('planner-reconciliation');
+      if (!el) return;
+      const imports = Array.isArray(state.imports) ? state.imports : [];
+      const fx = Array.isArray(state.fxCommitments) ? state.fxCommitments : [];
+      const activePlans = Array.isArray(state.capitalPlans) ? state.capitalPlans.filter(p => p.status !== 'archived') : [];
+      const tile = (label,value,note) => '<div class="rounded-xl bg-slate-50 border p-3"><div class="text-slate-500">' + label + '</div><div class="font-black text-lg tabular-nums">' + faNum(value) + '</div><div class="text-[10px] text-slate-500">' + note + '</div></div>';
+      el.innerHTML = tile('پرونده‌های واردات ثبت‌شده',imports.length,'نیازمند اتصال دستی به پروژه') +
+        tile('تعهدات ارزی ثبت‌شده',fx.length,'تعداد رکورد؛ نه مانده تأییدشده') +
+        tile('نسخه‌های برنامه فعال',activePlans.length,'شامل پیش‌نویس و تأییدشده');
+    }
+    function renderCapitalPlanSavedList() {
+      const el = document.getElementById('planner-saved-list');
+      if (!el) return;
+      if (!Array.isArray(state.capitalPlans)) state.capitalPlans = [];
+      const plans = state.capitalPlans.filter(p => p.status !== 'archived').slice().sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+      if (!plans.length) { el.innerHTML = '<p class="text-slate-500">هنوز نسخه‌ای از برنامه ذخیره نشده است.</p>'; return; }
+      el.innerHTML = plans.map(p => {
+        const status = p.status === 'approved' ? '<span class="text-emerald-700 font-bold">تأییدشده</span>' : '<span class="text-amber-700 font-bold">پیش‌نویس</span>';
+        const result = p.calculation || {};
+        const approve = p.status === 'approved' ? '' : '<button type="button" onclick="approveCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-emerald-700 text-white px-2 py-1">تأیید مهران</button>';
+        return '<div class="flex flex-wrap items-center justify-between gap-2 border-b last:border-0 py-2"><div class="min-w-0"><div class="font-bold">' + capitalPlanEscape(p.name || 'بدون عنوان') + ' · ' + faNum(result.count || 0) + ' کانتینر · ' + status + '</div><div class="text-[10px] text-slate-500">' + capitalPlanEscape(p.updatedAt || '') + ' · سود پیش‌بینی‌شده: ' + money(result.profitBeforeTax || 0) + '</div></div><div class="flex flex-wrap gap-1"><button type="button" onclick="loadCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-slate-700 text-white px-2 py-1">بارگذاری</button>' + approve + '<button type="button" onclick="archiveCapitalPlan(\'' + capitalPlanEscape(p.id) + '\')" class="touch-btn rounded-lg bg-rose-700 text-white px-2 py-1">بایگانی</button></div></div>';
+      }).join('');
+    }
+    function saveCapitalPlan() {
+      const input = capitalPlanReadInputs();
+      const errors = capitalPlanValidation(input);
+      if (errors.length) { showToast('ابتدا خطاهای ورودی برنامه را اصلاح کنید.', 'error'); return; }
+      if (!Array.isArray(state.capitalPlans)) state.capitalPlans = [];
+      const now = new Date().toISOString();
+      const id = createStableId('capitalplan');
+      const calculation = capitalPlanCalculate(input);
+      const record = {id,name:input['plan-name'] || 'برنامه بدون عنوان',supplier:input['plan-supplier'] || '',input,calculation,status:'draft',createdAt:now,updatedAt:now,createdBy:state.activeRole || 'mehran',approvedAt:null,approvedBy:null};
+      state.capitalPlans.unshift(record);
+      addAudit('ذخیره نسخه برنامه‌ریزی سرمایه: ' + record.name,{sourceType:'capital_planner',sourceId:id,details:{status:'draft',count:calculation.count,landedCost:calculation.landedCost,profitBeforeTax:calculation.profitBeforeTax}});
+      saveState();
+      renderCapitalPlanner();
+      showToast('نسخه برنامه ذخیره شد؛ وضعیت آن پیش‌نویس است.');
+    }
+    function loadCapitalPlan(id) {
+      const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
+      if (!plan || !plan.input) { showToast('نسخه برنامه پیدا نشد.', 'error'); return; }
+      Object.keys(plan.input).forEach(key => { const el = document.getElementById(key); if (el) el.value = plan.input[key] == null ? '' : plan.input[key]; });
+      addAudit('بارگذاری نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id});
+      saveState();
+      renderCapitalPlanner();
+      showToast('نسخه برنامه بارگذاری شد.');
+    }
+    function approveCapitalPlan(id) {
+      if ((state.activeRole || 'mehran') !== 'mehran') { showToast('تأیید نهایی برنامه فقط با نقش مهران مجاز است.', 'error'); return; }
+      const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
+      if (!plan) { showToast('نسخه برنامه پیدا نشد.', 'error'); return; }
+      if (plan.status === 'approved') { showToast('این نسخه قبلاً تأیید شده است.', 'info'); return; }
+      plan.status = 'approved'; plan.approvedAt = new Date().toISOString(); plan.approvedBy = state.activeRole; plan.updatedAt = plan.approvedAt;
+      addAudit('تأیید نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id,details:{count:plan.calculation?.count,landedCost:plan.calculation?.landedCost,profitBeforeTax:plan.calculation?.profitBeforeTax}});
+      saveState(); renderCapitalPlanner(); showToast('نسخه برنامه تأیید شد؛ این تأیید سند حسابداری ایجاد نمی‌کند.');
+    }
+    function archiveCapitalPlan(id) {
+      const plan = (state.capitalPlans || []).find(p => p.id === id && p.status !== 'archived');
+      if (!plan) { showToast('نسخه برنامه پیدا نشد.', 'error'); return; }
+      plan.status = 'archived'; plan.archivedAt = new Date().toISOString(); plan.updatedAt = plan.archivedAt;
+      addAudit('بایگانی نسخه برنامه‌ریزی سرمایه: ' + (plan.name || id),{sourceType:'capital_planner',sourceId:id,details:{previousStatus:plan.status}});
+      saveState(); renderCapitalPlanner(); showToast('نسخه برنامه بایگانی شد؛ سابقه آن حفظ شده است.');
     }
 
     // =========================================================================
