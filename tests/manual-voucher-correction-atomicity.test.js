@@ -11,7 +11,7 @@ const source = html.slice(start, end) + '; this.saveManualVoucherCorrection = sa
 function makeHarness(saveResult) {
   const original = {
     vouchers: [{
-      id: 10, sourceType: 'manual_voucher', desc: 'سند اولیه', locked: false,
+      id: 10, date: '1405/08/28', sourceType: 'manual_voucher', desc: 'سند اولیه', locked: false,
       lines: [{ code: '1101', debit: 100, credit: 0, partyId: null }, { code: '4101', debit: 0, credit: 100, partyId: null }]
     }],
     auditLogs: []
