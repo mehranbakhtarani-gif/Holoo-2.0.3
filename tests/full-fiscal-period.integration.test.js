@@ -18,7 +18,7 @@ function sourceOf(name) {
 }
 function load(name, context) {
   const sandbox = {
-    jalaliDateOrdinal(value) { const parts = String(value || '').replace(/-/g, '/').split('/'); return parts.length === 3 && parts.every(part => /^\\d+$/.test(part)) ? Number(parts[0]) * 10000 + Number(parts[1]) * 100 + Number(parts[2]) : null; },
+    jalaliDateOrdinal(value) { const parts = String(value || '').replace(/-/g, '/').split('/'); return parts.length === 3 && parts.every(part => part.length > 0 && Number.isFinite(Number(part))) ? Number(parts[0]) * 10000 + Number(parts[1]) * 100 + Number(parts[2]) : null; },
     normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
     normalizeLedgerDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
     getAccountingPeriodLockForDate() { return null; },
