@@ -8093,7 +8093,7 @@
               <div class="flex items-center gap-2"><span class="bg-holoo-900 text-white px-2 py-0.5 rounded font-black tabular-nums">سند #${faNum(v.id)}</span><strong>${v.desc}</strong></div>
               <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${v.locked ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}">${v.locked ? '🔒 قفل سخت‌گیرانه' : 'باز'}</span><span class="text-slate-400 tabular-nums">${faNum(v.date)}</span></div>
             </div>
-            ${v.sourceType === 'manual_voucher' && !v.locked && !v.correctedByVoucherId ? `<button type="button" onclick="openManualVoucherCorrection(${v.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-lg text-[10px] font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}
+            <button type="button" onclick="requestVoucherCorrection(${v.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-lg text-[10px] font-bold">✏️ بررسی / اصلاح سند</button>
             ${v.correctedByVoucherId ? `<div class="text-[10px] text-slate-600 bg-slate-100 rounded-lg p-2">این سند با سند #${faNum(v.correctedByVoucherId)} اصلاح شده است؛ سند اولیه حفظ شده</div>` : ''}
             ${v.lines.map(l => `<div class="p-1.5 rounded bg-slate-50 flex justify-between"><span>${faNum(l.code)} - ${l.desc}</span><strong class="tabular-nums">${l.debit ? `${money(l.debit)} بد` : `${money(l.credit)} بس`}</strong></div>`).join('')}
           </div>
@@ -8154,6 +8154,35 @@
       } else if (activeAccTab === 'bs') {
         renderBalanceSheetReport();
       }
+    }
+
+    function getVoucherCorrectionBlockReason(voucher) {
+      if (!voucher) return 'سند پیدا نشد.';
+      if (voucher.correctedByVoucherId) return 'این سند قبلاً با سند جایگزین #' + voucher.correctedByVoucherId + ' اصلاح شده است.';
+      if (voucher.reversesVoucherId || voucher.correctsVoucherId || voucher.sourceType === 'manual_voucher_correction') return 'این سند بخشی از زنجیره اصلاح قبلی است و نباید جداگانه اصلاح شود.';
+      if (voucher.locked) return 'سند قفل سخت‌گیرانه دارد؛ اصلاح مستقیم آن مجاز نیست.';
+      if (voucher.sourceType === 'manual_voucher') return '';
+      const sourceLabels = {
+        invoice: 'فاکتور باید از فهرست فاکتورها و مسیر اصلاح حسابرسی‌شده خودش اصلاح شود.',
+        invoice_correction: 'این سند متعلق به زنجیره اصلاح فاکتور است و فقط از مسیر همان فاکتور قابل پیگیری است.',
+        treasury: 'این سند به دریافت‌وپرداخت متصل است؛ ابتدا وابستگی‌های خزانه و چک باید تعیین‌تکلیف شوند.',
+        check: 'این سند به چرخه چک متصل است و از مسیر مدیریت چک اصلاح می‌شود.',
+        payroll: 'سند حقوق از دوره حقوق و دستمزد اصلاح می‌شود تا لیست و کسورات با دفترکل هماهنگ بماند.',
+        fixed_asset: 'سند دارایی ثابت از پرونده همان دارایی و گردش استهلاک پیگیری می‌شود.',
+        fiscal_year_close: 'سند اختتامیه فقط از فرایند بستن سال مالی قابل پیگیری است.',
+        manual_voucher_correction: 'سند معکوس یا جایگزین اصلاح قبلی است و اصلاح مستقل آن مجاز نیست.'
+      };
+      return sourceLabels[voucher.sourceType] || 'این سند سیستمی است؛ اصلاح آن باید از ماژول سازنده سند انجام شود تا گردش‌های وابسته و گزارش‌ها هماهنگ بمانند.';
+    }
+
+    function requestVoucherCorrection(voucherId) {
+      const voucher = (state.vouchers || []).find(item => Number(item.id) === Number(voucherId));
+      const reason = getVoucherCorrectionBlockReason(voucher);
+      if (reason) {
+        showToast('امکان اصلاح مستقیم این سند وجود ندارد: ' + reason, 'warning');
+        return;
+      }
+      openManualVoucherCorrection(voucherId);
     }
 
     function addManualVoucherCorrectionLine(line = {}) {
