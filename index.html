@@ -4306,6 +4306,16 @@
         });
         if (relatedIds.length !== details.length) issues.push({ type: 'stocktake-audit', productId: '—', productName: 'انبارگردانی', message: 'تعداد شناسه اسناد مرتبط با تعداد اقلام اصلاح‌شده برابر نیست.', detail: operationId + ' | اقلام: ' + details.length + ' | اسناد مرتبط: ' + relatedIds.length });
       });
+      const stocktakeVouchers = vouchers.filter(voucher => voucher && voucher.sourceType === 'stocktake');
+      const voucherEvents = new Map();
+      stocktakeVouchers.forEach(voucher => {
+        const operationId = String(voucher.sourceId || '');
+        const eventId = operationId + '::' + String(voucher.sourceEvent || 'default');
+        voucherEvents.set(eventId, (voucherEvents.get(eventId) || 0) + 1);
+        const linkedLog = operations.find(log => String(log.operationId || log.sourceId || '') === operationId && (Array.isArray(log.details) ? log.details : []).some(item => String(item?.voucherId || '') === String(voucher.id)));
+        if (!linkedLog) issues.push({ type: 'stocktake-audit', productId: '—', productName: 'انبارگردانی', message: 'سند انبارگردانی سابقه حسابرسی متناظر ندارد.', detail: 'عملیات: ' + operationId + ' | سند: ' + voucher.id });
+      });
+      voucherEvents.forEach((count, eventId) => { if (count > 1) issues.push({ type: 'stocktake-audit', productId: '—', productName: 'انبارگردانی', message: 'برای یک قلم از عملیات انبارگردانی چند سند با شناسه رویداد یکسان ثبت شده است.', detail: eventId + ' | تعداد اسناد: ' + count }); });
       return { checkedOperations: operations.length, checkedItems, issueCount: issues.length, issues };
     }
     function inspectInventoryReconciliation(products, warehouses) {
