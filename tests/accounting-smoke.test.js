@@ -117,7 +117,7 @@ test('a check can be cleared once; repeated clearing does not repost or change b
   const state = { checks: [{ id: 'C1', sayad: '123456789', status: 'in_progress', dir: 'receive', amount: 500, partyId: 'P1' }], bankAccounts: [{ id: 'B1', type: 'bank', balance: 1000 }] };
   const posted = [];
   const update = loadFunction(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...args) { posted.push(args); return 1; }, showToast() {}, addAudit() {}, saveState() {}, renderAll() {}
+    state, postVoucher(...args) { posted.push(args); return 1; }, showToast() {}, addAudit() {}, saveState() { return true; }, renderAll() {}
   });
   update('C1', 'cleared');
   update('C1', 'cleared');
