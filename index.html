@@ -6229,6 +6229,40 @@
           : credit > 0 && debit === 0 && Math.abs(credit - amount) < 0.01;
       }).map(v => ({ id: v.id, desc: v.desc || 'سند بانکی', date: v.date || v.operationDate }));
     }
+    function getBankReconciliationReviewCandidates(item) {
+      const dateKey = bankTxDateKey(item.date);
+      const signedAmount = Number(item.amount);
+      const amount = Math.abs(signedAmount);
+      if (!dateKey || !Number.isFinite(signedAmount) || amount <= 0) return [];
+      const selectedBankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
+      const usedVoucherIds = new Set((state.bankReconcileItems || [])
+        .filter(x => x.id !== item.id && x.matched && x.linkedVoucherId)
+        .map(x => String(x.linkedVoucherId)));
+      return (state.vouchers || []).flatMap(v => {
+        if (usedVoucherIds.has(String(v.id))) return [];
+        const voucherDate = bankTxDateKey(v.date || v.operationDate);
+        const bankLines = (v.lines || []).filter(line => String(line.code) === '1102');
+        if (bankLines.length !== 1) return [];
+        const line = bankLines[0];
+        const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+        if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) return [];
+        if (signedAmount > 0 ? !(debit > 0 && credit === 0) : !(credit > 0 && debit === 0)) return [];
+        const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
+        if (selectedBankId && voucherBankId && selectedBankId !== voucherBankId) return [];
+        const description = [v.desc, v.description, v.memo, line.desc, line.description, line.memo].filter(Boolean).join(' ');
+        const normalizedDescription = description.replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        if (normalizedDescription.includes('افتتاحیه') && normalizedDescription.includes('بانک')) return [];
+        const voucherAmount = debit > 0 ? debit : credit;
+        const amountMatch = Math.abs(voucherAmount - amount) < 0.01;
+        const dateMatch = Boolean(voucherDate && voucherDate === dateKey);
+        if (!amountMatch && !dateMatch) return [];
+        return [{
+          id: v.id, desc: v.desc || v.description || v.memo || 'سند بانکی',
+          date: v.date || v.operationDate || '', debit, credit, bankAccountId: voucherBankId,
+          amountMatch, dateMatch
+        }];
+      }).sort((a, b) => Number(b.amountMatch) - Number(a.amountMatch) || Number(b.dateMatch) - Number(a.dateMatch)).slice(0, 5);
+    }
     function confirmBankReconcileMatch(itemId, voucherId) {
       const item = (state.bankReconcileItems || []).find(x => x.id === itemId);
       const voucher = (state.vouchers || []).find(v => String(v.id) === String(voucherId));
@@ -6328,11 +6362,20 @@
       document.getElementById('reconcile-tx-list').innerHTML = (state.bankReconcileItems || []).map(r => {
         const linked = r.matched && r.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(r.linkedVoucherId));
         const candidates = linked ? [] : getBankReconciliationCandidates(r);
+        const reviewCandidates = !linked && !candidates.length ? getBankReconciliationReviewCandidates(r) : [];
+        const reviewHtml = reviewCandidates.length
+          ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="text-xs font-bold text-amber-900">بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار (' + faNum(reviewCandidates.length) + ')</summary><div class="mt-2 space-y-2">' +
+            reviewCandidates.map(v => '<div class="rounded border bg-white p-2 text-xs"><strong>سند #' + faNum(v.id) + '</strong> — ' + window.escapeBankReconcileText(v.desc) +
+              '<div>تاریخ سند: ' + faNum(v.date) + ' | بدهکار: ' + money(v.debit) + ' | بستانکار: ' + money(v.credit) + '</div>' +
+              '<div class="font-bold text-amber-800">' + (v.amountMatch ? 'مبلغ برابر است' : 'مبلغ متفاوت است') + '؛ ' + (v.dateMatch ? 'تاریخ برابر است' : 'تاریخ متفاوت است') +
+              (v.bankAccountId ? '؛ شناسه حساب: ' + window.escapeBankReconcileText(v.bankAccountId) : '؛ سند شناسه حساب بانکی ندارد') + '</div></div>').join('') +
+            '</div></details>'
+          : '';
         const actions = linked
           ? `<div class="text-emerald-700 font-bold">وصل به سند #${faNum(r.linkedVoucherId)} <button onclick="toggleReconcileMatch('${window.escapeBankReconcileText(r.id)}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`
           : candidates.length
             ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">سندهای هم‌مبلغ و هم‌تاریخ؛ یکی را بررسی و تأیید کنید:</span>${candidates.map(v => `<button onclick="confirmBankReconcileMatch('${window.escapeBankReconcileText(r.id)}','${window.escapeBankReconcileText(v.id)}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید سند #${faNum(v.id)} — ${window.escapeBankReconcileText(v.desc)}</button>`).join('')}</div>`
-            : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع سند ندارد و نیازمند بازبینی است.' : 'سند دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>`;
+            : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع سند ندارد و نیازمند بازبینی است.' : 'سند دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>${reviewHtml}`;
         const legacyReset = !linked && r.matched ? `<button onclick="clearLegacyReconcileFlag('${window.escapeBankReconcileText(r.id)}')" class="text-xs underline text-rose-700">پاک‌کردن وضعیت تطبیق قدیمی</button>` : '';
         return `
           <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
