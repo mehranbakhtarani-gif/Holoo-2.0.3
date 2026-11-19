@@ -254,7 +254,6 @@ assert.equal(closingVoucher.locked,true,'closing voucher must be locked');
 assert.equal(closingVoucher.lines.reduce((sum,line)=>sum+line.debit,0),1000);
 assert.equal(closingVoucher.lines.reduce((sum,line)=>sum+line.credit,0),1000);
 assert.equal(closingVoucher.lines.find(line=>line.code==='3102').credit,400);
-console.log('DEBUG_FISCAL_CLOSE', JSON.stringify(closeState.fiscalYearClosures || []), JSON.stringify(closeState.vouchers.map(v => ({id:v.id,sourceType:v.sourceType,sourceId:v.sourceId,sourceEvent:v.sourceEvent}))));
 assert.equal(closeSandbox.buildFiscalYearClosePreview('1404').alreadyClosed,true);
 assert.throws(()=>closeSandbox.postVoucher('ثبت با تاریخ سال بسته',[
   {code:'1101',debit:10,credit:0},{code:'4101',debit:0,credit:10}
