@@ -13,7 +13,9 @@ const sandbox = {
   state: { vouchers: [
     { id: 10, sourceType: 'fiscal_year_close', sourceId: '1404', sourceEvent: 'closing' }
   ] },
-  normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); }
+  normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
+  getAccountingPeriodLockForDate() { return null; },
+  getFiscalYearCloseRecord(year) { return String(year) === '1404' ? { id: '1404' } : null; }
 };
 vm.createContext(sandbox);
 vm.runInContext(sourceOf('getVoucherCorrectionBlockReason') + '; this.check = getVoucherCorrectionBlockReason;', sandbox);
