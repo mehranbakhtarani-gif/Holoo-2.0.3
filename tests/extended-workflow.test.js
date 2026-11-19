@@ -60,7 +60,7 @@ test('new customer receives a stable subledger identity and customer control acc
   let saves = 0;
   const values = { 'np-name': 'مشتری آزمایشی ۱', 'np-phone': '09120000001', 'np-role': 'مشتری (بافندگی)', 'np-eco': '', 'np-credit': '1000000', 'np-terms': 'نقدی' };
   const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
-    state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
+    state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; return true; }, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
   assert.equal(state.parties.length, 1);
@@ -75,7 +75,7 @@ test('duplicate party name or phone is rejected without a second record', () => 
   let saves = 0;
   const values = { 'np-name': 'آزمایشگاه الف', 'np-phone': '09122222222', 'np-role': 'مشتری (بافندگی)', 'np-eco': '', 'np-credit': '', 'np-terms': '' };
   const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
-    state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
+    state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; return true; }, closeModal() {}, renderAll() {}, showToast() {}
   });
   save();
   assert.equal(state.parties.length, 1);
@@ -131,7 +131,7 @@ function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAcc
       if (remaining > 0) throw new Error('insufficient test batch stock');
       return { totalCost: Math.round(allocations.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)), allocations };
     },
-    postVoucher(...args) { posted.push(args); }, saveState() { saves++; }, renderAll() {}, showToast() {}, faNum: String
+    postVoucher(...args) { posted.push(args); }, saveState() { saves++; return true; }, renderAll() {}, showToast() {}, faNum: String
   });
   submit();
   return { state, product, posted, saves };
