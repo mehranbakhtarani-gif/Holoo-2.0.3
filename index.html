@@ -7891,7 +7891,7 @@
         grid.innerHTML = '<div class="col-span-full rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800">تا زمان اصلاح ورودی‌ها، خروجی مالی نمایش داده نمی‌شود.</div>';
         const sens = document.getElementById('planner-fx-sensitivity'); if (sens) sens.innerHTML = '—';
         renderCapitalPlanSavedList();
-        renderCapitalPlanReconciliation();
+        renderCapitalPlanReconciliation(v, null);
         return;
       }
       const base = capitalPlanCalculate(v);
@@ -7929,7 +7929,7 @@
       }).join('');
       const sens = document.getElementById('planner-fx-sensitivity');
       if (sens) sens.innerHTML = '<table class="w-full text-right text-[11px]"><thead><tr><th class="p-2">تغییر ارز</th><th class="p-2">نرخ جدید</th><th class="p-2">سود قبل از مالیات</th><th class="p-2">ROI</th></tr></thead><tbody>' + sensitivity + '</tbody></table>';
-      renderCapitalPlanReconciliation();
+      renderCapitalPlanReconciliation(v, base);
       renderCapitalPlanSavedList();
     }
     function renderCapitalPlanReconciliation(input, calculation) {
