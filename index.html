@@ -3796,6 +3796,51 @@
       return /(?:^|[\sـ])(?:موجودی\s+(?:اول\s+دوره|اولیه|افتتاح)|افتتاحیه)(?=$|[\sـ])/i.test(normalized);
     }
 
+    function inspectBatchMetadata(batch) {
+      const issues = [];
+      const unverified = [];
+      if (!batch || typeof batch !== 'object') return { issues: ['ساختار سری ساخت معتبر نیست.'], unverified };
+      const remainingRaw = batch.remainingQty ?? batch.quantity;
+      const remaining = Number(remainingRaw);
+      if (remainingRaw === undefined || remainingRaw === null || !Number.isFinite(remaining) || remaining < 0) {
+        issues.push('مقدار باقی‌مانده سری ساخت نامعتبر است.');
+      }
+      if (batch.quantity === undefined || batch.quantity === null || batch.quantity === '') {
+        unverified.push('مقدار اولیه سری ساخت ثبت نشده است.');
+      } else {
+        const initial = Number(batch.quantity);
+        if (!Number.isFinite(initial) || initial < 0) issues.push('مقدار اولیه سری ساخت نامعتبر است.');
+        else if (Number.isFinite(remaining) && remaining > initial + 0.000001) issues.push('مقدار باقی‌مانده از مقدار اولیه سری ساخت بیشتر است.');
+      }
+      const parseDate = (value, label) => {
+        if (value === undefined || value === null || String(value).trim() === '') return null;
+        const raw = String(value).trim();
+        if (raw === '0000/00/00') {
+          unverified.push('تاریخ ' + label + ' برای سری ساخت میراثی/افتتاحیه مشخص نیست.');
+          return null;
+        }
+        const ordinal = jalaliDateOrdinal(raw);
+        if (ordinal === null) issues.push('تاریخ ' + label + ' سری ساخت نامعتبر است: ' + raw);
+        return ordinal;
+      };
+      const received = parseDate(batch.receivedDate, 'ورود');
+      const production = parseDate(batch.productionDate, 'تولید');
+      const expiry = parseDate(batch.expiryDate, 'انقضا');
+      if (received !== null && production !== null && production > received) issues.push('تاریخ تولید پس از تاریخ ورود سری ساخت است.');
+      if (received !== null && expiry !== null && expiry < received) issues.push('تاریخ انقضا پیش از تاریخ ورود سری ساخت است.');
+      if (production !== null && expiry !== null && expiry < production) issues.push('تاریخ انقضا پیش از تاریخ تولید سری ساخت است.');
+      return { issues, unverified };
+    }
+
+    function isBatchEligibleForFifo(batch, todayOrdinal = currentJalaliOrdinal()) {
+      if (!batch || Number(batch.remainingQty ?? batch.quantity ?? 0) <= 0) return false;
+      if (!batch.expiryDate || String(batch.expiryDate).trim() === '') return true;
+      if (String(batch.expiryDate).trim() === '0000/00/00') return false;
+      const expiryOrdinal = jalaliDateOrdinal(batch.expiryDate);
+      if (expiryOrdinal === null || !Number.isFinite(todayOrdinal)) return false;
+      return expiryOrdinal >= todayOrdinal;
+    }
+
     function inspectInventoryReconciliation(products) {
       const items = Array.isArray(products) ? products : [];
       const issues = [];
@@ -3813,6 +3858,15 @@
         const seenBatchIds = new Set();
         batches.forEach((batch, index) => {
           checkedBatches++;
+          const metadataReport = inspectBatchMetadata(batch);
+          metadataReport.issues.forEach(message => issues.push({
+            type: 'batch-metadata', productId, productName, message,
+            detail: 'سری ساخت: ' + String(batch?.lot || batch?.id || ('ردیف ' + (index + 1)))
+          }));
+          metadataReport.unverified.forEach(message => unverified.push({
+            type: 'batch-metadata-unverified', productId, productName, message,
+            detail: 'سری ساخت: ' + String(batch?.lot || batch?.id || ('ردیف ' + (index + 1)))
+          }));
           const batchId = String(batch?.id ?? '').trim();
           if (!batchId) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه سری ساخت ثبت نشده است.', detail: `ردیف سری ساخت: ${index + 1}` });
           else {
@@ -3977,12 +4031,7 @@
       }
       const batches = ensureProductBatches(product);
       const todayOrdinal = typeof currentJalaliOrdinal === 'function' ? currentJalaliOrdinal() : null;
-      const eligible = batches.filter(batch => {
-        if (Number(batch.remainingQty || 0) <= 0) return false;
-        if (!batch.expiryDate || todayOrdinal === null || typeof jalaliDateOrdinal !== 'function') return true;
-        const expiryOrdinal = jalaliDateOrdinal(batch.expiryDate);
-        return expiryOrdinal === null || expiryOrdinal >= todayOrdinal;
-      });
+      const eligible = batches.filter(batch => isBatchEligibleForFifo(batch, todayOrdinal));
       const available = eligible.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
       if (available + 0.000001 < qty) throw new Error('موجودی سری‌های ساخت منقضی‌نشده برای خروج FIFO کافی نیست.');
       const ordered = eligible.sort((a, b) => {
