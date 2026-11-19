@@ -1496,13 +1496,14 @@
   </div>
   <div id="modal-new-asset" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
-      <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">🏢 ثبت و سرمایه‌ای‌کردن دارایی</h3><button onclick="closeModal('modal-new-asset')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <div class="flex justify-between items-center border-b pb-2"><h3 id="ast-modal-title" class="font-black text-sm">🏢 ثبت و سرمایه‌ای‌کردن دارایی</h3><button onclick="editingAssetId=null; closeModal('modal-new-asset')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
       <input type="text" id="ast-name" maxlength="140" placeholder="شرح دارایی *" class="touch-btn w-full border rounded-xl px-3 font-bold" /><input type="text" id="ast-loc" maxlength="120" value="انبار مرکزی" placeholder="محل استقرار" class="touch-btn border rounded-xl px-2 w-full" />
       <div class="grid grid-cols-2 gap-2"><div><label class="block text-[10px]">تاریخ آماده بهره‌برداری (شمسی)</label><input type="text" id="ast-date" class="touch-btn w-full border rounded-xl px-2" dir="ltr" /></div><div><label class="block text-[10px]">عمر مفید (سال)</label><input type="number" id="ast-life" min="1" max="100" value="8" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div></div>
       <div class="grid grid-cols-2 gap-2"><div><label class="block text-[10px]">بهای تمام‌شده (ریال)</label><input type="number" id="ast-cost" min="1" value="4800000000" class="touch-btn w-full border rounded-xl px-2 tabular-nums font-bold" /></div><div><label class="block text-[10px]">ارزش باقیمانده (ریال)</label><input type="number" id="ast-residual" min="0" value="0" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div></div>
       <div><label class="block text-[10px]">طرف بستانکار سند تحصیل</label><select id="ast-credit-account" class="touch-btn w-full border rounded-xl px-2"><option value="1102">بانک (1102)</option><option value="1101">صندوق (1101)</option><option value="2101">بستانکاران (2101)</option></select></div>
-      <p class="text-[10px] text-amber-800">ثبت این فرم، حساب ۱۲۰۱ را بدهکار و حساب انتخابی را بستانکار می‌کند. اگر خرید قبلاً در دفتر ثبت شده، دوباره از این فرم استفاده نکنید.</p>
-      <button onclick="saveAsset()" class="touch-btn w-full bg-orange-600 text-white font-extrabold rounded-xl">✔ ثبت دارایی و صدور سند تحصیل</button>
+      <p class="text-[10px] text-amber-800">ثبت اولیه این فرم، حساب ۱۲۰۱ را بدهکار و حساب انتخابی را بستانکار می‌کند. در ویرایش، سند تحصیل و مبلغ اولیه دوباره ثبت یا دستکاری نمی‌شوند.</p>
+      <p id="ast-edit-note" class="hidden text-[10px] text-sky-900 bg-sky-50 border border-sky-200 rounded-lg p-2"></p>
+      <button id="ast-save-button" onclick="saveAsset()" class="touch-btn w-full bg-orange-600 text-white font-extrabold rounded-xl">✔ ثبت دارایی و صدور سند تحصیل</button>
     </div>
   </div>
   <div id="modal-new-approval" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
@@ -7966,11 +7967,34 @@
         const bookValue = Math.max(0, cost - accumulated), depreciable = Math.max(0, cost - residual);
         const monthly = calculateAssetMonthlyDepreciation(a);
         const acquisitionStatus = a.acquisitionVoucherId ? 'سند تحصیل #' + a.acquisitionVoucherId : 'دارایی قدیمی؛ سند تحصیل ثبت نشده';
-        return '<div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs tabular-nums"><div class="font-black text-sm text-slate-900">' + window.escapeBankReconciliationText(a.name || '') + '</div><div class="text-[11px] text-slate-500">محل: ' + window.escapeBankReconciliationText(a.location || '—') + ' · عمر مفید: ' + faNum(a.lifeYears || 0) + ' سال</div><div class="text-[10px] text-slate-500">' + acquisitionStatus + ' · تاریخ بهره‌برداری: ' + window.escapeBankReconciliationText(a.date || '—') + '</div><div class="flex justify-between"><span>بهای تمام‌شده:</span><strong>' + money(cost) + '</strong></div><div class="flex justify-between"><span>ارزش باقیمانده:</span><strong>' + money(residual) + '</strong></div><div class="flex justify-between"><span>استهلاک انباشته:</span><strong>' + money(accumulated) + '</strong></div><div class="flex justify-between font-black text-emerald-800 border-t pt-1"><span>ارزش دفتری:</span><span>' + money(bookValue) + '</span></div><div class="text-[10px] text-slate-600">استهلاک ماهانه پیشنهادی: ' + money(monthly) + '</div><button data-asset-id="' + window.escapeBankReconciliationText(a.id) + '" onclick="recordDep(this.dataset.assetId)" class="touch-btn w-full bg-orange-600 text-white font-bold rounded-xl" ' + (monthly <= 0 ? 'disabled' : '') + '>ثبت استهلاک دوره انتخابی</button></div>';
+        return '<div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs tabular-nums"><div class="font-black text-sm text-slate-900">' + window.escapeBankReconciliationText(a.name || '') + '</div><div class="text-[11px] text-slate-500">محل: ' + window.escapeBankReconciliationText(a.location || '—') + ' · عمر مفید: ' + faNum(a.lifeYears || 0) + ' سال</div><div class="text-[10px] text-slate-500">' + acquisitionStatus + ' · تاریخ بهره‌برداری: ' + window.escapeBankReconciliationText(a.date || '—') + '</div><div class="flex justify-between"><span>بهای تمام‌شده:</span><strong>' + money(cost) + '</strong></div><div class="flex justify-between"><span>ارزش باقیمانده:</span><strong>' + money(residual) + '</strong></div><div class="flex justify-between"><span>استهلاک انباشته:</span><strong>' + money(accumulated) + '</strong></div><div class="flex justify-between font-black text-emerald-800 border-t pt-1"><span>ارزش دفتری:</span><span>' + money(bookValue) + '</span></div><div class="text-[10px] text-slate-600">استهلاک ماهانه پیشنهادی: ' + money(monthly) + '</div><button data-asset-id="' + window.escapeBankReconciliationText(a.id) + '" onclick="recordDep(this.dataset.assetId)" class="touch-btn w-full bg-orange-600 text-white font-bold rounded-xl" ' + (monthly <= 0 ? 'disabled' : '') + '>ثبت استهلاک دوره انتخابی</button><button data-asset-id="' + window.escapeBankReconciliationText(a.id) + '" onclick="openAssetModal(this.dataset.assetId)" class="touch-btn w-full bg-amber-100 text-amber-900 font-bold rounded-xl">✏️ ویرایش مشخصات دارایی</button></div>';
       }).join('') || '<p class="text-slate-500 bg-white rounded-xl p-3">هنوز دارایی ثابتی ثبت نشده است.</p>';
       document.getElementById('asset-depreciation-history').innerHTML = (state.depreciationEntries || []).slice().sort((a,b) => String(b.period).localeCompare(String(a.period))).slice(0,100).map(entry =>
         '<div class="p-2 rounded-xl bg-slate-50 border flex flex-wrap justify-between gap-2"><span>' + window.escapeBankReconciliationText(entry.assetName || entry.assetId) + ' · دوره ' + window.escapeBankReconciliationText(entry.period) + '</span><span>' + money(entry.amount) + ' · سند #' + faNum(entry.voucherId) + '</span></div>'
       ).join('') || '<p class="text-slate-500">هنوز استهلاکی ثبت نشده است.</p>';
+    }
+    let editingAssetId = null;
+    function openAssetModal(assetId = null) {
+      editingAssetId = assetId === null ? null : String(assetId);
+      const asset = editingAssetId === null ? null : (state.fixedAssets || []).find(item => String(item.id) === editingAssetId);
+      if (editingAssetId !== null && !asset) { showToast('دارایی موردنظر پیدا نشد.', 'error'); editingAssetId = null; return; }
+      const hasDepreciation = asset && (state.depreciationEntries || []).some(entry => String(entry.assetId) === String(asset.id));
+      document.getElementById('ast-name').value = asset?.name || '';
+      document.getElementById('ast-loc').value = asset?.location || 'انبار مرکزی';
+      document.getElementById('ast-date').value = asset?.date || getTodayJalaliDate();
+      document.getElementById('ast-life').value = asset?.lifeYears ?? 8;
+      document.getElementById('ast-cost').value = asset?.cost ?? 4800000000;
+      document.getElementById('ast-residual').value = asset?.residualValue ?? 0;
+      document.getElementById('ast-credit-account').value = asset?.acquisitionAccountCode || '1102';
+      ['ast-date','ast-cost','ast-credit-account'].forEach(id => { document.getElementById(id).disabled = Boolean(asset); });
+      ['ast-life','ast-residual'].forEach(id => { document.getElementById(id).disabled = Boolean(hasDepreciation); });
+      document.getElementById('ast-edit-note').classList.toggle('hidden', !asset);
+      document.getElementById('ast-edit-note').textContent = hasDepreciation
+        ? 'سند تحصیل و سابقه استهلاک حفظ می‌شوند؛ فقط نام و محل قابل ویرایش است.'
+        : 'سند تحصیل و مبلغ اولیه تغییر نمی‌کنند. عمر مفید و ارزش باقیمانده فقط تا پیش از ثبت اولین استهلاک قابل ویرایش‌اند.';
+      document.getElementById('ast-modal-title').textContent = asset ? '✏️ ویرایش مشخصات دارایی' : '🏢 ثبت و سرمایه‌ای‌کردن دارایی';
+      document.getElementById('ast-save-button').textContent = asset ? '✔ ذخیره ویرایش مشخصات' : '✔ ثبت دارایی و صدور سند تحصیل';
+      openModal('modal-new-asset');
     }
     function saveAsset() {
       const name = document.getElementById('ast-name').value.trim(), location = document.getElementById('ast-loc').value.trim();
@@ -7979,6 +8003,21 @@
       const creditCode = document.getElementById('ast-credit-account').value;
       if (!name || !location || jalaliDateOrdinal(acquisitionDate) === null || !Number.isInteger(lifeYears) || lifeYears < 1 || lifeYears > 100 || !Number.isSafeInteger(cost) || cost <= 0 || !Number.isSafeInteger(residualValue) || residualValue < 0 || residualValue > cost || !['1101','1102','2101'].includes(creditCode)) {
         showToast('اطلاعات دارایی، تاریخ، عمر مفید، مبلغ یا حساب طرف بستانکار نامعتبر است.', 'error'); return;
+      }
+      if (editingAssetId !== null) {
+        const asset = (state.fixedAssets || []).find(item => String(item.id) === editingAssetId);
+        if (!asset) { showToast('دارایی برای ویرایش پیدا نشد.', 'error'); return; }
+        const hasDepreciation = (state.depreciationEntries || []).some(entry => String(entry.assetId) === String(asset.id));
+        const previous = { name: asset.name, location: asset.location, lifeYears: asset.lifeYears, residualValue: asset.residualValue };
+        asset.name = name.slice(0,140);
+        asset.location = location.slice(0,120);
+        if (!hasDepreciation) { asset.lifeYears = lifeYears; asset.residualValue = residualValue; }
+        asset.updatedAt = new Date().toISOString();
+        addAudit('ویرایش مشخصات دارایی ثابت: ' + asset.name, { mode: 'manual', sourceType: 'fixed_asset', sourceId: asset.id, previous, note: 'بهای تحصیل، تاریخ، حساب و سند اولیه دست‌نخورده باقی ماند.' });
+        editingAssetId = null;
+        saveState(); closeModal('modal-new-asset'); renderAll();
+        showToast(hasDepreciation ? 'نام و محل دارایی ویرایش شد؛ عمر مفید و ارزش باقیمانده به‌دلیل وجود استهلاک ثبت‌شده قفل ماند.' : 'مشخصات دارایی ویرایش شد؛ سند تحصیل و بهای ثبت‌شده تغییر نکرد.');
+        return;
       }
       const asset = { id: createStableId('asset'), name: name.slice(0,140), date: acquisitionDate, location: location.slice(0,120), lifeYears, cost, residualValue, accDep: 0, depreciationMethod: 'straight_line', acquisitionAccountCode: creditCode, createdAt: new Date().toISOString() };
       state.fixedAssets.push(asset);
