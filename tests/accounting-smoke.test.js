@@ -230,7 +230,8 @@ test('party control reconciliation lists legacy rows with missing or unknown par
     getPartyLedgerControlCodes(party) { return new Set([party.ledgerAccountCode || '1103']); },
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
     jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
-    countInvalidReportVoucherLines() { return 0; }
+    countInvalidReportVoucherLines() { return 0; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
   });
   const result = build('1405/01/01', '1405/01/31');
   assert.equal(result.unassignedLines, 2);
