@@ -11099,6 +11099,49 @@
       [['کالای دارای اختلاف موجودی با سری ساخت',r.batchQuantityMismatches],['مقادیر نامعتبر سری ساخت',r.invalidBatchValues],['فاکتور فروش بدون سند',r.missingSaleVouchers],['سند فروش تکراری',r.duplicateSaleVouchers],['مغایرت بهای تمام‌شده با دفترکل',r.cogsAmountMismatches],['بهای تمام‌شده ثبت‌نشده در ردیف فاکتور',r.missingCogsValues],['مغایرت ورود خرید با سری ساخت',r.purchaseBatchMismatches]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});
       r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0); return r;
     }
+    function buildInventoryControlAccountReconciliation() {
+      const products = Array.isArray(state.products) ? state.products : [];
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const details = [];
+      let inventoryValue = 0, unverifiedProducts = 0;
+      products.forEach(product => {
+        const value = getInventoryBookValue(product);
+        const stock = Number(product?.stock);
+        const valid = value !== null && Number.isFinite(value) && Number.isFinite(stock) && stock >= 0;
+        if (!valid) unverifiedProducts++;
+        else inventoryValue += value;
+        details.push({ productId: String(product?.id ?? ''), productName: String(product?.name || product?.id || 'کالای بدون نام'),
+          warehouseId: String(product?.warehouseId ?? ''), stock: Number.isFinite(stock) ? stock : null,
+          value: valid ? value : null, unitValue: valid && stock > 0 ? value / stock : (valid ? 0 : null), verified: valid });
+      });
+      let controlDebit = 0, controlCredit = 0, relevantVouchers = 0, invalidControlVouchers = 0;
+      vouchers.forEach(voucher => {
+        const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+        const controlLines = lines.filter(line => String(line?.code || '').trim() === '1105');
+        if (!controlLines.length) return;
+        relevantVouchers++;
+        const rawDate = voucher?.date || voucher?.operationDate;
+        const dateValid = !!rawDate && jalaliDateOrdinal(rawDate) !== null;
+        const validation = inspectTrialBalanceVoucher(voucher);
+        if (!dateValid || validation.invalidLines || validation.invalidStructure || validation.unbalanced) invalidControlVouchers++;
+        controlLines.forEach(line => {
+          const debit = Number(line?.debit ?? 0), credit = Number(line?.credit ?? 0);
+          if (Number.isFinite(debit) && Number.isFinite(credit) && debit >= 0 && credit >= 0) {
+            controlDebit += debit; controlCredit += credit;
+          }
+        });
+      });
+      const inventoryVerified = unverifiedProducts === 0 && Number.isFinite(inventoryValue);
+      const ledgerVerified = invalidControlVouchers === 0 && Number.isFinite(controlDebit) && Number.isFinite(controlCredit);
+      const controlBalance = ledgerVerified ? controlDebit - controlCredit : null;
+      const difference = inventoryVerified && ledgerVerified ? inventoryValue - controlBalance : null;
+      const status = difference === null ? 'unverified' : Math.abs(difference) <= 1 ? 'matched' : 'mismatch';
+      details.sort((a,b) => a.value === null ? (b.value === null ? a.productName.localeCompare(b.productName) : 1) : b.value === null ? -1 : b.value-a.value);
+      return { status, costingMethod: state.costingMethod === 'FIFO' ? 'FIFO' : 'AVG', productsChecked: products.length,
+        inventoryValue: inventoryVerified ? inventoryValue : null, controlDebit, controlCredit, controlBalance, difference,
+        unverifiedProducts, relevantVouchers, invalidControlVouchers, details };
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -11122,6 +11165,22 @@
       const audit = buildGeneralLedgerAuditSummary();
       const inventoryAudit = buildInventoryAccountingAuditSummary();
       const inventoryAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق انبار با حسابداری</strong><b class="block">'+(inventoryAudit.issueCount?faNum(inventoryAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کالاهای بررسی‌شده',inventoryAudit.productsChecked],['اختلاف موجودی و سری ساخت',inventoryAudit.batchQuantityMismatches],['مقادیر نامعتبر سری ساخت',inventoryAudit.invalidBatchValues],['فاکتور فروش بررسی‌شده',inventoryAudit.saleInvoicesChecked],['فروش بدون سند',inventoryAudit.missingSaleVouchers],['سند فروش تکراری',inventoryAudit.duplicateSaleVouchers],['مغایرت بهای تمام‌شده',inventoryAudit.cogsAmountMismatches],['بهای تمام‌شده نامشخص',inventoryAudit.missingCogsValues],['مغایرت ورود خرید و سری ساخت',inventoryAudit.purchaseBatchMismatches]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(inventoryAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+inventoryAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق انبار و حسابداری بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش فقط خواندنی است و موجودی یا اسناد را تغییر نمی‌دهد.</p></div>';
+      const inventoryValueReconciliation = buildInventoryControlAccountReconciliation();
+      const inventoryValuePanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق ارزش ریالی موجودی با حساب کنترل ۱۱۰۵</strong><b class="block">' +
+        (inventoryValueReconciliation.status === 'matched' ? 'ارزش انبار و مانده دفترکل برابر است' :
+         inventoryValueReconciliation.status === 'mismatch' ? 'اختلاف ارزش شناسایی شد' : 'تطبیق قطعی ممکن نیست؛ اطلاعات ناقص است') +
+        '</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">' +
+        [['روش قیمت‌گذاری',inventoryValueReconciliation.costingMethod],['ارزش موجودی انبار',inventoryValueReconciliation.inventoryValue === null ? 'نامشخص' : money(inventoryValueReconciliation.inventoryValue)],
+         ['بدهکار حساب ۱۱۰۵',money(inventoryValueReconciliation.controlDebit)],['بستانکار حساب ۱۱۰۵',money(inventoryValueReconciliation.controlCredit)],
+         ['مانده خالص حساب ۱۱۰۵',inventoryValueReconciliation.controlBalance === null ? 'نامشخص' : money(inventoryValueReconciliation.controlBalance)],
+         ['اختلاف انبار و دفترکل',inventoryValueReconciliation.difference === null ? 'نامشخص' : money(inventoryValueReconciliation.difference)],
+         ['کالای نیازمند بررسی',inventoryValueReconciliation.unverifiedProducts],['سند کنترلی نامعتبر',inventoryValueReconciliation.invalidControlVouchers]].map(x=>'<span>'+x[0]+': <b>'+x[1]+'</b></span>').join('') +
+        '</div>' +
+        (inventoryValueReconciliation.status === 'mismatch' ? '<p class="text-xs text-amber-800">اختلاف مثبت یعنی ارزش انبار از مانده خالص حساب ۱۱۰۵ بیشتر است؛ اختلاف منفی یعنی مانده دفترکل بیشتر است.</p>' : '') +
+        (inventoryValueReconciliation.unverifiedProducts || inventoryValueReconciliation.invalidControlVouchers ? '<p class="text-xs text-amber-800">تا رفع اطلاعات ناقص کالاها یا اسناد دارای ردیف ۱۱۰۵، نتیجه قطعی اعلام نمی‌شود.</p>' : '') +
+        '<div class="overflow-x-auto"><table class="w-full text-[10px] text-right"><thead><tr><th class="p-1">کالا</th><th class="p-1">انبار</th><th class="p-1">موجودی</th><th class="p-1">ارزش ریالی</th><th class="p-1">ارزش واحد</th></tr></thead><tbody>' +
+        inventoryValueReconciliation.details.map(x=>'<tr><td class="p-1 border-t">'+escapeLedgerText(x.productName)+'</td><td class="p-1 border-t">'+escapeLedgerText(x.warehouseId || '—')+'</td><td class="p-1 border-t">'+(x.stock === null ? 'نامعتبر' : faNum(x.stock))+'</td><td class="p-1 border-t">'+(x.value === null ? 'نامشخص' : money(x.value))+'</td><td class="p-1 border-t">'+(x.unitValue === null ? '—' : money(x.unitValue))+'</td></tr>').join('') +
+        '</tbody></table></div><p class="text-[10px]">گزارش فقط‌خواندنی است. اختلاف به‌صورت کل حساب ۱۱۰۵ محاسبه می‌شود؛ انتساب اختلاف به کالای مشخص بدون شناسه کالا در ردیف‌های دفترکل قابل اتکا نیست.</p></div>';
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
@@ -11138,7 +11197,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuePanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
