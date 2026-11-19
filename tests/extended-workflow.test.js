@@ -288,6 +288,9 @@ test('sales invoice rechecks available stock before any live mutation',()=>{
   let posted=0,saves=0;
   const submit=load(extractFunction('submitInvoice','function renderInvoicesModule()'),'submitInvoice',{
     state,invDraft:draft,document:fakeDocument(values),getTodayJalaliDate(){return '1405/09/02';},
+    normalizeAccountingDate(value){return String(value||'').trim().replace(/-/g,'/');},
+    jalaliDateOrdinal(value){return /^1405\/\d{2}\/\d{2}$/.test(String(value||''))?1:null;},
+    getAccountingPeriodLockForDate(){return null;},getFiscalYearCloseRecord(){return null;},
     consumeFifoStock(p,quantity){if(quantity>p.stock)throw new Error('insufficient stock');return {totalCost:quantity*10,allocations:[]};},
     addStockBatch(){},postVoucher(){posted++;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
   });
