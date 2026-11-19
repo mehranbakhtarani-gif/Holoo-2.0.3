@@ -20,6 +20,9 @@ const state = {
       { code: '1102', debit: 80, credit: 20 },
       { code: '1102', bankAccountId: 'DELETED-BANK', debit: 40, credit: 10 },
       { code: '1101', bankAccountId: 'BANK-A', debit: 9999, credit: 0 }
+    ] },
+    { id: 2, date: '۱۴۰۵/۰۸/۰۱', desc: 'سند افتتاحیه سال مالی ۱۴۰۵ — موجودی افتتاحیه بانک‌ها', lines: [
+      { code: '1102', debit: 12650000000, credit: 0 }
     ] }
   ]
 };
@@ -33,6 +36,9 @@ assert.deepEqual(Array.from(result.accounts, row => [row.account.id, row.debit, 
   ['BANK-B', 500, 250, 250]
 ]);
 assert.equal(result.unassignedNet, 60);
+assert.equal(result.openingNet, 12650000000);
+assert.equal(result.openingBalanceLines.length, 1);
+assert.equal(result.openingBalanceLines[0].voucherId, 2);
 assert.equal(result.unknownNet, 30);
 assert.equal(result.unassignedDebit, 80);
 assert.equal(result.unknownCredit, 10);
@@ -48,4 +54,5 @@ assert.deepEqual(
 );
 console.log('PASS: each bank account has its own ledger balance');
 console.log('PASS: legacy unassigned and unknown bank IDs remain visible separately');
+console.log('PASS: opening bank balances are separated from unidentified bank movements');
 console.log('PASS: cash-account lines are excluded from bank balances');
