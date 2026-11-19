@@ -17,6 +17,10 @@ function load(source, name, context) {
   const helperStart = html.indexOf('function getReturnCostOfGoods(');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   const helperSource = helperStart >= 0 && helperEnd > helperStart ? html.slice(helperStart, helperEnd) : '';
+  const purchaseReturnStart = html.indexOf('function consumePurchaseReturnBatches(');
+  const purchaseReturnEnd = html.indexOf('// =========================================================================', purchaseReturnStart);
+  const purchaseReturnSource = purchaseReturnStart >= 0 && purchaseReturnEnd > purchaseReturnStart
+    ? html.slice(purchaseReturnStart, purchaseReturnEnd) : '';
   const sandbox = {
     restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
       product.batches = product.batches || [];
@@ -62,6 +66,7 @@ function load(source, name, context) {
   };
   vm.createContext(sandbox);
   if (helperSource) vm.runInContext(helperSource, sandbox);
+  if (purchaseReturnSource) vm.runInContext(purchaseReturnSource, sandbox);
   const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
   const warehouseResolverEnd = html.indexOf('function renderInvoiceProductOptions(', warehouseResolverStart);
   if (warehouseResolverStart >= 0 && warehouseResolverEnd > warehouseResolverStart) {
@@ -501,7 +506,7 @@ test('return below the unpaid invoice balance does not create excess party credi
   const state = {
     fiscalYear:'1405', costingMethod:'AVG', treasuryTxs:[],
     invoices:[{id:3202,type:'purchase',partyId:'P2',grandTotal:100,paidAmount:20,items:[{productId:'X2',kg:10,returnedKg:0,price:10}]}],
-    products:[{id:'X2',stock:10,kardex:[]}]
+    products:[{id:'X2',stock:10,buyPrice:10,batches:[{id:'PUR-B1',lot:'PUR-3202-X2',sourceType:'purchase',sourceRef:3202,quantity:10,remainingQty:10,unitCost:10}],kardex:[]}]
   };
   const posted=[];
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
