@@ -1156,24 +1156,52 @@
               </div>
             </div>
 
-            <!-- Auto-Backup, Snapshots & Supabase Cloud Sync Control -->
-            <div class="lg:col-span-2 bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 class="font-black text-sm text-slate-900">☁️ همگام‌سازی ابری Supabase و پشتیبان‌گیری خودکار (Snapshots)</h3>
-                  <p class="text-[11px] text-slate-500">ذخیره خودکار در ابر Supabase + حافظه آفلاین مرورگر + نقاط بازیابی یک‌کلیکی JSON</p>
+            <!-- Minimal, user-controlled backup and separate cloud sync -->
+            <div class="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <h3 class="text-sm font-black text-slate-900">پشتیبان‌گیری و بازیابی</h3>
+                  <p class="mt-1 text-[11px] text-slate-500">مدیریت نسخه‌های پشتیبان؛ بدون ارسال خودکار به Google Drive</p>
                 </div>
-                <div class="flex flex-wrap gap-2">
-                  <button onclick="pushToSupabase(true)" class="touch-btn bg-sky-700 text-white px-3 rounded-xl font-extrabold">☁️ همگام‌سازی فوری با Supabase</button>
-                  <button onclick="createSnapshot('نقطه بازیابی دستی کاربر', true)" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">+ اسنپ‌شات محلی</button>
-                  <button onclick="downloadBackupJSON()" class="touch-btn bg-emerald-600 text-white px-3 rounded-xl font-extrabold">📥 دانلود JSON</button>
-                  <label class="touch-btn bg-slate-100 border border-slate-300 px-3 rounded-xl font-bold flex items-center cursor-pointer">
-                    📤 بازیابی JSON
-                    <input type="file" accept=".json" onchange="restoreBackupJSON(event)" class="hidden" />
-                  </label>
+                <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">کنترل با شما</span>
+              </div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4 space-y-3">
+                <div class="flex items-center gap-3">
+                  <div class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white border border-slate-200 text-xl" aria-hidden="true">◉</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-extrabold text-slate-900">Google Drive</div>
+                    <p id="drive-backup-status" class="mt-0.5 text-[11px] leading-5 text-slate-500">اتصال حساب گوگل هنوز راه‌اندازی نشده است.</p>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" disabled aria-disabled="true" class="touch-btn rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-400 cursor-not-allowed">اتصال حساب گوگل</button>
+                  <span class="text-[10px] text-slate-400">پس از تنظیم شناسه OAuth رسمی، انتخاب حساب فعال می‌شود.</span>
                 </div>
               </div>
-              <div id="snapshots-container" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
+              <div class="space-y-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div class="text-xs font-extrabold text-slate-800">نسخه پشتیبان روی همین دستگاه</div>
+                    <p class="text-[10px] text-slate-500">ذخیره و بازیابی فایل فقط با اقدام دستی شما انجام می‌شود.</p>
+                  </div>
+                  <button onclick="createSnapshot('نقطه بازیابی دستی کاربر', true)" class="touch-btn rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">+ نقطه بازیابی</button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button onclick="downloadBackupJSON()" class="touch-btn rounded-xl bg-emerald-700 px-3 py-2 text-xs font-extrabold text-white">دانلود نسخه پشتیبان</button>
+                  <label class="touch-btn flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                    بازیابی از فایل
+                    <input type="file" accept=".json,application/json" onchange="restoreBackupJSON(event)" class="hidden" />
+                  </label>
+                </div>
+                <div id="snapshots-container" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div>
+              </div>
+              <details class="rounded-xl border border-slate-100 px-3 py-2.5">
+                <summary class="cursor-pointer text-xs font-bold text-slate-600">تنظیمات همگام‌سازی Supabase</summary>
+                <div class="pt-3 space-y-2">
+                  <p class="text-[11px] text-slate-500">همگام‌سازی اطلاعات شرکت با Supabase مستقل از Google Drive است.</p>
+                  <button onclick="pushToSupabase(true)" class="touch-btn rounded-xl bg-sky-700 px-3 py-2 text-xs font-bold text-white">همگام‌سازی فوری با Supabase</button>
+                </div>
+              </details>
             </div>
           </div>
         </section>
@@ -10280,6 +10308,11 @@
     }
     function uploadLogo(e) {
       const f = e.target.files[0]; if (!f) return;
+      if (f.size > 50 * 1024 * 1024) {
+        showToast('حجم فایل پشتیبان بیشتر از حد مجاز ۵۰ مگابایت است.', 'error');
+        e.target.value = '';
+        return;
+      }
       const r = new FileReader();
       r.onload = ev => { state.settings.logoUrl = ev.target.result; saveState(); renderAll(); showToast('لوگو بارگذاری شد.'); };
       r.readAsDataURL(f);
@@ -10356,6 +10389,8 @@
         if (!snap) return showToast('نسخه پشتیبان پیدا نشد.', 'error');
         const restored = JSON.parse(snap.payload);
         if (!isValidBackupData(restored)) return showToast('ساختار نسخه پشتیبان معتبر نیست.', 'error');
+        if (!confirm('اطلاعات فعلی با این نسخه جایگزین می‌شود. ابتدا یک نقطه بازیابی از وضعیت فعلی نگه داشته خواهد شد. ادامه می‌دهید؟')) return;
+        createSnapshot('پیش از بازیابی نسخه محلی', false);
         const previous = state;
         state = restored;
         if (!saveState()) { state = previous; return; }
@@ -10379,7 +10414,8 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Holoo_Textile_Import_Backup_${state.fiscalYear}.json`;
+        const dateStamp = new Date().toISOString().replace(/[:.]/g, '-');
+        a.download = `Holoo_Backup_${state.fiscalYear}_${dateStamp}.json`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         showToast('فایل پشتیبان JSON آماده دانلود شد 📥');
@@ -10392,6 +10428,8 @@
         try {
           const parsed = JSON.parse(ev.target.result);
           if (!isValidBackupData(parsed)) throw new Error('ساختار فایل پشتیبان معتبر نیست.');
+          if (!confirm('اطلاعات فعلی با فایل انتخاب‌شده جایگزین می‌شود. ابتدا یک نقطه بازیابی از وضعیت فعلی نگه داشته خواهد شد. ادامه می‌دهید؟')) return;
+          createSnapshot('پیش از بازیابی فایل JSON', false);
           const previous = state;
           state = parsed;
           if (!saveState()) { state = previous; return; }
