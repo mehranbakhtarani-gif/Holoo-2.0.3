@@ -42,7 +42,7 @@ function test(name, fn) { fn(); passed.push(name); }
 test('new customer receives a stable subledger identity and customer control account', () => {
   const state = { parties: [] };
   let saves = 0;
-  const values = { 'np-name': 'مشتری آزمایشی ۱', 'np-phone': '09120000001', 'np-role': 'مشتری', 'np-eco': '', 'np-credit': '1000000', 'np-terms': 'نقدی' };
+  const values = { 'np-name': 'مشتری آزمایشی ۱', 'np-phone': '09120000001', 'np-role': 'مشتری (بافندگی)', 'np-eco': '', 'np-credit': '1000000', 'np-terms': 'نقدی' };
   const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
     state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
   });
@@ -57,7 +57,7 @@ test('new customer receives a stable subledger identity and customer control acc
 test('duplicate party name or phone is rejected without a second record', () => {
   const state = { parties: [{ id: 'P1', name: 'آزمایشگاه الف', phone: '09121111111' }] };
   let saves = 0;
-  const values = { 'np-name': 'آزمایشگاه الف', 'np-phone': '09122222222', 'np-role': 'مشتری', 'np-eco': '', 'np-credit': '', 'np-terms': '' };
+  const values = { 'np-name': 'آزمایشگاه الف', 'np-phone': '09122222222', 'np-role': 'مشتری (بافندگی)', 'np-eco': '', 'np-credit': '', 'np-terms': '' };
   const save = load(extractFunction('saveParty', '// =========================================================================\n    // 9.'), 'saveParty', {
     state, editingPartyId: null, document: fakeDocument(values), saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}
   });
