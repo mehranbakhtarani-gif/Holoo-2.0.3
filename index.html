@@ -4142,7 +4142,7 @@
         showToast('گردش انبار پیدا نشد؛ هیچ تغییری انجام نشد.', 'error');
         return;
       }
-      const match = String(movement.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+      const match = String(movement.doc || '').match(/TR-\d+-[a-z0-9]+/i);
       if (!match) {
         showToast('اصلاحیه انبارگردانی یا گردش فاقد شناسه یکتا از این مسیر قابل برگشت نیست.', 'warning');
         return;
@@ -4190,7 +4190,7 @@
         '<div><strong>مقدار قابل برگشت:</strong> ' + faNum(plan.quantity) + ' کیلوگرم</div>' +
         '<div class="mt-1 text-[10px] text-indigo-800">بررسی اولیه وابستگی‌ها موفق بود. هنگام ثبت، همه کنترل‌ها دوباره اجرا می‌شوند.</div>';
       document.getElementById('wh-correction-available').textContent =
-        'حداکثر قابل حواله پس از برگشت: ' + faNum(Number(plan.sourceCurrentStock) + Number(plan.quantity)) + ' کیلوگرم';
+        'حداکثر قابل حواله پس از برگشت: ' + faNum(sourceCurrentStock + Number(plan.quantity)) + ' کیلوگرم';
       openModal('modal-warehouse-transfer-correction');
     }
 
@@ -4222,7 +4222,7 @@
       }
       const product = (state.products || []).find(item => String(item.id) === String(productId));
       const movement = product && Array.isArray(product.kardex) ? product.kardex[movementIndex] : null;
-      const match = movement && String(movement.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+      const match = movement && String(movement.doc || '').match(/TR-\d+-[a-z0-9]+/i);
       if (!match || String(match[0]) !== String(transferId)) {
         showToast('ردیف حواله از زمان بازشدن فرم تغییر کرده است؛ فرم را دوباره باز کنید.', 'error');
         return;
