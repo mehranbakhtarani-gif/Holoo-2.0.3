@@ -23,6 +23,12 @@ const state = {
     ] },
     { id: 2, date: '۱۴۰۵/۰۸/۰۱', desc: 'سند افتتاحیه سال مالی ۱۴۰۵ — موجودی افتتاحیه بانک‌ها', lines: [
       { code: '1102', debit: 12650000000, credit: 0 }
+    ] },
+    { id: 3, date: '۱۴۰۵/۰۸/۰۱', description: 'سند افتتاحیه سال مالی ۱۴۰۵ — موجودی افتتاحیه بانک‌ها', lines: [
+      { code: '1102', debit: 250, credit: 0 }
+    ] },
+    { id: 4, date: '۱۴۰۵/۰۸/۰۱', desc: 'سند افتتاحیه سال مالی ۱۴۰۵', lines: [
+      { code: '1102', description: 'موجودی افتتاحیه بانک‌ها', debit: 350, credit: 0 }
     ] }
   ]
 };
@@ -36,8 +42,8 @@ assert.deepEqual(Array.from(result.accounts, row => [row.account.id, row.debit, 
   ['BANK-B', 500, 250, 250]
 ]);
 assert.equal(result.unassignedNet, 60);
-assert.equal(result.openingNet, 12650000000);
-assert.equal(result.openingBalanceLines.length, 1);
+assert.equal(result.openingNet, 12650000600);
+assert.equal(result.openingBalanceLines.length, 3);
 assert.equal(result.openingBalanceLines[0].voucherId, 2);
 assert.equal(result.unknownNet, 30);
 assert.equal(result.unassignedDebit, 80);

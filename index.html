@@ -6265,7 +6265,10 @@
           voucherDesc: voucher.desc || '', lineDesc: line.desc || '',
           debit, credit, bankAccountId: id
         };
-        const voucherDescription = String(voucher.desc || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        const voucherDescription = [
+          voucher.desc, voucher.description, voucher.memo, voucher.title, voucher.name,
+          line.desc, line.description, line.memo
+        ].filter(value => value != null).join(' ').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
         const isOpeningBankBalance = voucherDescription.includes('افتتاحیه') && voucherDescription.includes('بانک');
         if (isOpeningBankBalance) {
           openingDebit += debit;

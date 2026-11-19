@@ -19,7 +19,7 @@ assert.match(html, /input\[data-jalali-calendar-ready="1"\] \{ direction:ltr !im
 assert.match(html, /input\.value = jalaliCalendarYear \+ '\/' \+ String\(jalaliCalendarMonth\)\.padStart\(2, '0'\) \+ '\/' \+ String\(day\)\.padStart\(2, '0'\)/, 'calendar selection must write YYYY/MM/DD order');
 assert.match(html, /Jalali date fields use YYYY\/MM\/DD/, 'date inputs must use year-first Jalali order');
 assert.match(html, /return digits\.slice\(0, 4\) \+ '\/' \+ digits\.slice\(4, 6\) \+ '\/' \+ digits\.slice\(6, 8\)/, 'typed Jalali dates must format as YYYY/MM/DD');
-assert.match(sw, /holoo-pwa-shell-v12/);
+assert.match(sw, /holoo-pwa-shell-v13/);
 assert.match(sw, /import-domain\.js/);
 assert.match(sw, /icon-192\.svg/);
 assert.match(sw, /icon-512\.svg/);
