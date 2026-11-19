@@ -232,6 +232,7 @@ const closeSandbox = {
 vm.createContext(closeSandbox);
 vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()'), closeSandbox);
 vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function countInvalidReportVoucherLines('), closeSandbox);
+vm.runInContext(sliceBetween('    function countInvalidReportVoucherLines(', '    function buildAccountLedger('), closeSandbox);
 vm.runInContext(sliceBetween('    function inspectTrialBalanceVoucher(', '    function buildTrialBalanceReport('), closeSandbox);
 vm.runInContext(sliceBetween('    function getFiscalYearCloseRecord(', '    function getFiscalYearEndDate('), closeSandbox);
 vm.runInContext(sliceBetween('    function isOpeningKardexDocument(', '    function inspectBatchMetadata('), closeSandbox);
