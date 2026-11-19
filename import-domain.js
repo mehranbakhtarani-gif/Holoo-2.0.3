@@ -259,6 +259,16 @@
       if (!itemsByProduct.has(key)) itemsByProduct.set(key, []);
       itemsByProduct.get(key).push(item);
     });
+    const snapshotProductIds = (snapshot.products || []).map(entry => String(entry.productId));
+    const expectedProductIds = [...itemsByProduct.keys()].sort();
+    if (new Set(snapshotProductIds).size !== snapshotProductIds.length ||
+        JSON.stringify(snapshotProductIds.slice().sort()) !== JSON.stringify(expectedProductIds)) {
+      return 'فهرست کالاهای snapshot با اقلام محموله تطبیق ندارد؛ بازیابی متوقف شد.';
+    }
+    if (!snapshot.capturedAt || !snapshot.receivedDate || !snapshot.actor || !snapshot.deviceId ||
+        !snapshot.costingMethod) {
+      return 'اطلاعات هویتی یا زمانی snapshot کامل نیست.';
+    }
     const sourceBatchIds = new Set();
     for (const [productId, productItems] of itemsByProduct) {
       const product = productById.get(productId);
