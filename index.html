@@ -11197,6 +11197,52 @@
       })).sort((a,b) => Math.abs(b.net) - Math.abs(a.net));
     }
 
+    function buildWarehouseTransferValueReconciliation() {
+      const groups = new Map();
+      const warehouseNames = new Map((state.warehouses || []).map(item => [String(item.id), String(item.name || item.id)]));
+      (state.products || []).forEach(product => {
+        (Array.isArray(product.kardex) ? product.kardex : []).forEach(movement => {
+          const doc = String(movement?.doc || '');
+          const match = doc.match(/TR-\d+-[a-z0-9]+/i);
+          if (!match) return;
+          const id = match[0];
+          if (!groups.has(id)) groups.set(id, { id, baseProductId: String(product.baseProductId || product.id || ''), productName: String(product.name || product.id || 'کالای نامشخص'), source: null, destination: null, batches: [] });
+          const group = groups.get(id);
+          const row = { productId: String(product.id || ''), warehouseId: String(product.warehouseId || ''), quantity: Number(doc.includes('خروج انتقال') ? movement.outQty : movement.inQty), price: Number(movement.price), date: String(movement.date || ''), doc };
+          if (doc.includes('خروج انتقال')) group.source = row;
+          else if (doc.includes('ورود انتقال')) group.destination = row;
+        });
+        (Array.isArray(product.batches) ? product.batches : []).forEach(batch => {
+          const id = String(batch?.sourceRef || '');
+          if (!id || batch?.sourceType !== 'warehouse_transfer') return;
+          if (!groups.has(id)) groups.set(id, { id, baseProductId: String(product.baseProductId || product.id || ''), productName: String(product.name || product.id || 'کالای نامشخص'), source: null, destination: null, batches: [] });
+          groups.get(id).batches.push({ quantity: Number(batch.quantity), unitCost: Number(batch.unitCost), batchId: String(batch.id || ''), sourceBatchId: String(batch.sourceBatchId || '') });
+        });
+      });
+      return [...groups.values()].map(group => {
+        const sourceQty = group.source && Number.isFinite(group.source.quantity) ? group.source.quantity : null;
+        const destinationQty = group.destination && Number.isFinite(group.destination.quantity) ? group.destination.quantity : null;
+        const quantityDifference = sourceQty === null || destinationQty === null ? null : destinationQty - sourceQty;
+        const fifoValue = group.batches.length && group.batches.every(batch => Number.isFinite(batch.quantity) && batch.quantity >= 0 && Number.isFinite(batch.unitCost) && batch.unitCost >= 0)
+          ? group.batches.reduce((sum, batch) => sum + batch.quantity * batch.unitCost, 0) : null;
+        const sourceValue = state.costingMethod === 'FIFO'
+          ? fifoValue
+          : (group.source && Number.isFinite(group.source.price) && sourceQty !== null ? sourceQty * group.source.price : null);
+        const destinationValue = state.costingMethod === 'FIFO'
+          ? fifoValue
+          : (group.destination && Number.isFinite(group.destination.price) && destinationQty !== null ? destinationQty * group.destination.price : null);
+        const valueDifference = sourceValue === null || destinationValue === null ? null : destinationValue - sourceValue;
+        const valid = quantityDifference !== null && Math.abs(quantityDifference) < 0.000001 &&
+          valueDifference !== null && Math.abs(valueDifference) < 1;
+        return {
+          ...group, sourceQty, destinationQty, quantityDifference, sourceValue, destinationValue, valueDifference,
+          sourceWarehouse: group.source ? warehouseNames.get(group.source.warehouseId) || group.source.warehouseId : 'ثبت‌نشده',
+          destinationWarehouse: group.destination ? warehouseNames.get(group.destination.warehouseId) || group.destination.warehouseId : 'ثبت‌نشده',
+          status: valid ? 'matched' : 'review'
+        };
+      }).sort((a,b) => (a.status === b.status ? 0 : a.status === 'review' ? -1 : 1));
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -11236,6 +11282,14 @@
         '<div class="overflow-x-auto"><table class="w-full text-[10px] text-right"><thead><tr><th class="p-1">کالا</th><th class="p-1">انبار</th><th class="p-1">موجودی</th><th class="p-1">ارزش ریالی</th><th class="p-1">ارزش واحد</th></tr></thead><tbody>' +
         inventoryValueReconciliation.details.map(x=>'<tr><td class="p-1 border-t">'+escapeLedgerText(x.productName)+'</td><td class="p-1 border-t">'+escapeLedgerText(x.warehouseId || '—')+'</td><td class="p-1 border-t">'+(x.stock === null ? 'نامعتبر' : faNum(x.stock))+'</td><td class="p-1 border-t">'+(x.value === null ? 'نامشخص' : money(x.value))+'</td><td class="p-1 border-t">'+(x.unitValue === null ? '—' : money(x.unitValue))+'</td></tr>').join('') +
         '</tbody></table></div><p class="text-[10px]">گزارش فقط‌خواندنی است. اختلاف به‌صورت کل حساب ۱۱۰۵ محاسبه می‌شود؛ انتساب اختلاف به کالای مشخص بدون شناسه کالا در ردیف‌های دفترکل قابل اتکا نیست.</p></div>';
+      const warehouseTransferAudit = buildWarehouseTransferValueReconciliation();
+      const warehouseTransferAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق مقداری و ریالی انتقال بین انبارها</strong><p class="text-[10px] text-slate-500">انتقال داخلی نباید ارزش کل موجودی شرکت یا حساب ۱۱۰۵ را تغییر دهد؛ مقدار و بهای مبدأ و مقصد جداگانه کنترل می‌شود.</p>' +
+        (warehouseTransferAudit.length ? warehouseTransferAudit.map(item =>
+          '<div class="border rounded-lg p-2 space-y-1"><div class="flex flex-wrap justify-between gap-2"><b>'+escapeLedgerText(item.productName)+'</b><span class="text-[10px]">'+escapeLedgerText(item.id)+'</span></div>' +
+          '<div class="text-[10px]">مبدأ: '+escapeLedgerText(item.sourceWarehouse)+' | مقصد: '+escapeLedgerText(item.destinationWarehouse)+'</div>' +
+          '<div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]"><span>خروج: <b>'+ (item.sourceQty === null ? 'نامشخص' : faNum(item.sourceQty))+'</b></span><span>ورود: <b>'+ (item.destinationQty === null ? 'نامشخص' : faNum(item.destinationQty))+'</b></span><span>ارزش انتقال: <b>'+(item.sourceValue === null ? 'غیرقابل‌تأیید' : money(item.sourceValue))+'</b></span><span>اختلاف ارزش: <b>'+(item.valueDifference === null ? 'غیرقابل‌تأیید' : money(item.valueDifference))+'</b></span></div>' +
+          '<p class="text-[10px] '+(item.status === 'matched' ? 'text-emerald-700' : 'text-amber-800')+'">'+(item.status === 'matched' ? 'مقدار و ارزش انتقال تطبیق دارد.' : 'ناقص یا دارای اختلاف؛ بررسی کاردکس و سری ساخت لازم است.')+'</p></div>'
+        ).join('') : '<p class="text-xs text-slate-500">حواله انتقال دارای شناسه TR پیدا نشد.</p>') + '</div>';
       const inventoryValueSources = buildInventoryValueDiscrepancySources();
       const inventoryValueSourcesPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ردیابی منشأ گردش حساب ۱۱۰۵</strong><p class="text-[10px] text-slate-500">گردش‌های حساب کنترل بر اساس منشأ سند گروه‌بندی شده‌اند؛ این فهرست برای تعیین مسیر بررسی است و به‌تنهایی انتساب قطعی اختلاف به کالا محسوب نمی‌شود.</p>' +
         (inventoryValueSources.length ? '<div class="space-y-2">' + inventoryValueSources.map(item =>
@@ -11264,7 +11318,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
