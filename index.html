@@ -4463,6 +4463,24 @@
           transferGroups.get(transferId).push({ type, qty: type === 'source' ? Number(movement?.outQty) : type === 'destination' ? Number(movement?.inQty) : NaN, productId: String(product?.id ?? ''), baseProductId: String(product?.baseProductId || product?.id || ''), warehouseId: String(product?.warehouseId ?? '') });
         });
       });
+      const activeInvoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(invoice => invoice && invoice.status === 'active' && ['sale','purchase'].includes(invoice.type));
+      let checkedInvoiceKardexLines = 0;
+      activeInvoices.forEach(invoice => {
+        const expectedDoc = (invoice.type === 'sale' ? 'فاکتور فروش #' : 'فاکتور خرید #') + String(invoice.id);
+        const grouped = new Map();
+        (Array.isArray(invoice.items) ? invoice.items : []).forEach(line => { const productId = String(line?.productId || ''); if (!productId) { issues.push({ type: 'invoice-kardex', productId: '—', productName: expectedDoc, message: 'ردیف فاکتور شناسه کالا ندارد و قابل تطبیق با کاردکس نیست.', detail: 'فاکتور: ' + invoice.id }); return; } const qty = Number(line?.kg); if (!Number.isFinite(qty) || qty <= 0) { issues.push({ type: 'invoice-kardex', productId, productName: expectedDoc, message: 'مقدار کالا در فاکتور نامعتبر است.', detail: 'فاکتور: ' + invoice.id + ' | مقدار: ' + line?.kg }); return; } grouped.set(productId, (grouped.get(productId) || 0) + qty); });
+        grouped.forEach((expectedQty, productId) => {
+          checkedInvoiceKardexLines++;
+          const product = items.find(row => String(row?.id) === productId);
+          if (!product) { unverified.push({ type: 'invoice-kardex-product', productId, productName: expectedDoc, message: 'رکورد کالای متناظر با فاکتور در فهرست کالاها پیدا نشد.', detail: 'فاکتور: ' + invoice.id }); return; }
+          const rows = (Array.isArray(product.kardex) ? product.kardex : []).filter(movement => String(movement?.doc || '').trim() === expectedDoc);
+          const direction = invoice.type === 'sale' ? 'outQty' : 'inQty';
+          const opposite = invoice.type === 'sale' ? 'inQty' : 'outQty';
+          const actualQty = rows.reduce((sum, movement) => sum + Number(movement?.[direction] || 0), 0);
+          const invalidDirection = rows.some(movement => Number(movement?.[opposite] || 0) > 0);
+          if (rows.length !== 1 || invalidDirection || Math.abs(actualQty - expectedQty) > 0.000001) issues.push({ type: 'invoice-kardex', productId, productName: String(product.name || expectedDoc), message: rows.length === 0 ? 'گردش کاردکس فاکتور فعال ثبت نشده است.' : rows.length > 1 ? 'برای یک فاکتور و کالا چند ردیف کاردکس ثبت شده است.' : 'مقدار یا جهت گردش کاردکس با فاکتور سازگار نیست.', detail: 'فاکتور: ' + invoice.id + ' | انتظار: ' + expectedQty + ' | کاردکس: ' + actualQty + ' | ردیف‌ها: ' + rows.length });
+        });
+      });
       transferGroups.forEach((events, transferId) => {
         const sources = events.filter(event => event.type === 'source');
         const destinations = events.filter(event => event.type === 'destination');
@@ -4476,7 +4494,7 @@
           issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: invalidIdentity ? 'هویت کالای مبدأ و مقصد یا انبارهای متفاوت انتقال معتبر نیست.' : 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}${identityDetail}` });
         }
       });
-      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedStocktakeOperations: stocktakeAudit.checkedOperations, checkedStocktakeItems: stocktakeAudit.checkedItems, checkedTransferBatchGroups: transferBatchAudit.checkedTransferBatchGroups, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
+      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedStocktakeOperations: stocktakeAudit.checkedOperations, checkedStocktakeItems: stocktakeAudit.checkedItems, checkedTransferBatchGroups: transferBatchAudit.checkedTransferBatchGroups, checkedInvoiceKardexLines, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
     }
 
     function ensureProductBatches(product) {
@@ -4975,6 +4993,7 @@
         ['عملیات انبارگردانی بررسی‌شده', report.checkedStocktakeOperations || 0, 'border-slate-200 bg-slate-50'],
         ['اقلام انبارگردانی بررسی‌شده', report.checkedStocktakeItems || 0, 'border-slate-200 bg-slate-50'],
         ['گروه سری ساخت انتقالی بررسی‌شده', report.checkedTransferBatchGroups || 0, 'border-slate-200 bg-slate-50'],
+        ['ردیف فاکتور تطبیق‌یافته با کاردکس', report.checkedInvoiceKardexLines || 0, 'border-slate-200 bg-slate-50'],
         ['کالاهای پایهٔ چندانباره', report.checkedBaseProducts || 0, 'border-slate-200 bg-slate-50']
       ].map(([label, value, style]) => `<div class="rounded-xl border p-3 ${style}"><div class="text-[10px] font-bold">${label}</div><strong class="text-xl tabular-nums">${faNum(value)}</strong></div>`).join('');
       const list = document.getElementById('inventory-reconciliation-list');
@@ -4988,6 +5007,7 @@
         'transfer': 'مغایرت حواله انتقال بین انبارها',
         'stocktake-audit': 'مغایرت سابقه حسابرسی انبارگردانی',
         'transfer-batch': 'مغایرت پیوند سری ساخت انتقال بین انبارها',
+        'invoice-kardex': 'مغایرت گردش فاکتور با کاردکس',
         'warehouse-product-identity': 'شناسه کالای پایه نامعتبر',
         'warehouse-product-reference': 'ارجاع به انبار نامعتبر',
         'warehouse-product-id-duplicate': 'شناسه رکورد کالا تکراری',
