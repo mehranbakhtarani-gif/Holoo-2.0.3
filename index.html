@@ -189,7 +189,77 @@
       .glass-header { backdrop-filter: saturate(150%) blur(18px); -webkit-backdrop-filter: saturate(150%) blur(18px); }
     }
 
-</style>
+
+    /* Holoo object interactions — cards, controls, icons, data rows and charts */
+    @media (prefers-reduced-motion: no-preference) {
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-white"],
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-slate-"],
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-teal-"],
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-emerald-"] {
+        transition:
+          transform var(--holoo-motion-standard) var(--holoo-ease-standard),
+          box-shadow var(--holoo-motion-standard) var(--holoo-ease-standard),
+          border-color var(--holoo-motion-fast) ease,
+          background-color var(--holoo-motion-fast) ease;
+        transform-origin: center;
+      }
+      .main-workspace :where(button, a, [role="button"], .touch-btn) > :where(svg, img, i, [data-icon]) {
+        display: inline-block;
+        transition: transform var(--holoo-motion-fast) var(--holoo-ease-emphasized);
+      }
+      .main-workspace :where(button, a, [role="button"], .touch-btn):hover > :where(svg, img, i, [data-icon]) {
+        transform: scale(1.08);
+      }
+      .main-workspace :where(button, a, [role="button"], .touch-btn):active > :where(svg, img, i, [data-icon]) {
+        transform: scale(.92);
+      }
+      .main-workspace :where(table tbody tr, [role="row"]) {
+        transition: background-color var(--holoo-motion-fast) ease,
+                    box-shadow var(--holoo-motion-fast) ease;
+      }
+      .main-workspace :where(table tbody tr, [role="row"]):hover {
+        background-color: rgba(20,184,166,.055);
+      }
+      .main-workspace :where(input, select, textarea):focus-visible {
+        outline: 2px solid rgba(20,184,166,.42);
+        outline-offset: 1px;
+      }
+      .main-workspace :where([role="tab"], [aria-pressed], [aria-selected]) {
+        transition: color var(--holoo-motion-fast) ease,
+                    background-color var(--holoo-motion-fast) ease,
+                    border-color var(--holoo-motion-fast) ease,
+                    box-shadow var(--holoo-motion-fast) ease;
+      }
+      .main-workspace :where(.rounded-xl, .rounded-2xl):has(> canvas),
+      .main-workspace :where(.rounded-xl, .rounded-2xl):has(canvas) {
+        transition: box-shadow var(--holoo-motion-standard) var(--holoo-ease-standard),
+                    border-color var(--holoo-motion-fast) ease;
+      }
+      .main-workspace :where(.rounded-xl, .rounded-2xl):has(canvas):hover {
+        box-shadow: 0 12px 30px rgba(15,23,42,.075);
+      }
+      .main-workspace :where(.rounded-full, .rounded-lg)[class*="bg-"] {
+        transition: background-color var(--holoo-motion-fast) ease,
+                    color var(--holoo-motion-fast) ease,
+                    border-color var(--holoo-motion-fast) ease;
+      }
+    }
+    @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-white"]:hover {
+        transform: translateY(-2px);
+      }
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-white"]:active {
+        transform: translateY(0) scale(.995);
+      }
+    }
+    @media (hover: none) and (prefers-reduced-motion: no-preference) {
+      .main-workspace :where(.rounded-lg, .rounded-xl, .rounded-2xl)[class*="bg-white"]:active {
+        transition-duration: 100ms;
+        transform: scale(.992);
+      }
+    }
+
+  </style>
 </head>
 <body>
   <div class="erp-layout">
