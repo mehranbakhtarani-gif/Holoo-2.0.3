@@ -1686,16 +1686,6 @@
     const SNAP_KEY = 'holoo_textile_import_snaps_v2';
     const CLOUD_CFG_KEY = 'holoo_supabase_cfg_v1';
 
-    // Publishable keys are API keys, not JWTs. Send them via apikey only;
-    // keep Authorization: Bearer for legacy JWT anon keys.
-    function cloudAuthHeaders(extra = {}) {
-      const headers = { apikey: cloudConfig.key, ...extra };
-      if (!String(cloudConfig.key || '').startsWith('sb_publishable_')) {
-        headers.Authorization = 'Bearer ' + cloudConfig.key;
-      }
-      return headers;
-    }
-
     let cloudConfig = (() => {
       try {
         const saved = JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || 'null');
@@ -1708,6 +1698,16 @@
         recordId: 'main_company_state'
       };
     })();
+
+    // Publishable keys are API keys, not JWTs. Send them via apikey only;
+    // keep Authorization: Bearer for legacy JWT anon keys.
+    function cloudAuthHeaders(extra = {}) {
+      const headers = { apikey: cloudConfig.key, ...extra };
+      if (!String(cloudConfig.key || '').startsWith('sb_publishable_')) {
+        headers.Authorization = 'Bearer ' + cloudConfig.key;
+      }
+      return headers;
+    }
 
     let syncTimer = null;
     let isSyncing = false;
