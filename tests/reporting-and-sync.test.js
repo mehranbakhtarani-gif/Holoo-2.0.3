@@ -102,6 +102,55 @@ async function test(name, fn) { await fn(); passed.push(name); }
     assert.equal(storage.has('holoo_textile_import_erp_v2_cloud_outbox_v1'),false);
   });
 
+  await test('empty operation journal is supported and never requests a legacy snapshot write', async () => {
+    let fetchCalls = 0;
+    const storage = new Map();
+    const result = await load('pushOperationJournalToSupabase', {
+      listPendingOperations: async () => [],
+      cloudConfig: { url: 'https://demo.supabase.co', key: 'anon', recordId: 'main_company_state', table: 'holoo_sync' },
+      CLOUD_OUTBOX_KEY: 'outbox',
+      localStorage: { getItem: key => storage.get(key) || null },
+      fetch: async () => { fetchCalls++; throw new Error('unexpected network request'); }
+    })();
+    assert.equal(result.supported, true);
+    assert.equal(result.applied, 0);
+    assert.equal(result.outboxPending, false);
+    assert.equal(fetchCalls, 0);
+  });
+
+  await test('empty operation journal reports an orphaned outbox without network writes', async () => {
+    let fetchCalls = 0;
+    const storage = new Map([['outbox', 'pending']]);
+    const result = await load('pushOperationJournalToSupabase', {
+      listPendingOperations: async () => [],
+      cloudConfig: { url: 'https://demo.supabase.co', key: 'anon', recordId: 'main_company_state', table: 'holoo_sync' },
+      CLOUD_OUTBOX_KEY: 'outbox',
+      localStorage: { getItem: key => storage.get(key) || null },
+      fetch: async () => { fetchCalls++; throw new Error('unexpected network request'); }
+    })();
+    assert.equal(result.supported, true);
+    assert.equal(result.applied, 0);
+    assert.equal(result.outboxPending, true);
+    assert.equal(fetchCalls, 0);
+  });
+
+  await test('supported empty journal returns before legacy snapshot fallback and blocks orphaned outbox', () => {
+    const pushStart = html.indexOf('async function pushToSupabase(');
+    const pushEnd = html.indexOf('function downloadCloudBackup(', pushStart);
+    assert.ok(pushStart >= 0 && pushEnd > pushStart, 'pushToSupabase must exist');
+    const body = html.slice(pushStart, pushEnd);
+    const supportedBranch = body.indexOf('if (journalResult.supported)');
+    const outboxGuard = body.indexOf('if (journalResult.outboxPending)', supportedBranch);
+    const outboxReturn = body.indexOf('return false;', outboxGuard);
+    const noOpMarker = body.indexOf('A supported, empty journal means there is nothing to upload.');
+    const noOpReturn = body.indexOf('return true;', noOpMarker);
+    const legacySnapshot = body.indexOf('const baseEndpoint', supportedBranch);
+    assert.ok(supportedBranch >= 0 && outboxGuard > supportedBranch, 'supported empty journal must inspect the outbox');
+    assert.ok(outboxReturn > outboxGuard && outboxReturn < legacySnapshot, 'orphaned outbox must stop before legacy network writes');
+    assert.ok(noOpMarker > outboxReturn && noOpReturn > noOpMarker && noOpReturn < legacySnapshot,
+      'empty supported journal must return successfully before the legacy snapshot fallback');
+  });
+
   await test('operation journal detects CAS conflict and preserves pending operation', async () => {
     const op={operationId:'op-2',companyRecordId:'main_company_state',payload:{local:true},entityChanges:[],rootChanges:{},actor:'ehsan',deviceId:'device-b',sequence:3,operationType:'state_snapshot',summary:'conflict test',createdAt:'2026-11-18T00:00:00Z'};
     let fetchCalls=0, conflictSaved=null, acknowledged=0, badge='';
