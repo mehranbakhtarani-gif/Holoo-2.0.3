@@ -4269,7 +4269,6 @@
 
     function inspectWarehouseTransferBatchLinks(products) {
       const items = Array.isArray(products) ? products : [];
-      const auditState = appState || { products: items, warehouses: Array.isArray(warehouses) ? warehouses : [], invoices: [], vouchers: [], auditLogs: [] };
       const issues = [];
       const batchOwners = new Map();
       const transferBatches = new Map();
@@ -4398,6 +4397,7 @@
 
     function inspectInventoryReconciliation(products, warehouses, appState = (typeof state !== 'undefined' ? state : null)) {
       const items = Array.isArray(products) ? products : [];
+      const auditState = appState || { products: items, warehouses: Array.isArray(warehouses) ? warehouses : [], invoices: [], vouchers: [], auditLogs: [] };
       const issues = [];
       const unverified = [];
       const transferGroups = new Map();
