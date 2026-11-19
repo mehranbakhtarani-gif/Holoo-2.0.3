@@ -1116,12 +1116,13 @@
             <!-- Dynamic Measurement Units + Custom Report Builder -->
             <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
               <h3 class="font-black text-sm text-slate-900">📏 مدیریت واحدهای اندازه‌گیری و گزارش‌ساز سفارشی</h3>
-              <div class="flex gap-2">
-                <input type="text" id="new-unit-name" placeholder="نام واحد جدید (مثلاً: پالت، عدل، بوبین)" class="touch-btn flex-1 border rounded-xl px-2.5" />
+              <div class="flex flex-wrap gap-2">
+                <input type="text" id="new-unit-name" placeholder="نام واحد جدید (مثلاً: پالت، عدل، بوبین)" class="touch-btn flex-1 min-w-0 border rounded-xl px-2.5" />
                 <input type="number" id="new-unit-factor" placeholder="ضریب به KG" class="touch-btn w-28 border rounded-xl px-2 tabular-nums" />
-                <button onclick="addCustomUnit()" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">+ واحد</button>
+                <button id="custom-unit-save-button" onclick="addCustomUnit()" class="touch-btn bg-holoo-700 text-white px-3 rounded-xl font-bold">+ واحد</button>
+                <button id="custom-unit-cancel-button" onclick="cancelCustomUnitEdit()" class="hidden touch-btn bg-slate-200 text-slate-800 px-3 rounded-xl font-bold">انصراف</button>
               </div>
-              <div id="custom-units-list" class="flex flex-wrap gap-1.5"></div>
+              <div id="custom-units-list" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5"></div>
 
               <div class="border-t pt-2.5 space-y-2">
                 <div class="font-extrabold text-slate-800">📊 گزارش‌ساز سفارشی (انتخاب منبع و خروجی CSV):</div>
@@ -8104,18 +8105,55 @@
       document.getElementById('cfg-show-sig').checked = cfg.showSig;
 
       document.getElementById('custom-units-list').innerHTML = (state.customUnits || []).map(u => `
-        <span class="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 font-bold text-teal-900">${u.name} (ضریب: ${faNum(u.factor)})</span>
-      `).join('');
+        <div class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-950">
+          <span class="min-w-0 font-bold">${window.escapeBankReconciliationText(u.name)} <small class="text-[10px] text-teal-800">(ضریب: ${faNum(u.factor)} KG)</small></span>
+          <button onclick="editCustomUnit('${window.escapeBankReconciliationText(u.id)}')" class="shrink-0 bg-white border border-teal-300 rounded-lg px-2 py-1 font-bold text-[10px]">✏️ ویرایش</button>
+        </div>
+      `).join('') || '<p class="text-[10px] text-slate-500">واحد سفارشی تعریف نشده است.</p>';
 
       runCustomReportBuilder();
       renderSnapshots();
     }
+    let editingCustomUnitId = null;
+    function editCustomUnit(unitId) {
+      const unit = (state.customUnits || []).find(item => String(item.id) === String(unitId));
+      if (!unit) { showToast('واحد موردنظر پیدا نشد.', 'error'); return; }
+      editingCustomUnitId = String(unit.id);
+      document.getElementById('new-unit-name').value = unit.name || '';
+      document.getElementById('new-unit-factor').value = Number(unit.factor || 1);
+      document.getElementById('custom-unit-save-button').textContent = 'ذخیره ویرایش';
+      document.getElementById('custom-unit-cancel-button').classList.remove('hidden');
+      document.getElementById('new-unit-name').focus();
+    }
+    function cancelCustomUnitEdit() {
+      editingCustomUnitId = null;
+      document.getElementById('new-unit-name').value = '';
+      document.getElementById('new-unit-factor').value = '';
+      document.getElementById('custom-unit-save-button').textContent = '+ واحد';
+      document.getElementById('custom-unit-cancel-button').classList.add('hidden');
+    }
     function addCustomUnit() {
       const name = document.getElementById('new-unit-name').value.trim();
       const factor = Number(document.getElementById('new-unit-factor').value || 1);
-      if (!name) return;
-      state.customUnits.push({ id: 'U-' + Date.now(), name, factor });
-      document.getElementById('new-unit-name').value = '';
+      if (!name || name.length > 40 || !Number.isFinite(factor) || factor <= 0) {
+        showToast('نام واحد و ضریب مثبت و معتبر به کیلوگرم وارد کنید.', 'error'); return;
+      }
+      if ((state.customUnits || []).some(item => String(item.id) !== String(editingCustomUnitId || '') && String(item.name || '').trim().toLocaleLowerCase('fa') === name.toLocaleLowerCase('fa'))) {
+        showToast('این نام واحد قبلاً تعریف شده است.', 'error'); return;
+      }
+      if (editingCustomUnitId !== null) {
+        const unit = (state.customUnits || []).find(item => String(item.id) === editingCustomUnitId);
+        if (!unit) { showToast('واحد برای ویرایش پیدا نشد.', 'error'); cancelCustomUnitEdit(); return; }
+        const previous = { name: unit.name, factor: unit.factor };
+        Object.assign(unit, { name, factor, updatedAt: new Date().toISOString() });
+        addAudit('ویرایش واحد اندازه‌گیری: ' + name, { mode: 'manual', sourceType: 'measurement_unit', sourceId: unit.id, previous, note: 'فاکتورها و گردش‌های قبلی به دلیل ذخیره مقدار استاندارد KG تغییر نمی‌کنند.' });
+        cancelCustomUnitEdit();
+        saveState(); renderSettingsModule(); showToast('واحد و ضریب تبدیل برای استفاده‌های بعدی ویرایش شد؛ سوابق قبلی دست‌نخورده ماند.');
+        return;
+      }
+      state.customUnits.push({ id: 'U-' + createStableId('unit').slice(5), name, factor });
+      addAudit('تعریف واحد اندازه‌گیری: ' + name, { mode: 'manual', sourceType: 'measurement_unit' });
+      cancelCustomUnitEdit();
       saveState(); renderSettingsModule(); showToast('واحد اندازه‌گیری جدید اضافه شد.');
     }
     function uploadLogo(e) {
