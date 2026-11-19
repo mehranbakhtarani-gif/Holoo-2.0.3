@@ -251,7 +251,7 @@ test('bank opening classification uses structured source metadata or a narrow le
   assert.equal(isOpening({ desc: 'سند عادی بانک و افتتاحیه قرارداد' }), false);
 });
 
-test('bank statement review requires exact amount and exact date together', () => {
+test('bank statement review prioritizes exact matches and exposes single-dimension near matches', () => {
   const source = section('function getBankReconciliationReviewCandidates(item)', 'function confirmBankReconcileTreasuryMatch(');
   const find = loadFunction(source, 'getBankReconciliationReviewCandidates', {
     state: {
@@ -267,9 +267,19 @@ test('bank statement review requires exact amount and exact date together', () =
     isBankOpeningVoucher(voucher) { return voucher?.sourceType === 'bank_account_opening' || /^موجودی افتتاحیه بانک/.test(String(voucher?.desc || '')); },
     CHART_ACCOUNTS: [{ code: '1102', name: 'بانک' }, { code: '4101', name: 'فروش' }]
   });
-  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/01' }).length, 0);
-  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 100, date: '1405/01/02' }).length, 0);
-  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 100, date: '1405/01/01' }).length, 1);
+  const amountOnly = find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/01' });
+  const dateOnly = find({ id: 'R1', bankAccountId: 'B1', amount: 100, date: '1405/01/02' });
+  const exact = find({ id: 'R1', bankAccountId: 'B1', amount: 100, date: '1405/01/01' });
+  assert.equal(amountOnly.length, 1);
+  assert.equal(amountOnly[0].amountMatch, false);
+  assert.equal(amountOnly[0].dateMatch, true);
+  assert.equal(dateOnly.length, 1);
+  assert.equal(dateOnly[0].amountMatch, true);
+  assert.equal(dateOnly[0].dateMatch, false);
+  assert.equal(exact.length, 1);
+  assert.equal(exact[0].amountMatch, true);
+  assert.equal(exact[0].dateMatch, true);
+  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/02' }).length, 0);
 });
 
 console.log(`PASS: ${results.length} accounting smoke tests`);
