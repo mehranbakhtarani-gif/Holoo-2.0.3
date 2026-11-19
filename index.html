@@ -1358,6 +1358,7 @@
   <div id="modal-stock-adjust" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-lg max-h-[85dvh] overflow-y-auto p-4 space-y-3 text-xs">
       <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">📋 انبارگردانی، شمارش واقعی و صدور سند مغایرت</h3><button onclick="closeModal('modal-stock-adjust')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <p class="text-[10px] text-slate-500">موجودی واقعی همه کالاها را وارد کنید. مقدار خالی، منفی یا نامعتبر قابل ثبت نیست.</p>
       <div id="stocktaking-rows" class="space-y-2"></div>
       <button onclick="submitPhysicalStocktaking()" class="touch-btn w-full bg-emerald-600 text-white font-extrabold rounded-xl">✔ ثبت شمارش واقعی و صدور سند اصلاحی</button>
     </div>
@@ -4042,9 +4043,11 @@
       document.getElementById('tr-prod').innerHTML = state.products.map(p => `<option value="${escapeKardexText(p.id)}">${escapeKardexText(p.name)} (${escapeKardexText(getWhName(p.warehouseId))} - ${faNum(p.stock)} KG)</option>`).join('');
       document.getElementById('tr-dest-wh').innerHTML = state.warehouses.map(w => `<option value="${escapeKardexText(w.id)}">${escapeKardexText(w.name)}</option>`).join('');
       document.getElementById('stocktaking-rows').innerHTML = state.products.map(p => `
-        <div class="p-2.5 rounded-xl bg-slate-50 border flex justify-between items-center gap-2">
-          <div class="min-w-0"><strong class="block break-words">${escapeKardexText(p.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(p.stock)} KG</span></div>
-          <input type="number" id="st-real-${p.id}" value="${Number(p.stock || 0)}" class="w-24 shrink-0 border rounded-lg px-2 py-1 text-center font-bold tabular-nums" />
+        <div class="p-3 rounded-xl bg-slate-50 border flex justify-between items-center gap-3">
+          <div class="min-w-0 flex-1"><strong class="block break-words">${escapeKardexText(p.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(p.stock)} KG</span><span class="block text-[10px] text-slate-400">${escapeKardexText(getWhName(p.warehouseId))}</span></div>
+          <label class="w-28 shrink-0 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
+            <input type="number" inputmode="decimal" min="0" step="any" required id="st-real-${p.id}" value="${Number(p.stock || 0)}" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
+          </label>
         </div>
       `).join('');
     }
@@ -4678,26 +4681,140 @@
       showToast('انتقال ثبت شد؛ موجودی و سری‌های ساختی هر دو انبار و کاردکس به‌روزرسانی شد ✔');
     }
 
-    function submitPhysicalStocktaking() {
-      let changes = 0;
-      state.products.forEach(p => {
-        const real = Number(document.getElementById(`st-real-${p.id}`).value);
-        if (real !== p.stock) {
-          const diff = real - p.stock;
-          if (diff > 0 && state.costingMethod === 'FIFO') addStockBatch(p, { lot: 'ADJ-' + Date.now() + '-' + p.id, quantity: diff, unitCost: p.buyPrice, receivedDate: getTodayJalaliDate(), sourceType: 'stocktake', sourceRef: p.id });
-          if (diff < 0 && state.costingMethod === 'FIFO') consumeFifoStock(p, Math.abs(diff));
-          p.stock = real;
-          changes++;
-          const val = Math.abs(diff) * p.buyPrice;
-          p.kardex.push({ date: getTodayJalaliDate(), doc: 'اصلاحیه انبارگردانی', inQty: diff > 0 ? diff : 0, outQty: diff < 0 ? Math.abs(diff) : 0, bal: real, price: p.buyPrice });
-          postVoucher(`سند مغایرت انبارگردانی: ${p.name}`, diff < 0
-            ? [{ code: '6104', partyId: null, desc: `کسری انبارگردانی ${p.name}`, debit: val, credit: 0 }, { code: '1105', partyId: null, desc: p.name, debit: 0, credit: val }]
-            : [{ code: '1105', partyId: null, desc: `اضافه انبارگردانی ${p.name}`, debit: val, credit: 0 }, { code: '3102', partyId: null, desc: p.name, debit: 0, credit: val }]
-          );
-        }
+    function parsePhysicalStocktakingCounts(products, entries) {
+      if (!Array.isArray(products) || !Array.isArray(entries) || products.length !== entries.length) {
+        throw new Error('اطلاعات شمارش کامل نیست؛ همه کالاها باید بررسی شوند.');
+      }
+      const productIds = new Set();
+      const entryMap = new Map();
+      products.forEach(product => {
+        const id = String(product?.id ?? '');
+        if (!id || productIds.has(id)) throw new Error('شناسه کالای انبارگردانی خالی یا تکراری است.');
+        productIds.add(id);
+        const stock = Number(product.stock);
+        const unitCost = Number(product.buyPrice ?? 0);
+        if (!Number.isFinite(stock) || stock < 0) throw new Error('موجودی سیستمی کالای «' + String(product.name || id) + '» معتبر نیست.');
+        if (!Number.isFinite(unitCost) || unitCost < 0) throw new Error('بهای کالا «' + String(product.name || id) + '» معتبر نیست.');
       });
-      saveState(); closeModal('modal-stock-adjust'); renderAll();
-      showToast(changes ? 'شمارش واقعی ثبت و سند مغایرت صادر شد ✔' : 'مغایرتی در موجودی مشاهده نشد.');
+      entries.forEach(entry => {
+        const id = String(entry?.productId ?? '');
+        if (!productIds.has(id) || entryMap.has(id)) throw new Error('ردیف شمارش نامعتبر یا تکراری است.');
+        const raw = entry.rawValue == null ? '' : String(entry.rawValue).trim();
+        if (!raw) throw new Error('مقدار شمارش واقعی برای همه کالاها الزامی است.');
+        const real = Number(raw);
+        if (!Number.isFinite(real) || real < 0) throw new Error('موجودی واقعی باید عددی معتبر و صفر یا بیشتر باشد.');
+        entryMap.set(id, real);
+      });
+      if (entryMap.size !== productIds.size) throw new Error('برای بعضی کالاها مقدار شمارش وارد نشده است.');
+      return products.map(product => ({ productId: String(product.id), real: entryMap.get(String(product.id)) }));
+    }
+
+    function buildPhysicalStocktakingDraft(baseState, entries, operationId, postingDate) {
+      const counts = parsePhysicalStocktakingCounts(baseState.products || [], entries);
+      const draft = JSON.parse(JSON.stringify(baseState));
+      const originalState = state;
+      let changes = 0;
+      state = draft;
+      try {
+        counts.forEach(count => {
+          const product = draft.products.find(item => String(item.id) === count.productId);
+          if (!product) throw new Error('کالای موردنظر در نسخه آماده‌سازی پیدا نشد.');
+          const current = Number(product.stock);
+          const diff = count.real - current;
+          if (Math.abs(diff) < 0.0000001) return;
+
+          let fifoPlan = null;
+          if (draft.costingMethod === 'FIFO' && diff > 0) {
+            addStockBatch(product, {
+              id: 'STK-' + operationId + '-' + count.productId,
+              lot: 'ADJ-' + operationId,
+              quantity: diff,
+              unitCost: Number(product.buyPrice ?? 0),
+              receivedDate: postingDate,
+              sourceType: 'stocktake',
+              sourceRef: operationId
+            });
+          } else if (draft.costingMethod === 'FIFO' && diff < 0) {
+            fifoPlan = consumeFifoStock(product, Math.abs(diff));
+          }
+
+          const unitCost = fifoPlan ? Number(fifoPlan.unitCost) : Number(product.buyPrice ?? 0);
+          const valuation = fifoPlan ? Number(fifoPlan.totalCost) : Math.abs(diff) * unitCost;
+          if (!Number.isFinite(valuation) || valuation <= 0) {
+            throw new Error('برای مغایرت کالای «' + String(product.name || product.id) + '» بهای معتبر و بیشتر از صفر وجود ندارد؛ ابتدا بهای کالا را اصلاح کنید.');
+          }
+
+          product.stock = count.real;
+          if (!Array.isArray(product.kardex)) product.kardex = [];
+          product.kardex.push({
+            date: postingDate,
+            doc: 'اصلاحیه انبارگردانی',
+            inQty: diff > 0 ? diff : 0,
+            outQty: diff < 0 ? Math.abs(diff) : 0,
+            bal: count.real,
+            price: unitCost
+          });
+
+          const lines = diff < 0
+            ? [
+                { code: '6104', partyId: null, desc: 'کسری انبارگردانی ' + product.name, debit: valuation, credit: 0 },
+                { code: '1105', partyId: null, desc: product.name, debit: 0, credit: valuation }
+              ]
+            : [
+                { code: '1105', partyId: null, desc: 'اضافه انبارگردانی ' + product.name, debit: valuation, credit: 0 },
+                { code: '3102', partyId: null, desc: product.name, debit: 0, credit: valuation }
+              ];
+          postVoucher(
+            'سند مغایرت انبارگردانی: ' + product.name,
+            lines,
+            postingDate,
+            { type: 'stocktake', id: operationId, event: count.productId, deferSave: true }
+          );
+          changes++;
+        });
+        if (changes) addAudit('ثبت انبارگردانی اتمیک؛ ' + changes + ' قلم کالا', { operationId, operationDate: postingDate, sourceType: 'stocktake' });
+        return { state: draft, changes, operationId };
+      } finally {
+        state = originalState;
+      }
+    }
+
+    function submitPhysicalStocktaking() {
+      try {
+        const entries = state.products.map(product => {
+          const input = document.getElementById(`st-real-${product.id}`);
+          return { productId: String(product.id), rawValue: input ? input.value : '' };
+        });
+        const operationId = createStableId('stocktake');
+        const postingDate = getTodayJalaliDate();
+        const prepared = buildPhysicalStocktakingDraft(state, entries, operationId, postingDate);
+        if (!prepared.changes) {
+          closeModal('modal-stock-adjust');
+          showToast('مغایرتی در موجودی مشاهده نشد.');
+          return;
+        }
+
+        const previousState = state;
+        const previousAuditId = lastQueuedAuditId;
+        const storageKeys = [STORE_KEY, LOCAL_UPDATED_KEY, OPERATION_SOURCE_SEQUENCE_KEY, CLOUD_OUTBOX_KEY];
+        const storageBefore = new Map(storageKeys.map(key => [key, localStorage.getItem(key)]));
+        state = prepared.state;
+        const saved = saveState();
+        if (!saved) {
+          state = previousState;
+          lastQueuedAuditId = previousAuditId;
+          storageBefore.forEach((value, key) => {
+            try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (_) {}
+          });
+          throw new Error('ذخیره نهایی انبارگردانی انجام نشد؛ تغییرات اعمال نشد.');
+        }
+        closeModal('modal-stock-adjust');
+        renderAll();
+        showToast('انبارگردانی و اسناد مغایرت به‌صورت یک عملیات ثبت شد ✔');
+      } catch (error) {
+        console.error('Physical stocktaking rejected:', error);
+        showToast(error?.message || 'انبارگردانی ثبت نشد؛ هیچ تغییری اعمال نشد.', 'error');
+      }
     }
 
     // =========================================================================
