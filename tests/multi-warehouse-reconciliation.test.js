@@ -89,7 +89,7 @@ test('separates products with missing and unknown warehouse references without m
   assert.notEqual(finish, -1);
   const localSandbox = {};
   vm.createContext(localSandbox);
-  vm.runInContext(html.slice(start, finish) + '\\nthis.inspect = inspectProductsWithoutValidWarehouse;', localSandbox);
+  vm.runInContext(html.slice(start, finish) + '\nthis.inspect = inspectProductsWithoutValidWarehouse;', localSandbox);
   const result = localSandbox.inspect(source, warehouses);
   assert.deepEqual(Array.from(result, item => ({ productId: item.productId, reason: item.reason, warehouseId: item.warehouseId })), [
     { productId: 'P1', reason: 'missing-warehouse', warehouseId: null },
