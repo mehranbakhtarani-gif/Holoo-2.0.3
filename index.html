@@ -4032,7 +4032,7 @@
       if (/اصلاحیه انبارگردانی/.test(description)) {
         return 'این ردیف شناسه یکتای عملیات و پیوند قطعی به سند مغایرت ندارد؛ موجودی FIFO و سند حسابداری نیز تغییر کرده‌اند. اصلاح تا زمان ایجاد سابقه یکپارچه و قابل ردیابی مسدود است.';
       }
-      const transferMatch = description.match(/TR-\\d+-[a-z0-9]+/i);
+      const transferMatch = description.match(/TR-\d+-[a-z0-9]+/i);
       if (!transferMatch) return 'نوع گردش انبار یا شناسه عملیات قابل تشخیص نیست؛ اصلاح متوقف شد.';
       const transferId = transferMatch[0];
       const related = [];
@@ -4130,7 +4130,7 @@
             <div class="text-[11px] text-slate-700">${transactionPrice}${invoiceTotal}</div>
             ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
             ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
-            ${(/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? `<button onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${movements.indexOf(k)})" class="mt-1 bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg font-bold">✏️ بررسی اصلاح گردش انبار</button>` : ''}
+            ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? `<button onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${movements.indexOf(k)})" class="mt-1 bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg font-bold">✏️ بررسی اصلاح گردش انبار</button>` : ''}
           </div>
         `;
       }).join('');
