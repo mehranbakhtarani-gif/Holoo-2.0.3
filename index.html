@@ -660,7 +660,7 @@
 
           <div class="bg-white rounded-2xl p-4 border border-slate-200 space-y-3 text-xs">
             <div class="flex items-center justify-between">
-              <h3 class="font-extrabold text-sm text-slate-800">موجودی تفکیکی کالاها، سری ساخت (Lot) و وضعیت راکد بودن</h3>
+              <h3 class="font-extrabold text-sm text-slate-800">موجودی تفکیکی کالاها، سری ساخت / محموله و وضعیت راکد بودن</h3>
               <span class="text-[11px] text-slate-500">کالاهای بدون گردش بیش از ۶۰ روز با برچسب «راکد» مشخص می‌شوند</span>
             </div>
             <div class="overflow-x-auto">
@@ -669,7 +669,7 @@
                   <tr class="bg-slate-100 text-slate-700 border-b">
                     <th class="p-2.5">کد / کالا</th>
                     <th class="p-2.5">انبار</th>
-                    <th class="p-2.5">سری ساخت (Lot)</th>
+                    <th class="p-2.5">سری ساخت / محموله</th>
                     <th class="p-2.5">موجودی (کیلوگرم)</th>
                     <th class="p-2.5">تعداد کارتن</th>
                     <th class="p-2.5">بهای تمام‌شده</th>
@@ -790,7 +790,7 @@
                 <input type="number" id="inv-line-qty" value="100" min="0.1" step="any" oninput="onInvUnitModeChange()" placeholder="مقدار" class="touch-btn border rounded-xl px-2 bg-white tabular-nums font-bold" />
                 <input type="number" id="inv-line-price" placeholder="فی هر کیلوگرم" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
                 <input type="number" id="inv-line-disc" value="0" placeholder="تخفیف ردیف" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
-                <input type="text" id="inv-line-lot" placeholder="شماره بچ / LOT (خرید)" class="touch-btn border rounded-xl px-2 bg-white" />
+                <input type="text" id="inv-line-lot" placeholder="شماره سری ساخت / محموله (خرید)" class="touch-btn border rounded-xl px-2 bg-white" />
                 <input type="text" id="inv-line-prod-date" placeholder="تاریخ تولید (اختیاری)" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
                 <input type="text" id="inv-line-expiry" placeholder="تاریخ انقضا (اختیاری)" class="touch-btn border rounded-xl px-2 bg-white tabular-nums" />
               </div>
@@ -1282,7 +1282,7 @@
         <div><label class="block text-[10px] font-bold">انبار محل نگهداری:</label><select id="p-wh" class="touch-btn w-full border rounded-xl px-2 bg-slate-50"></select></div>
         <div><label class="block text-[10px] font-bold">وزن خالص هر کارتن (KG):</label><input type="number" id="p-carton-kg" value="25" step="0.5" class="touch-btn w-full border rounded-xl px-2 tabular-nums font-bold" /></div>
         <div><label class="block text-[10px] font-bold">موجودی اولیه (KG):</label><input type="number" id="p-stock" value="2500" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
-        <div><label class="block text-[10px] font-bold">سری ساخت (Lot):</label><input type="text" id="p-lot" value="LOT-1405-A1" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
+        <div><label class="block text-[10px] font-bold">سری ساخت / محموله:</label><input type="text" id="p-lot" value="LOT-1405-A1" class="touch-btn w-full border rounded-xl px-2 tabular-nums" /></div>
       </div>
 
       <div class="grid grid-cols-2 gap-2">
@@ -3660,7 +3660,7 @@
           <div class="text-[7pt] leading-tight">${safe(p.yarnType)} | ${safe(p.denier)}</div>
           <svg class="barcode-svg" data-barcode="${safe(p.barcode)}" style="width:90%;height:12mm"></svg>
           <div class="font-mono text-[8pt]">${safe(p.barcode)}</div>
-          <div class="text-[7pt]">LOT: ${safe(p.lot)} · ${faNum(p.cartonKg)} KG</div>
+          <div class="text-[7pt]">سری ساخت: ${safe(p.lot)} · ${faNum(p.cartonKg)} KG</div>
         </div>
       `).join('');
       document.getElementById('print-title').textContent = 'پیش‌نمایش ' + faNum(count) + ' لیبل بارکد · ' + width + '×' + height + ' میلی‌متر';
@@ -3990,7 +3990,7 @@
           <tr class="hover:bg-slate-50">
             <td class="p-2.5 font-bold">${p.name} <span class="block text-[10px] text-slate-400">${p.id}</span></td>
             <td class="p-2.5">${getWhName(p.warehouseId)}</td>
-            <td class="p-2.5 font-mono text-[11px]">${activeBatches.map(b => b.lot).slice(0, 3).join('، ') || p.lot || '—'}<span class="block text-[9px] text-slate-400">${activeBatches.length} بچ فعال</span>${!batchReconciliation.valid ? `<span class="block text-[9px] text-amber-700 font-bold">${escapeKardexText(batchReconciliation.issue || 'مغایرت بچ‌ها')}</span>` : ''}${expiredCount ? `<span class="block text-[9px] text-rose-700 font-bold">${faNum(expiredCount)} بچ منقضی</span>` : ''}${expiringSoonCount ? `<span class="block text-[9px] text-amber-700 font-bold">${faNum(expiringSoonCount)} بچ با انقضای نزدیک</span>` : ''}</td>
+            <td class="p-2.5 font-mono text-[11px]">${activeBatches.map(b => b.lot).slice(0, 3).join('، ') || p.lot || '—'}<span class="block text-[9px] text-slate-400">${activeBatches.length} سری ساخت فعال</span>${!batchReconciliation.valid ? `<span class="block text-[9px] text-amber-700 font-bold">${escapeKardexText(batchReconciliation.issue || 'مغایرت سری ساخت‌ها')}</span>` : ''}${expiredCount ? `<span class="block text-[9px] text-rose-700 font-bold">${faNum(expiredCount)} سری ساخت منقضی</span>` : ''}${expiringSoonCount ? `<span class="block text-[9px] text-amber-700 font-bold">${faNum(expiringSoonCount)} سری ساخت با انقضای نزدیک</span>` : ''}</td>
             <td class="p-2.5 font-black tabular-nums">${faNum(p.stock)} KG</td>
             <td class="p-2.5 tabular-nums">${faNum(Math.round(p.stock / p.cartonKg))} کارتن</td>
             <td class="p-2.5 tabular-nums">${money(p.buyPrice, false)}</td>
@@ -4434,7 +4434,7 @@
       const batches = Array.isArray(p.batches) ? p.batches : [];
       const batchRows = batches.map(b => `
         <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap justify-between gap-2">
-          <div><strong>بچ ${escapeKardexText(b.lot || '—')}</strong><span class="block text-[10px] text-slate-500">ورود: ${escapeKardexText(b.receivedDate || '—')} | تولید: ${escapeKardexText(b.productionDate || '—')} | انقضا: ${escapeKardexText(b.expiryDate || '—')}</span></div>
+          <div><strong>سری ساخت ${escapeKardexText(b.lot || '—')}</strong><span class="block text-[10px] text-slate-500">ورود: ${escapeKardexText(b.receivedDate || '—')} | تولید: ${escapeKardexText(b.productionDate || '—')} | انقضا: ${escapeKardexText(b.expiryDate || '—')}</span></div>
           <div class="text-left tabular-nums font-bold"><span>${faNum(b.remainingQty)} KG باقی‌مانده</span><span class="block text-[10px] text-slate-500">بهای واحد: ${money(b.unitCost || 0)}</span></div>
         </div>
       `).join('');
@@ -5879,7 +5879,7 @@
         '<input type="number" min="0.001" step="any" class="imp-item-weight touch-btn border rounded-lg px-2" placeholder="وزن خالص KG" value="' + (item.quantityKg || item.weightKg || '') + '" />' +
         '<input type="number" min="0" step="any" class="imp-item-cartons touch-btn border rounded-lg px-2" placeholder="تعداد کارتن" value="' + (item.cartons || '') + '" />' +
         '<input type="number" min="0.01" step="any" class="imp-item-fx touch-btn border rounded-lg px-2" placeholder="مبلغ ارزی این قلم" value="' + (item.fxAmount || '') + '" />' +
-        '<input type="text" class="imp-item-lot touch-btn border rounded-lg px-2" placeholder="شماره بچ / LOT" value="' + (item.lot || '') + '" />' +
+        '<input type="text" class="imp-item-lot touch-btn border rounded-lg px-2" placeholder="شماره سری ساخت / محموله" value="' + (item.lot || '') + '" />' +
         '<input type="text" class="imp-item-production touch-btn border rounded-lg px-2" placeholder="تاریخ تولید شمسی" value="' + (item.productionDate || '') + '" />' +
         '<input type="text" class="imp-item-expiry touch-btn border rounded-lg px-2" placeholder="تاریخ انقضا شمسی" value="' + (item.expiryDate || '') + '" /></div>';
       host.appendChild(div);
