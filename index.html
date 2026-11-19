@@ -10666,6 +10666,15 @@
       if (voucher.correctedByVoucherId) return 'این سند قبلاً با سند جایگزین #' + voucher.correctedByVoucherId + ' اصلاح شده است.';
       if (voucher.reversesVoucherId || voucher.correctsVoucherId || voucher.sourceType === 'manual_voucher_correction') return 'این سند بخشی از زنجیره اصلاح قبلی است و نباید جداگانه اصلاح شود.';
       if (voucher.locked) return 'سند قفل سخت‌گیرانه دارد؛ اصلاح مستقیم آن مجاز نیست.';
+      const voucherDate = voucher.date || voucher.operationDate;
+      const voucherDateKey = normalizeLedgerDate(voucherDate);
+      const voucherYear = voucherDateKey ? voucherDateKey.slice(0, 4) : '';
+      if (voucherYear && (state.vouchers || []).some(item =>
+        item.sourceType === 'fiscal_year_close' &&
+        String(item.sourceId || '') === voucherYear &&
+        (item.sourceEvent || 'default') === 'closing')) {
+        return 'سال مالی ' + voucherYear + ' بسته شده است؛ اصلاح سند آن فقط پس از بازگشایی کنترل‌شده و ثبت سابقه مجاز است.';
+      }
       if (voucher.sourceType === 'manual_voucher') return '';
       const sourceLabels = {
         invoice: 'فاکتور باید از فهرست فاکتورها و مسیر اصلاح حسابرسی‌شده خودش اصلاح شود.',
@@ -10723,6 +10732,8 @@
       const originalId = Number(modal?.dataset.voucherId);
       const originalLive = (state.vouchers || []).find(item => Number(item.id) === originalId);
       if (!originalLive || originalLive.sourceType !== 'manual_voucher' || originalLive.locked || originalLive.correctedByVoucherId) { showToast('سند برای اصلاح پیدا نشد یا وضعیت آن تغییر کرده است.', 'error'); return; }
+      const correctionBlockReason = getVoucherCorrectionBlockReason(originalLive);
+      if (correctionBlockReason) { showToast('اصلاح سند مجاز نیست: ' + correctionBlockReason, 'error'); return; }
       const desc = document.getElementById('mvc-desc').value.trim();
       const operationDate = document.getElementById('mvc-date').value.trim() || getTodayJalaliDate();
       if (!desc || jalaliDateOrdinal(operationDate) === null) { showToast('شرح و تاریخ شمسی معتبر برای سند جایگزین الزامی است.', 'error'); return; }
