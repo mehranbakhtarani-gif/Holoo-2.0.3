@@ -75,6 +75,6 @@ const html = fs.readFileSync('index.html', 'utf8');
 assert.ok(html.includes('<script src="./warehouse-audit-domain.js"></script>'));
 assert.ok(html.includes('function renderWarehouseMovementAuditPanel(product, movement)'));
 assert.ok(html.includes('renderWarehouseMovementAuditPanel(p, k)'));
-assert.ok(html.split('\\n').some(line => line.includes('renderWarehouseMovementAuditPanel(p, k)') && line.includes('TR-\\\\d+')), 'audit panel condition must use the transfer ID matcher');
+assert.ok(html.includes("/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || ''))"), 'audit panel condition must use the transfer ID matcher');
 assert.ok(html.includes('اصلاح یا برگشت مستقیم تا پیاده‌سازی معکوس‌سازی اتمیک'));
 console.log('PASS: warehouse transfer and stocktake audit projections are read-only, escaped, and conservative');
