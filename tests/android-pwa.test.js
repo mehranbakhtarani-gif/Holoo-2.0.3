@@ -31,7 +31,7 @@ assert.match(sw, /import-domain\.js/);
 const shellMatch = sw.match(/const APP_SHELL = \[([\s\S]*?)\];/);
 assert.ok(shellMatch, 'service worker must declare an app shell');
 const shellAssets = [...shellMatch[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
-const localScripts = [...html.matchAll(/<script[^>]+src=[\"'](\.\/[^\"']+\.js)[\"']/gi)].map(match => match[1]);
+const localScripts = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js)["']/gi)].map(match => match[1]).filter(src => src.startsWith('./'));
 assert.ok(localScripts.length > 0, 'page must expose first-party script assets');
 for (const script of localScripts) {
   assert.ok(shellAssets.includes(script), script + ' must be pre-cached in APP_SHELL');
