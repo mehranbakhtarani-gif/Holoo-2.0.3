@@ -3289,9 +3289,10 @@
     function getPartyAccountNetBalance(partyId, accountCode) {
       let net = 0;
       (state.vouchers || []).forEach(v => (v.lines || []).forEach(l => {
-        if (String(l.partyId) === String(partyId) && String(l.code || '') === String(accountCode)) {
-          net += Number(l.debit || 0) - Number(l.credit || 0);
-        }
+        if (String(l.partyId) !== String(partyId) || String(l.code || '') !== String(accountCode)) return;
+        const debit = Number(l.debit || 0), credit = Number(l.credit || 0);
+        if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) return;
+        net += debit - credit;
       }));
       return net;
     }
@@ -5413,6 +5414,33 @@
     let partyLedgerFromDate = null;
     let partyLedgerToDate = null;
 
+    function isSupplierParty(party) {
+      const role = String(party?.role || '');
+      return role.includes('تأمین') || role.includes('تامین');
+    }
+
+    function getPartyLedgerControlCodes(party) {
+      const primaryCode = String(party?.ledgerAccountCode || (isSupplierParty(party) ? '2101' : '1103'));
+      const codes = new Set([primaryCode]);
+      if (isSupplierParty(party)) codes.add('1107');
+      return codes;
+    }
+
+    function normalizePartyIdentity(value) {
+      return String(value == null ? '' : value).normalize('NFKC')
+        .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ')
+        .trim().toLocaleLowerCase('fa');
+    }
+
+    function normalizePartyDigits(value) {
+      return String(value == null ? '' : value).replace(/[۰-۹٠-٩]/g, ch => {
+        const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        const fi = fa.indexOf(ch);
+        return String(fi >= 0 ? fi : ar.indexOf(ch));
+      }).replace(/\D/g, '');
+    }
+
     function buildPartyLedger(partyId, fromDate, toDate) {
       const from = normalizeLedgerDate(fromDate);
       const to = normalizeLedgerDate(toDate);
@@ -5420,7 +5448,8 @@
         throw new Error('بازه تاریخ گردش طرف حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       }
       const party = (state.parties || []).find(item => String(item.id) === String(partyId));
-      const controlCodes = new Set([String(party?.ledgerAccountCode || '1103'), '1103', '2101', '1107']);
+      if (!party) throw new Error('طرف حساب برای تهیه گردش حساب پیدا نشد.');
+      const controlCodes = getPartyLedgerControlCodes(party);
       const entries = [];
       let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
       let invalidDateVouchers = 0, invalidAmountLines = 0;
@@ -5503,8 +5532,8 @@
             });
             return;
           }
-          // Keep the reconciliation basis identical to buildPartyLedger:
-          // party subledgers include 1103, 2101 and supplier advances (1107).
+          // Supplier advances (1107) belong only to supplier subledgers.
+          if (!getPartyLedgerControlCodes(party).has(code)) mappingMismatchLines++;
           item['sub' + bucket] += net;
         });
       });
@@ -5644,7 +5673,7 @@
         return;
       }
       grid.innerHTML = state.parties.map(p => {
-        const accountCodes = [...new Set([String(p.ledgerAccountCode || '1103'), '1103', '2101', '1107'])];
+        const accountCodes = [...getPartyLedgerControlCodes(p)];
         const accountBalances = accountCodes
           .map(code => ({
             code,
@@ -5702,12 +5731,23 @@
       if (!name) { showToast('نام طرف حساب را وارد کنید.', 'error'); return; }
       const phone = document.getElementById('np-phone').value.trim();
       const ecoCode = document.getElementById('np-eco').value.trim();
-      const creditLimit = Number(document.getElementById('np-credit').value || 0);
+      const creditRaw = document.getElementById('np-credit').value;
+      const creditLimit = creditRaw.trim() === '' ? 0 : Number(creditRaw);
       const terms = document.getElementById('np-terms').value.trim();
+      const role = document.getElementById('np-role').value;
       if (!Number.isFinite(creditLimit) || creditLimit < 0) { showToast('سقف اعتبار باید عددی معتبر و غیرمنفی باشد.', 'error'); return; }
-      const duplicate = state.parties.some(p => String(p.id) !== String(editingPartyId) &&
-        (p.name.trim().toLowerCase() === name.toLowerCase() || (phone && p.phone && p.phone.trim() === phone)));
-      if (duplicate) { showToast('طرف حسابی با همین نام یا شماره تماس قبلاً ثبت شده است.', 'error'); return; }
+      if (!['مشتری (بافندگی)', 'تأمین‌کننده'].includes(role)) { showToast('نوع طرف حساب معتبر نیست.', 'error'); return; }
+      const normalizedName = normalizePartyIdentity(name);
+      const normalizedPhone = normalizePartyDigits(phone);
+      const normalizedEco = normalizePartyIdentity(ecoCode);
+      const duplicate = (state.parties || []).some(p => {
+        if (String(p.id) === String(editingPartyId)) return false;
+        const sameName = normalizedName && normalizePartyIdentity(p.name) === normalizedName;
+        const samePhone = normalizedPhone && normalizePartyDigits(p.phone) === normalizedPhone;
+        const sameEco = normalizedEco && normalizePartyIdentity(p.ecoCode) === normalizedEco;
+        return sameName || samePhone || sameEco;
+      });
+      if (duplicate) { showToast('طرف حسابی با همین نام، شماره تماس یا شناسه اقتصادی قبلاً ثبت شده است.', 'error'); return; }
       if (editingPartyId !== null) {
         const party = state.parties.find(p => String(p.id) === editingPartyId);
         if (!party) { showToast('طرف حساب برای ویرایش پیدا نشد؛ تغییری ذخیره نشد.', 'error'); return; }
@@ -5720,9 +5760,9 @@
       }
       const partyId = 'P-' + Date.now();
       state.parties.push({
-        id: partyId, name, role: document.getElementById('np-role').value,
-        subledgerId: 'PARTY-' + Date.now(), ledgerAccountCode: document.getElementById('np-role').value.includes('تأمین') ? '2101' : '1103', accountingStatus: 'active',
-        phone, ecoCode, creditLimit: creditLimit || 5000000000, terms
+        id: partyId, name, role,
+        subledgerId: 'PARTY-' + partyId, ledgerAccountCode: isSupplierParty({ role }) ? '2101' : '1103', accountingStatus: 'active',
+        phone, ecoCode, creditLimit, terms
       });
       saveState(); closeModal('modal-new-party'); renderAll(); showToast('طرف حساب جدید ثبت شد.');
       editingPartyId = null;
@@ -5740,7 +5780,7 @@
       document.getElementById('inv-type-badge').textContent = type === 'sale' ? 'فاکتور فروش رسمی' : 'فاکتور خرید کالا';
       const nextNo = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
       document.getElementById('inv-next-no').textContent = faNum(nextNo);
-      document.getElementById('inv-party').innerHTML = state.parties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      document.getElementById('inv-party').innerHTML = (state.parties || []).map(p => `<option value="${escapeLedgerText(p.id)}">${escapeLedgerText(p.name || 'بدون نام')}</option>`).join('');
       document.getElementById('inv-warehouse').innerHTML = state.warehouses.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
       renderInvoiceProductOptions();
       document.getElementById('inv-line-unit-mode').innerHTML = (state.customUnits || []).map(u => `<option value="${u.id}">واحد: ${u.name}</option>`).join('');
@@ -5772,14 +5812,16 @@
       select.value = accounts.some(account => String(account.id) === String(previousId)) ? previousId : String(accounts[0].id);
     }
     function checkPartyCredit() {
-      const p = state.parties.find(x => x.id === document.getElementById('inv-party').value);
+      const p = (state.parties || []).find(x => String(x.id) === String(document.getElementById('inv-party').value));
       const b = document.getElementById('inv-credit-banner');
+      if (!b) return;
       if (!p || invDraft.type !== 'sale') { b.classList.add('hidden'); return; }
-      const receivableBalance = getPartyAccountNetBalance(p.id, '1103');
-      const rem = p.creditLimit - Math.max(0, receivableBalance);
+      const receivableBalance = getPartyAccountNetBalance(p.id, String(p.ledgerAccountCode || '1103'));
+      const creditLimit = Number(p.creditLimit ?? 5000000000);
+      const rem = creditLimit - Math.max(0, Number.isFinite(receivableBalance) ? receivableBalance : 0);
       b.classList.remove('hidden');
       b.className = rem <= 0 ? 'p-2 rounded-xl text-[11px] font-bold bg-rose-100 text-rose-900' : 'p-2 rounded-xl text-[11px] font-bold bg-emerald-50 text-emerald-800';
-      b.textContent = rem <= 0 ? `⚠️ هشدار: مشتری از سقف اعتبار ${money(p.creditLimit)} عبور کرده است!` : `✔ اعتبار باقیمانده مشتری: ${money(rem)}`;
+      b.textContent = rem <= 0 ? `⚠️ هشدار: مشتری از سقف اعتبار ${money(creditLimit)} عبور کرده است!` : `✔ اعتبار باقیمانده مشتری: ${money(rem)}`;
     }
 
     // Resolve invoice inventory strictly within the invoice warehouse. Purchases may
