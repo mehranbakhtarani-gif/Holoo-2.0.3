@@ -1684,6 +1684,11 @@
       return id;
     })();
 
+    // هر تب/اجرای مستقل یک منبع عملیات جدا دارد؛ شناسه فیزیکی دستگاه برای نمایش ثابت می‌ماند.
+    // این جداسازی باعث می‌شود تغییرات هم‌زمان دو تب با یک دستگاه نیز در سرور تعارض واقعی محسوب شوند.
+    const OPERATION_SOURCE_ID = DEVICE_ID + ':' + createStableId('writer').slice(7);
+    const OPERATION_SOURCE_SEQUENCE_KEY = OPERATION_SEQUENCE_KEY + ':' + OPERATION_SOURCE_ID;
+
     // محدودیت زمانی برای درخواست‌های Supabase؛ اتصال معلق نباید نشانگر را برای همیشه در حالت انتظار نگه دارد.
     async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
       const controller = new AbortController();
@@ -2255,7 +2260,11 @@
         return await new Promise((resolve, reject) => {
           const tx = db.transaction(OPERATION_DB_STORE, 'readonly');
           const req = tx.objectStore(OPERATION_DB_STORE).getAll();
-          req.onsuccess = () => resolve((req.result || []).filter(op => !op.acknowledgedAt).sort((a,b) => a.sequence - b.sequence).slice(0, limit));
+          req.onsuccess = () => resolve((req.result || []).filter(op => !op.acknowledgedAt).sort((a,b) =>
+            String(a.createdAt || '').localeCompare(String(b.createdAt || '')) ||
+            Number(a.sequence || 0) - Number(b.sequence || 0) ||
+            String(a.operationId || '').localeCompare(String(b.operationId || ''))
+          ).slice(0, limit));
           req.onerror = () => reject(req.error || new Error('خواندن دفتر عملیات ناموفق بود.'));
         });
       } finally { db.close(); }
@@ -2533,7 +2542,7 @@
         if (hasUnkeyedEntity) {
           changes.push({
             entityType, entityId: '*', changeType: 'replace',
-            entityVersion: DEVICE_ID + ':' + sequence,
+            entityVersion: OPERATION_SOURCE_ID + ':' + sequence,
             payload: after
           });
           return;
@@ -2543,12 +2552,12 @@
         afterById.forEach((entity, entityId) => {
           const oldEntity = beforeById.get(entityId);
           if (!oldEntity || JSON.stringify(oldEntity) !== JSON.stringify(entity)) {
-            changes.push({ entityType, entityId, changeType: 'upsert', entityVersion: DEVICE_ID + ':' + sequence, payload: entity });
+            changes.push({ entityType, entityId, changeType: 'upsert', entityVersion: OPERATION_SOURCE_ID + ':' + sequence, payload: entity });
           }
         });
         beforeById.forEach((entity, entityId) => {
           if (!afterById.has(entityId)) {
-            changes.push({ entityType, entityId, changeType: 'delete', entityVersion: DEVICE_ID + ':' + sequence, payload: null });
+            changes.push({ entityType, entityId, changeType: 'delete', entityVersion: OPERATION_SOURCE_ID + ':' + sequence, payload: null });
           }
         });
       });
@@ -2565,7 +2574,7 @@
     function saveState() {
       const updatedAt = new Date().toISOString();
       const operationId = createStableId('op').slice(3);
-      const sequence = Number(localStorage.getItem(OPERATION_SEQUENCE_KEY) || 0) + 1;
+      const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
       const operationPayload = JSON.parse(snapshot);
       operationPayload.activeRole = 'mehran';
@@ -2580,7 +2589,7 @@
         schemaVersion: OPERATION_SCHEMA_VERSION,
         companyRecordId: cloudConfig.recordId,
         actor: localStorage.getItem(DEVICE_ACTOR_KEY) || state.activeRole || 'mehran',
-        deviceId: DEVICE_ID,
+        deviceId: OPERATION_SOURCE_ID,
         createdAt: updatedAt,
         operationType: 'state_snapshot',
         summary: hasNewAuditEvent ? lastAudit.action : 'ذخیره وضعیت شرکت',
@@ -2593,7 +2602,7 @@
       try {
         localStorage.setItem(STORE_KEY, snapshot);
         localStorage.setItem(LOCAL_UPDATED_KEY, updatedAt);
-        localStorage.setItem(OPERATION_SEQUENCE_KEY, String(sequence));
+        localStorage.setItem(OPERATION_SOURCE_SEQUENCE_KEY, String(sequence));
         // صف snapshot قدیمی تا زمان مهاجرت کامل سرور حفظ می‌شود.
         localStorage.setItem(CLOUD_OUTBOX_KEY, updatedAt);
       } catch (e) {
