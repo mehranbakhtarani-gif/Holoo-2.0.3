@@ -4893,7 +4893,8 @@
     }
 
         function canCorrectInvoice(inv) {
-      if (!inv || inv.status !== 'active' || inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
+      if (!inv || inv.status !== 'active' || inv.type !== 'sale' || inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
+      if (Number(inv.commAmount || 0) > 0 && !inv.salespersonPartyId) return false;
       if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
       if ((inv.items || []).some(item => Number(item.returnedKg || 0) > 0)) return false;
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => tx.kind !== 'party_credit' && (((tx.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0)) || Number(tx.allocInvId) === Number(inv.id)));
@@ -5270,6 +5271,15 @@
               { code: '1106', partyId: null, desc: `ابطال اعتبار مالیات خرید #${invId}`, debit: 0, credit: cancelVatAmount }
             ] : [])
           ];
+
+      if (inv.type === 'sale' && Number(inv.commAmount || 0) > 0) {
+        const commissionAmount = Number(inv.commAmount);
+        if (!Number.isFinite(commissionAmount) || commissionAmount < 0 || !inv.salespersonPartyId) { showToast('اطلاعات پورسانت فاکتور برای اصلاح کامل نیست؛ هیچ تغییری ثبت نشد.', 'error'); return false; }
+        cancellationLines.push(
+          { code: '2101', partyId: inv.salespersonPartyId, desc: `ابطال پورسانت پرداختنی فاکتور #${invId}`, debit: commissionAmount, credit: 0 },
+          { code: '6101', partyId: inv.salespersonPartyId, desc: `برگشت هزینه پورسانت فاکتور #${invId}`, debit: 0, credit: commissionAmount }
+        );
+      }
 
       if (cancellationLines.length) {
         try {
