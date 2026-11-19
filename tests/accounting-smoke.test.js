@@ -59,7 +59,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [{ id: 7 }] };
   let saves = 0;
   const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', {
-    state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() { saves++; }
+    state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, addAudit() {}, saveState() { saves++; }
   });
   assert.equal(post('test', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }]), 1);
   assert.throws(() => post('bad', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 99 }]));
@@ -67,7 +67,7 @@ test('balanced journals post; unbalanced journals are rejected', () => {
 });
 test('same source event is idempotent; separate check events remain distinct', () => {
   const state = { fiscalYear: '1405', vouchers: [], checks: [{ id: 'C1' }], invoices: [] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, addAudit() {}, saveState() {} });
   const lines = [{ code: '1102', debit: 50, credit: 0 }, { code: '1104', debit: 0, credit: 50 }];
   const first = post('clear', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
   const repeated = post('clear again', lines, undefined, { type: 'check', id: 'C1', event: 'cleared' });
@@ -78,7 +78,7 @@ test('same source event is idempotent; separate check events remain distinct', (
 test('invoice journal stores its source voucher reference', () => {
   const invoice = { id: 7 };
   const state = { fiscalYear: '1405', vouchers: [], checks: [], invoices: [invoice] };
-  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, addAudit() {}, saveState() {} });
+  const post = loadFunction(section('function postVoucher(', '// =========================================================================\n    // 5. MODULE 1'), 'postVoucher', { state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, addAudit() {}, saveState() {} });
   post('invoice', [{ code: '1103', debit: 100, credit: 0 }, { code: '4101', debit: 0, credit: 100 }], undefined, { type: 'invoice', id: 7 });
   assert.equal(invoice.voucherId, 1);
 });
@@ -91,7 +91,7 @@ function runTreasury(amount) {
   const posted = [];
   let saves = 0;
   const save = loadFunction(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    document, state, getTodayJalaliDate() { return '1405/09/02'; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); return 1; }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
+    document, state, getTodayJalaliDate() { return '1405/09/02'; }, jalaliDateOrdinal(value) { return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value || '')) ? 1 : null; }, getAccountingPeriodLockForDate() { return null; }, getFiscalYearCloseRecord() { return null; }, getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...args) { posted.push(args); return 1; }, saveState() { saves++; }, closeModal() {}, renderAll() {}, showToast() {}, faNum: String
   });
   save();
   return { state, posted, saves };
