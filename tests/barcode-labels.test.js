@@ -40,8 +40,13 @@ assert.match(html, /id="kardex-from-date"/);
 assert.match(html, /id="kardex-to-date"/);
 assert.match(html, /function applyKardexDateFilter\(\)/);
 assert.match(html, /function clearKardexDateFilter\(\)/);
-assert.match(html, /const filteredMovements = movements\.filter/);
-assert.match(html, /key >= fromKey && key <= toKey/);
+assert.match(html, /const movements = Array\.isArray\(p\.kardex\) \? p\.kardex : \[\]/);
+assert.match(html, /const ordered = movements\.map\(\(movement, index\) =>/);
+assert.match(html, /const periodRows = ordered\.filter\(row => row\.ordinal !== null/);
+assert.match(html, /row\.ordinal >= fromOrdinal/);
+assert.match(html, /row\.ordinal <= toOrdinal/);
+assert.match(html, /return a\.ordinal - b\.ordinal \|\| a\.index - b\.index/);
+assert.doesNotMatch(html, /movements\.sort\(/, 'Kardex sorting must not mutate stored movement history');
 assert.match(html, /تاریخ شروع و پایان شمسی معتبر/);
 console.log('PASS: product kardex supports validated Jalali date-range filtering and clearing the filter');
 
