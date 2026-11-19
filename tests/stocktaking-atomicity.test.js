@@ -12,7 +12,7 @@ function extractFunction(name) {
     const ch = html[i];
     if (quote) {
       if (escaped) escaped = false;
-      else if (ch === '\\\\') escaped = true;
+      else if (ch === '\\') escaped = true;
       else if (ch === quote) quote = null;
       continue;
     }
