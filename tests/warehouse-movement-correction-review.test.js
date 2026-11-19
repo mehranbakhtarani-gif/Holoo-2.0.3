@@ -12,6 +12,8 @@ assert.ok(domain.includes('دو ردیف خروج و ورود حواله به‌
 assert.ok(domain.includes('از بچ انتقالی در عملیات بعدی استفاده شده است'));
 assert.ok(domain.includes('پس از این حواله گردش دیگری ثبت شده است'));
 assert.ok(domain.includes('سند حسابداری وابسته پیدا شد'));
-assert.ok(html.includes('window.confirm(confirmation)'));
+assert.ok(html.includes('id="modal-warehouse-transfer-correction"'));
+assert.ok(html.includes('submitWarehouseTransferCorrection()'));
+assert.ok(!html.includes('window.prompt(\'علت اصلاح حواله'));
 assert.ok(html.includes('بررسی اصلاح گردش انبار'));
 console.log('PASS: warehouse transfer correction is preflighted and unsafe dependencies remain blocked');
