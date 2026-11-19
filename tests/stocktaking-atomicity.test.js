@@ -69,6 +69,7 @@ const entries = [
 ];
 
 const original = fixture();
+sandbox.state = original;
 assert.throws(() => sandbox.parsePhysicalStocktakingCounts(original.products, [
   { productId: 'P1', rawValue: '' }, { productId: 'P2', rawValue: '5' }
 ]), /الزامی/);
@@ -121,6 +122,7 @@ assert.equal(original.vouchers.length, 0);
 
 
 const warehouseScoped = fixture();
+sandbox.state = warehouseScoped;
 warehouseScoped.warehouses = [{ id: 'WH-A', name: 'انبار الف' }, { id: 'WH-B', name: 'انبار ب' }];
 warehouseScoped.products[0].warehouseId = 'WH-A';
 warehouseScoped.products[1].warehouseId = 'WH-B';
