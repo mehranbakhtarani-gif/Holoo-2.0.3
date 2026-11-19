@@ -132,7 +132,7 @@
     const products = Array.isArray(state && state.products) ? state.products : [];
     const vouchers = Array.isArray(state && state.vouchers) ? state.vouchers : [];
     const id = String(transferId || '').trim();
-    if (!/^TR-\\d+-[a-z0-9]+$/i.test(id)) return { ok: false, reason: 'شناسه حواله معتبر نیست.' };
+    if (!/^TR-\d+-[a-z0-9]+$/i.test(id)) return { ok: false, reason: 'شناسه حواله معتبر نیست.' };
 
     const related = [];
     products.forEach(product => {
