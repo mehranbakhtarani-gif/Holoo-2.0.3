@@ -18,9 +18,13 @@ function functionSource(name) {
 function load(name, context) {
   const sandbox = { ...context, fetchWithTimeout: context.fetchWithTimeout || ((url, options) => context.fetch(url, options)) };
   vm.createContext(sandbox);
-  const authHelper = html.match(/function cloudAuthHeaders\(extra = \{\}\) \{[\s\S]*?\n    \}/)?.[0];
-  assert.ok(authHelper, 'missing cloud auth header helper');
-  vm.runInContext(authHelper + '\n' + functionSource(name) + `; this.__fn = ${name};`, sandbox);
+  if (name !== 'cloudAuthHeaders') {
+    const authHelper = html.match(/function cloudAuthHeaders\(extra = \{\}\) \{[\s\S]*?\n    \}/)?.[0];
+    assert.ok(authHelper, 'missing cloud auth header helper');
+    vm.runInContext(authHelper, sandbox);
+    sandbox.cloudAuthHeaders = vm.runInContext('cloudAuthHeaders', sandbox);
+  }
+  vm.runInContext(functionSource(name) + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
 const passed = [];
