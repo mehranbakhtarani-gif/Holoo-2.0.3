@@ -18,7 +18,9 @@ function functionSource(name) {
 function load(name, context) {
   const sandbox = { ...context, fetchWithTimeout: context.fetchWithTimeout || ((url, options) => context.fetch(url, options)) };
   vm.createContext(sandbox);
-  vm.runInContext(functionSource('cloudAuthHeaders') + '\n' + functionSource(name) + `; this.__fn = ${name};`, sandbox);
+  const authHelper = html.match(/function cloudAuthHeaders\(extra = \{\}\) \{[\s\S]*?\n    \}/)?.[0];
+  assert.ok(authHelper, 'missing cloud auth header helper');
+  vm.runInContext(authHelper + '\n' + functionSource(name) + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
 const passed = [];
