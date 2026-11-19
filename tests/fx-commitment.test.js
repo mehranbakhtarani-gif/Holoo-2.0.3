@@ -20,7 +20,7 @@ const sandbox = {
   document: { getElementById(id) { return id.startsWith('fx-pay-amount-') ? amountInput : bankInput; } },
   createStableId: (() => { let n = 0; return p => p + '-' + (++n); })(),
   postVoucher(...args) { vouchers.push(args); },
-  addAudit() {}, saveState() {}, renderFxModule() {}, showToast() {}
+  addAudit() {}, saveState() { return true; }, renderFxModule() {}, showToast() {}
 };
 vm.createContext(sandbox);
 vm.runInContext(html.slice(start, end) + '; this.pay = payFxCommitmentStage;', sandbox);
@@ -61,7 +61,7 @@ const importSandbox = {
   getTodayJalaliDate: () => '1405/09/01',
   faNum: String,
   postVoucher(...args) { importVouchers.push(args); },
-  addAudit() {}, saveState() {}, renderAll() {}, showToast() {}
+  addAudit() {}, saveState() { return true; }, renderAll() {}, showToast() {}
 };
 vm.createContext(importSandbox);
 vm.runInContext(html.slice(importStart, importEnd) + '; this.payImport = payFxStage;', importSandbox);
