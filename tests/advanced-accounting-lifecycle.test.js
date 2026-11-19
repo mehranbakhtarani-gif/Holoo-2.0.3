@@ -990,5 +990,60 @@ test('legacy cheque with multiple banks and no bank reference cannot clear again
   assert.equal(messages[0].type,'error');
 });
 
+
+test('sales invoice cancellation reverses commission expense and payable on the same salesperson subledger', () => {
+  const state = {
+    fiscalYear:'1405',
+    invoices:[{id:3801,type:'sale',status:'active',partyId:'CUSTOMER-1',salespersonPartyId:'SALESPERSON-1',commAmount:100,commRate:1.5,
+      grandTotal:1100,netSubtotal:1000,vatAmount:100,paidAmount:0,
+      items:[{productId:'COMMISSION-STOCK',kg:10,returnedKg:0,price:100,total:1000,costingMethod:'AVG',costOfGoodsSold:500}]}],
+    products:[{id:'COMMISSION-STOCK',stock:0,buyPrice:50,batches:[],kardex:[]}]
+  };
+  const posted=[];
+  const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
+    state,postVoucher(...args){posted.push(args);return 88;},saveState(){},renderAll(){},showToast(){},faNum:String
+  });
+  assert.equal(cancel(3801),true);
+  const lines=posted[0][1];
+  assert.equal(lines.find(line=>line.code==='2101')?.debit,100);
+  assert.equal(lines.find(line=>line.code==='2101')?.partyId,'SALESPERSON-1');
+  assert.equal(lines.find(line=>line.code==='6101')?.credit,100);
+  assert.equal(lines.find(line=>line.code==='6101')?.partyId,'SALESPERSON-1');
+  assert.equal(lines.reduce((sum,line)=>sum+line.debit,0),lines.reduce((sum,line)=>sum+line.credit,0));
+});
+
+test('manual voucher correction posts a reversal and balanced replacement without editing the source voucher', () => {
+  const state={vouchers:[{id:77,sourceType:'manual_voucher',locked:false,desc:'سند دستی اولیه',date:'1405/09/01',lines:[
+    {code:'1103',partyId:null,desc:'بدهکار اولیه',debit:500,credit:0},
+    {code:'4101',partyId:null,desc:'بستانکار اولیه',debit:0,credit:500}
+  ]}],auditLogs:[]};
+  const values={
+    'mvc-desc':'شرح اصلاح‌شده','mvc-date':'1405/09/03'
+  };
+  const modal={dataset:{voucherId:'77'}};
+  const rows=[
+    {querySelector(selector){return ({'[data-vc-code]':{value:'1103'},'[data-vc-desc]':{value:'بدهکار جدید'},'[data-vc-debit]':{value:'600'},'[data-vc-credit]':{value:'0'}})[selector];}},
+    {querySelector(selector){return ({'[data-vc-code]':{value:'4101'},'[data-vc-desc]':{value:'بستانکار جدید'},'[data-vc-debit]':{value:'0'},'[data-vc-credit]':{value:'600'}})[selector];}}
+  ];
+  const posted=[];let saves=0;let audits=0;
+  const correct=load(section('function saveManualVoucherCorrection()','function saveManualVoucher()'),'saveManualVoucherCorrection',{
+    state,CHART_ACCOUNTS:[{code:'1103',name:'دریافتنی'},{code:'4101',name:'فروش'}],
+    document:{getElementById(id){if(id==='modal-manual-voucher-correction')return modal;if(id==='mvc-desc')return {value:values[id]};if(id==='mvc-date')return {value:values[id]};return {value:''};},querySelectorAll(){return rows;}},
+    jalaliDateOrdinal(){return 1;},getTodayJalaliDate(){return '1405/09/03';},createStableId(){return 'VCORR-77'},
+    postVoucher(...args){posted.push(args);return posted.length===1?88:89;},
+    addAudit(){audits++;},saveState(){saves++;},closeModal(){},renderAll(){},setAccTab(){},showToast(){}
+  });
+  correct();
+  assert.equal(posted.length,2);
+  assert.equal(posted[0][3].event,'reversal');
+  assert.equal(posted[1][3].event,'replacement');
+  assert.equal(posted[0][1][0].debit,0);
+  assert.equal(posted[0][1][0].credit,500);
+  assert.equal(posted[1][1][0].debit,600);
+  assert.equal(posted[1][1][1].credit,600);
+  assert.equal(saves,1);
+  assert.equal(audits,1);
+});
+
 console.log(`PASS: ${passed.length} advanced accounting lifecycle tests`);
 for (const name of passed) console.log(`- ${name}`);
