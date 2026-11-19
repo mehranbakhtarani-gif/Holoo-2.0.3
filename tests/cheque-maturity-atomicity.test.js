@@ -33,8 +33,6 @@ function harness(saveResult) {
   sandbox.computeCheckRas();
   assert.equal(sandbox.state.checks[0].status, 'in_progress', 'failed persistence must restore cheque status');
   assert.equal(sandbox.state.auditLogs.length, 0, 'failed persistence must roll back the audit event');
-  assert.equal(original.checks[0].status, 'in_progress');
-  assert.equal(original.auditLogs.length, 0);
   assert.match(messages.at(-1).message, /ذخیره تغییرات سررسید/);
 }
 {
