@@ -717,6 +717,7 @@
             <div class="flex items-center justify-between border-b pb-2">
               <div class="flex items-center gap-2">
                 <span id="inv-type-badge" class="px-2.5 py-1 rounded-lg bg-holoo-100 text-holoo-900 font-black">فاکتور فروش</span>
+              <span id="invoice-correction-banner" class="hidden text-[10px] font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xl px-2 py-1"></span>
                 <span class="font-extrabold text-slate-700 tabular-nums">شماره: #<span id="inv-next-no">1002</span></span>
               </div>
               <button onclick="document.getElementById('invoice-form-card').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button>
@@ -4905,6 +4906,8 @@
             <span class="text-[11px] text-slate-400 tabular-nums">صدور: ${faNum(inv.date)} | سررسید: ${faNum(inv.dueDate)}</span>
           </div>
           <div class="font-bold text-slate-800">${getPartyName(inv.partyId)} <span class="text-[10px] text-slate-400">(بازاریاب: ${inv.salesperson})</span></div>
+          ${inv.correctionOfInvoiceId ? `<div class="text-[10px] text-indigo-800 bg-indigo-50 rounded-lg px-2 py-1">نسخه اصلاحی فاکتور #${faNum(inv.correctionOfInvoiceId)}</div>` : ''}
+          ${inv.correctedByInvoiceId ? `<div class="text-[10px] text-slate-600 bg-slate-100 rounded-lg px-2 py-1">این فاکتور با نسخه #${faNum(inv.correctedByInvoiceId)} جایگزین شده است</div>` : ''}
           ${Number(inv.commAmount || 0) > 0 ? `<div class="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">پورسانت بازاریاب (${faNum(inv.commRate || 0)}٪): ${money(inv.commAmount)}</div>` : ''}
           <div class="space-y-1 bg-slate-50 p-2 rounded-xl border">
             ${inv.items.map(it => `<div class="flex justify-between text-[11px]"><span>${it.name} (${faNum(it.kg)} KG${it.returnedKg ? ` | برگشتی: ${faNum(it.returnedKg)} KG` : ''})</span><strong class="tabular-nums">${money(it.total)}</strong></div>`).join('')}
@@ -4913,6 +4916,7 @@
             <span class="font-black text-sm tabular-nums">${money(inv.grandTotal)}</span>
             <div class="flex flex-wrap gap-1.5">
               ${inv.status !== 'cancelled' ? `<button onclick="openPartialReturnModal(${inv.id})" class="bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-1.5 rounded-xl font-bold">↩️ برگشت جزئی</button>` : ''}
+              ${canCorrectInvoice(inv) ? `<button onclick="openInvoiceCorrection(${inv.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-xl font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}
               ${inv.status !== 'cancelled' ? `<button onclick="cancelInvoice(${inv.id})" class="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1.5 rounded-xl font-bold">✕ ابطال</button>` : ''}
               <button onclick="openShareInvoice(${inv.id})" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1.5 rounded-xl font-bold">📤 ارسال</button>
               <button onclick="printOfficialInvoice(${inv.id})" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold">🖨️ چاپ رسمی</button>
