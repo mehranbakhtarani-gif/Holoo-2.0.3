@@ -53,6 +53,7 @@ jobs:
           node tests/account-ledger.test.js
           node tests/fiscal-year-close.test.js
           node tests/closed-period-correction-lock.test.js
+          node tests/cheque-maturity-atomicity.test.js
           node tests/extended-workflow.test.js
           node tests/advanced-accounting-lifecycle.test.js
           node tests/reporting-and-sync.test.js
