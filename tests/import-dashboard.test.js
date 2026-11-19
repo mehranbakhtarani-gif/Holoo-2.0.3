@@ -7,7 +7,7 @@ assert.match(html, /statusHistory: \[\{ status:/);
 assert.match(html, /function renderImportsModule\(/);
 assert.match(html, /function receiveImportShipment\(/);
 assert.match(html, /postedToWh: false/);
-assert.match(html, /nextStatus === 'received'\) receiveImportShipment\(shipment\)/);
+assert.match(html, /nextStatus === 'received'\) receiveImportShipment\(shipment, \{ previousStatus \}\)/);
 assert.match(html, /Warehouse receipt changes physical quantities and lot traceability only/);
 assert.match(html, /code: '2106'.*credit: costing\.totalExpenseRial/);
 assert.match(html, /SUB-2106/);
