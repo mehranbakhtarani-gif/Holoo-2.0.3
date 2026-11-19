@@ -40,7 +40,7 @@ const messages=[];
 const integration = load({
   state,
   document:{getElementById(name){return {value:values[name] || ''};}},
-  bankTxDateKey(value){return /^1405\\/\\d{2}\\/\\d{2}$/.test(value) ? value.replaceAll('/','') : null;},
+  bankTxDateKey(value){return /^1405\/\d{2}\/\d{2}$/.test(value) ? value.replaceAll('/','') : null;},
   createStableId(){return String(++id);},
   saveState(){saves++;},closeModal(){closes++;},renderReconcileModule(){renders++;},
   showToast(message,type){messages.push({message,type});},faNum:String
