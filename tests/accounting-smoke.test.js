@@ -39,7 +39,8 @@ test('dashboard balances exclude invalid-date and invalid-amount vouchers and re
     ] },
     jalaliDateOrdinal(value) {
       const [year, month, day] = String(value || '').split('/');
-      return /^\\d{4}$/.test(year) && month === '01' && /^\\d{2}$/.test(day)
+      const digits = value => value.length > 0 && [...value].every(ch => ch >= '0' && ch <= '9');
+      return year.length === 4 && month === '01' && day.length === 2 && digits(year) && digits(day)
         ? Number(year) * 10000 + Number(month) * 100 + Number(day)
         : null;
     }
