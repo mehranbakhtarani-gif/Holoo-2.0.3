@@ -560,12 +560,23 @@
 
           <div id="diagnostic-box" class="hidden bg-emerald-950 text-white rounded-2xl p-4 shadow-lg border border-emerald-500/40 space-y-2 text-xs"></div>
 
+          <section id="dashboard-period-filter" class="bg-white rounded-2xl border border-slate-200 p-3 flex flex-wrap items-end gap-3" aria-label="بازه گزارش داشبورد">
+            <div class="min-w-[140px] flex-1">
+              <label for="dash-period-from" class="block text-[11px] font-bold text-slate-600 mb-1">از تاریخ شمسی</label>
+              <input id="dash-period-from" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱" value="${escapeLedgerText(dashFromDate || String(state.fiscalYear || '1405') + '/01/01')}" onchange="dashFromDate=this.value.trim(); renderDashboard()" class="touch-btn w-full border border-slate-300 rounded-lg px-3 text-sm tabular-nums" />
+            </div>
+            <div class="min-w-[140px] flex-1">
+              <label for="dash-period-to" class="block text-[11px] font-bold text-slate-600 mb-1">تا تاریخ شمسی</label>
+              <input id="dash-period-to" type="text" inputmode="numeric" placeholder="۱۴۰۵/۰۹/۲۸" value="${escapeLedgerText(dashToDate || getTodayJalaliDate())}" onchange="dashToDate=this.value.trim(); renderDashboard()" class="touch-btn w-full border border-slate-300 rounded-lg px-3 text-sm tabular-nums" />
+            </div>
+            <button type="button" onclick="dashFromDate=String(state.fiscalYear || '1405')+'/01/01'; dashToDate=getTodayJalaliDate(); renderDashboard()" class="touch-btn bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg px-3 text-xs font-bold">سال مالی جاری تا امروز</button>
+          </section>
           <div id="dash-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div class="lg:col-span-2 bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-2">
               <div class="flex items-center justify-between">
-                <h3 class="text-xs font-extrabold text-slate-800">📊 نمودار مقایسه‌ای فروش، خرید، واردات و سود خالص</h3>
+                <h3 class="text-xs font-extrabold text-slate-800">📈 روند ماهانه درآمد، بهای تمام‌شده، هزینه و سود (زیان)</h3>
                 <span class="text-[10px] text-slate-400">به‌روزرسانی خودکار</span>
               </div>
               <div class="h-56 w-full"><canvas id="dashChart"></canvas></div>
@@ -3310,46 +3321,105 @@
     // 5. MODULE 1: DASHBOARD & DIAGNOSTICS
     // =========================================================================
     let dashChartInst = null;
+    let dashFromDate = null;
+    let dashToDate = null;
+
+    function getDashboardPeriodRange() {
+      const from = String(dashFromDate || (String(state.fiscalYear || '1405') + '/01/01')).trim();
+      const to = String(dashToDate || getTodayJalaliDate()).trim();
+      const fromKey = normalizeLedgerDate(from), toKey = normalizeLedgerDate(to);
+      if (!fromKey || !toKey || fromKey > toKey || jalaliDateOrdinal(from) === null || jalaliDateOrdinal(to) === null) {
+        throw new Error('بازه گزارش داشبورد معتبر نیست؛ تاریخ شمسی واقعی و به‌ترتیب وارد کنید.');
+      }
+      return { from, to, fromKey, toKey };
+    }
+
+    function dashboardAccountNetBalance(balances, code) {
+      const account = balances[String(code)];
+      return account ? Number(account.debBal || 0) - Number(account.credBal || 0) : 0;
+    }
+
+    function buildDashboardMonthlySeries(fromDate, toDate) {
+      const from = normalizeLedgerDate(fromDate), to = normalizeLedgerDate(toDate);
+      if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
+        throw new Error('بازه نمودار داشبورد معتبر نیست.');
+      }
+      const months = new Map();
+      (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(voucher => {
+        const rawDate = voucher?.date || voucher?.operationDate;
+        const dateKey = normalizeLedgerDate(rawDate);
+        if (!dateKey || jalaliDateOrdinal(rawDate) === null || dateKey < from || dateKey > to) return;
+        if (countInvalidReportVoucherLines(voucher)) return;
+        const monthKey = dateKey.slice(0, 6);
+        if (!months.has(monthKey)) months.set(monthKey, { monthKey, revenue: 0, cogs: 0, expenses: 0, netProfit: 0 });
+        const month = months.get(monthKey);
+        (voucher.lines || []).forEach(line => {
+          const code = String(line.code || '');
+          const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+          if (code.startsWith('4')) month.revenue += credit - debit;
+          else if (code.startsWith('5')) month.cogs += debit - credit;
+          else if (code.startsWith('6')) month.expenses += debit - credit;
+        });
+      });
+      return Array.from(months.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey)).map(month => ({
+        ...month,
+        label: month.monthKey.slice(0, 4) + '/' + month.monthKey.slice(4, 6),
+        netProfit: month.revenue - month.cogs - month.expenses
+      }));
+    }
+
     function renderDashboard() {
+      const period = getDashboardPeriodRange();
       const balanceAudit = buildDashboardAccountBalances();
       const bal = balanceAudit.balances;
-      const liquidity = (bal['1101']?.debBal || 0) + (bal['1102']?.debBal || 0);
-      const sales = (bal['4101']?.credBal || 0) - (bal['4102']?.debBal || 0) - (bal['4103']?.debBal || 0);
-      const purchases = state.invoices.filter(i => i.type === 'purchase').reduce((s, i) => s + i.grandTotal, 0) + state.imports.reduce((s, m) => s + m.totalLandedRial, 0);
-      const invVal = bal['1105']?.debBal || 0;
-      const receivables = (bal['1103']?.debBal || 0) + (bal['1104']?.debBal || 0);
-      const payables = (bal['2101']?.credBal || 0) + (bal['2102']?.credBal || 0) + (bal['2105']?.credBal || 0);
-      const netProfit = sales - ((bal['5101']?.debBal || 0) + (bal['6101']?.debBal || 0) + (bal['6102']?.debBal || 0) + (bal['6103']?.debBal || 0));
+      const accountNet = code => dashboardAccountNetBalance(bal, code);
+      const liquidity = accountNet('1101') + accountNet('1102');
+      const invVal = accountNet('1105');
+      const receivables = accountNet('1103') + accountNet('1104');
+      const payables = -(['2101', '2102', '2103', '2104', '2105', '2106'].reduce((sum, code) => sum + accountNet(code), 0));
+      const pnl = buildProfitLossReport(period.from, period.to);
+      const sales = pnl.revenue;
+      const netProfit = pnl.netProfit;
+      const inRange = value => {
+        const key = normalizeLedgerDate(value);
+        return !!key && key >= period.fromKey && key <= period.toKey && jalaliDateOrdinal(value) !== null;
+      };
+      const purchases = (Array.isArray(state.invoices) ? state.invoices : [])
+        .filter(invoice => invoice.type === 'purchase' && inRange(invoice.date || invoice.operationDate))
+        .reduce((sum, invoice) => sum + Math.max(0, Number(invoice.grandTotal) || 0), 0) +
+        (Array.isArray(state.imports) ? state.imports : [])
+          .filter(shipment => inRange(shipment.date || shipment.operationDate))
+          .reduce((sum, shipment) => sum + Math.max(0, Number(shipment.totalLandedRial) || 0), 0);
 
       document.getElementById('dash-kpis').innerHTML = `
         <div class="bg-slate-900 text-white rounded-2xl p-3.5 border-r-4 border-r-emerald-400">
-          <span class="text-[11px] text-teal-200 block">وضعیت نقدینگی (بانک و صندوق)</span>
+          <span class="text-[11px] text-teal-200 block">نقدینگی خالص (بانک و صندوق)</span>
           <strong class="text-sm lg:text-base font-black tabular-nums mt-1 block">${money(liquidity)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-holoo-600">
-          <span class="text-[11px] text-slate-500 block">فروش خالص دوره</span>
+          <span class="text-[11px] text-slate-500 block">درآمد خالص دوره</span>
           <strong class="text-sm lg:text-base font-black text-holoo-900 tabular-nums mt-1 block">${money(sales)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-sky-600">
-          <span class="text-[11px] text-slate-500 block">خرید و محموله‌های وارداتی</span>
+          <span class="text-[11px] text-slate-500 block">خرید و واردات ثبت‌شده در دوره</span>
           <strong class="text-sm lg:text-base font-black text-sky-900 tabular-nums mt-1 block">${money(purchases)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-amber-500">
-          <span class="text-[11px] text-slate-500 block">ارزش موجودی انبارهای نساجی</span>
+          <span class="text-[11px] text-slate-500 block">ارزش خالص موجودی طبق دفتر کل</span>
           <strong class="text-sm lg:text-base font-black text-amber-900 tabular-nums mt-1 block">${money(invVal)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-emerald-600">
-          <span class="text-[11px] text-slate-500 block">مطالبات و چک‌های دریافتی</span>
+          <span class="text-[11px] text-slate-500 block">مطالبات خالص (تجاری و اسناد)</span>
           <strong class="text-sm font-black text-emerald-700 tabular-nums mt-1 block">${money(receivables)}</strong>
         </div>
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 border-r-4 border-r-rose-600">
-          <span class="text-[11px] text-slate-500 block">بدهی، چک پرداختی و تعهد ارزی</span>
+          <span class="text-[11px] text-slate-500 block">بدهی خالص و تعهدات</span>
           <strong class="text-sm font-black text-rose-700 tabular-nums mt-1 block">${money(payables)}</strong>
         </div>
-        <div class="md:col-span-2 bg-gradient-to-l from-emerald-800 to-holoo-900 text-white rounded-2xl p-3.5 flex items-center justify-between">
+        <div class="md:col-span-2 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
           <div>
-            <span class="text-[11px] text-emerald-200 block">سود (زیان) خالص دوره جاری</span>
-            <span class="text-[10px] text-emerald-100/90 block mt-0.5">گزارش بر پایه اسناد حسابداری</span>
+            <span class="text-[11px] text-emerald-100 block">سود (زیان) خالص بازه انتخابی</span>
+            <span class="text-[10px] text-emerald-100/90 block mt-0.5">${faNum(period.from)} تا ${faNum(period.to)} · مطابق صورت سود و زیان</span>
             <strong class="text-base lg:text-lg font-black tabular-nums mt-1 block">${money(netProfit)}</strong>
           </div>
         </div>
@@ -3357,13 +3427,15 @@
 
       const alerts = [];
       const balanceQuality = balanceAudit.quality;
-      if (balanceQuality.invalidDateVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidDateVouchers) + ' سند با تاریخ نامعتبر از محاسبه شاخص‌های داشبورد کنار گذاشته شد.</div>');
-      if (balanceQuality.invalidAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidAmountVouchers) + ' سند دارای ردیف حساب/مبلغ نامعتبر از محاسبه شاخص‌های داشبورد کنار گذاشته شد.</div>');
-      if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند با ساختار ناقص در محاسبه شاخص‌ها لحاظ شده است.</div>');
-      if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن در محاسبه شاخص‌ها لحاظ شده است؛ اختلاف پنهان نشده است.</div>');
+      if (balanceQuality.invalidDateVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidDateVouchers) + ' سند با تاریخ نامعتبر از مانده‌های دفتر کل کنار گذاشته شد.</div>');
+      if (balanceQuality.invalidAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidAmountVouchers) + ' سند دارای ردیف حساب/مبلغ نامعتبر از مانده‌های دفتر کل کنار گذاشته شد.</div>');
+      if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند با ساختار ناقص در مانده‌های دفتر کل لحاظ شده است.</div>');
+      if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن در مانده‌های دفتر کل لحاظ شده؛ اختلاف باید بررسی شود.</div>');
+      if (pnl.trialBalanceDifference !== 0) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ اختلاف بدهکار و بستانکار در بازه گزارش: ' + money(pnl.trialBalanceDifference) + '</div>');
+      if (pnl.invalidAmountLines) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(pnl.invalidAmountLines) + ' ردیف مبلغ نامعتبر در صورت سود و زیان کنار گذاشته شد.</div>');
       state.checks.filter(c => c.status === 'overdue' || c.status === 'in_progress').forEach(c => {
         alerts.push(`<div class="p-2.5 rounded-xl ${c.status === 'overdue' ? 'bg-rose-50 border-rose-300 text-rose-950' : 'bg-amber-50 border-amber-200 text-amber-950'} border flex justify-between items-center">
-          <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(c.sayad.slice(-6))} (${faNum(c.dueDate)})</span>
+          <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(String(c.sayad || '').slice(-6))} (${faNum(c.dueDate || '—')})</span>
           <strong class="tabular-nums">${money(c.amount)}</strong>
         </div>`);
       });
@@ -3378,23 +3450,30 @@
       const ctx = document.getElementById('dashChart');
       if (ctx && typeof Chart !== 'undefined') {
         if (dashChartInst) dashChartInst.destroy();
+        const monthly = buildDashboardMonthlySeries(period.from, period.to);
+        const unitDivisor = state.currency === 'IRT' ? 10 : 1;
         dashChartInst = new Chart(ctx, {
-          type: 'bar',
+          type: 'line',
           data: {
-            labels: ['نقدینگی', 'فروش خالص', 'خرید و واردات', 'ارزش انبار', 'سود خالص'],
-            datasets: [{
-              label: state.currency === 'IRR' ? 'مبلغ (ریال)' : 'مبلغ (تومان)',
-              data: [liquidity, sales, purchases, invVal, Math.max(0, netProfit)].map(v => state.currency === 'IRT' ? Math.round(v / 10) : v),
-              backgroundColor: ['#0f172a', '#0f766e', '#0369a1', '#d97706', '#059669'],
-              borderRadius: 8
-            }]
+            labels: monthly.map(item => faNum(item.label)),
+            datasets: [
+              { label: 'درآمد خالص', data: monthly.map(item => Math.round(item.revenue / unitDivisor)), borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,.10)', tension: .25 },
+              { label: 'بهای تمام‌شده', data: monthly.map(item => Math.round(item.cogs / unitDivisor)), borderColor: '#0369a1', backgroundColor: 'rgba(3,105,161,.08)', tension: .25 },
+              { label: 'هزینه‌ها', data: monthly.map(item => Math.round(item.expenses / unitDivisor)), borderColor: '#d97706', backgroundColor: 'rgba(217,119,6,.08)', tension: .25 },
+              { label: 'سود / زیان خالص', data: monthly.map(item => Math.round(item.netProfit / unitDivisor)), borderColor: '#059669', backgroundColor: 'rgba(5,150,105,.08)', tension: .25 }
+            ]
           },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: true, position: 'bottom' }, tooltip: { callbacks: { label: context => context.dataset.label + ': ' + faNum(context.parsed.y) + (state.currency === 'IRT' ? ' تومان' : ' ریال') } } },
+            scales: { y: { beginAtZero: false, ticks: { callback: value => faNum(value) } } }
+          }
         });
       }
     }
 
-    async function runSystemDiagnostics() {
+        async function runSystemDiagnostics() {
       const box = document.getElementById('diagnostic-box');
       box.classList.remove('hidden');
       box.innerHTML = '<div class="text-amber-200 font-bold">در حال اجرای آزمون‌های سلامت...</div>';
