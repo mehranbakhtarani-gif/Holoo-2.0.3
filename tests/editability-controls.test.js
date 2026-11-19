@@ -32,4 +32,11 @@ assert.ok(html.includes('بهای تحصیل، تاریخ، حساب و سند �
 assert.ok(html.includes("['ast-date','ast-cost','ast-credit-account']"));
 assert.ok(html.includes('if (!hasDepreciation) { asset.lifeYears = lifeYears; asset.residualValue = residualValue; }'));
 
-console.log('PASS: consistent edit controls preserve posted accounting, inventory, payroll, and depreciation history');
+// Custom subsidiary accounts can rename labels without changing account codes or posted voucher lines.
+assert.ok(html.includes('function editCustomAccount(accountId)'));
+assert.ok(html.includes("sourceType: 'chart_account'"));
+assert.ok(html.includes('کد حساب و تمام اسناد و گردش‌های قبلی بدون تغییر حفظ شدند'));
+assert.ok(html.includes("a.level === 'subsidiary' && !a.system ?"));
+assert.ok(html.includes('شناسه تفصیلی و گردش‌های ثبت‌شده طرف حساب تغییر نکردند'));
+
+console.log('PASS: edit controls preserve posted accounting, inventory, payroll, and depreciation history');
