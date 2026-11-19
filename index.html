@@ -4527,7 +4527,7 @@
 
       const transferGroups = new Map();
       movements.forEach((movement, index) => {
-        const transferMatch = String(movement?.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+        const transferMatch = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
         if (!transferMatch || transferGroups.has(transferMatch[0])) return;
         transferGroups.set(transferMatch[0], { movement, index });
       });
