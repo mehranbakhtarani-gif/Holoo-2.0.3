@@ -2646,8 +2646,9 @@
       state.activeRole = LEGACY_ROLE_MAP[state.activeRole] || 'mehran';
     }
 
+    if (!Array.isArray(state.capitalPlans)) state.capitalPlans = [];
     const SYNC_ENTITY_COLLECTIONS = [
-      'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports', 'fxCommitments',
+      'capitalPlans', 'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports', 'fxCommitments',
       'bankAccounts', 'checks', 'guarantees', 'payableCommitments', 'treasuryTxs', 'bankReconcileItems',
       'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits'
     ];
