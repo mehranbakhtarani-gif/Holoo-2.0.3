@@ -18,6 +18,12 @@ function functionSource(name) {
 function load(name, context) {
   const sandbox = { ...context, fetchWithTimeout: context.fetchWithTimeout || ((url, options) => context.fetch(url, options)) };
   vm.createContext(sandbox);
+  if (name !== 'cloudAuthHeaders') {
+    const authHelper = html.match(/function cloudAuthHeaders[\s\S]*?return headers;\s*\}/)?.[0];
+    assert.ok(authHelper, 'missing cloud auth header helper');
+    vm.runInContext(authHelper, sandbox);
+    sandbox.cloudAuthHeaders = vm.runInContext('cloudAuthHeaders', sandbox);
+  }
   vm.runInContext(functionSource(name) + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
@@ -25,6 +31,21 @@ const passed = [];
 async function test(name, fn) { await fn(); passed.push(name); }
 
 (async () => {
+  await test('publishable Supabase keys are not sent as Bearer JWTs', () => {
+    const helper = html.match(/function cloudAuthHeaders[\s\S]*?return headers;\s*\}/)?.[0];
+    assert.ok(helper, 'missing cloud auth header helper');
+    const modernContext = vm.createContext({ cloudConfig: { key: 'sb_publishable_demo' } });
+    vm.runInContext(helper, modernContext);
+    const modernHeaders = vm.runInContext("cloudAuthHeaders({ 'Content-Type': 'application/json' })", modernContext);
+    assert.equal(modernHeaders.apikey, 'sb_publishable_demo');
+    assert.equal(Object.hasOwn(modernHeaders, 'Authorization'), false);
+    const legacyContext = vm.createContext({ cloudConfig: { key: 'eyJ.legacy.anon' } });
+    vm.runInContext(helper, legacyContext);
+    const legacyHeaders = vm.runInContext('cloudAuthHeaders()', legacyContext);
+    assert.equal(legacyHeaders.apikey, 'eyJ.legacy.anon');
+    assert.equal(legacyHeaders.Authorization, 'Bearer eyJ.legacy.anon');
+  });
+
   // Trial-balance math and party subledger reconciliation using synthetic journal lines.
   await test('account balances calculate debit and credit turnovers and ending balances', () => {
     const state = { vouchers: [
