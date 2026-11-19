@@ -41,9 +41,10 @@ const sandbox = {
     const debit = lines.reduce((sum, line) => sum + line.debit, 0);
     const credit = lines.reduce((sum, line) => sum + line.credit, 0);
     assert.equal(debit, credit, 'voucher must balance');
-    sandbox.state.vouchers.unshift({ desc, lines, date, sourceType: source.type, sourceId: source.id, sourceEvent: source.event });
+    const id = 'V-' + voucherCalls;
+    sandbox.state.vouchers.unshift({ id, desc, lines, date, sourceType: source.type, sourceId: source.id, sourceEvent: source.event });
     if (failOnVoucher && voucherCalls === failOnVoucher) throw new Error('simulated voucher failure');
-    return sandbox.state.vouchers[0].id;
+    return id;
   },
   addAudit(action, meta) { sandbox.state.auditLogs.unshift({ action, meta }); }
 };
@@ -99,6 +100,20 @@ assert.equal(prepared.state.products[1].stock, 7);
 assert.equal(prepared.state.products[1].batches.length, 2);
 assert.equal(prepared.state.vouchers.length, 2);
 assert.equal(prepared.state.auditLogs.length, 1);
+const stocktakeAudit = prepared.state.auditLogs[0];
+assert.equal(stocktakeAudit.meta.operationId, 'STK-OK');
+assert.equal(stocktakeAudit.meta.sourceId, 'STK-OK');
+assert.deepEqual(stocktakeAudit.meta.relatedVoucherIds, ['V-1', 'V-2']);
+assert.equal(stocktakeAudit.meta.previous.length, 2, 'audit record must preserve before-state for each changed product');
+assert.equal(stocktakeAudit.meta.previous[0].stock, 10);
+assert.equal(stocktakeAudit.meta.previous[0].batches[0].remainingQty, 10);
+assert.equal(stocktakeAudit.meta.details[0].countedStock, 8);
+assert.equal(stocktakeAudit.meta.details[0].difference, -2);
+assert.equal(stocktakeAudit.meta.details[0].voucherId, 'V-1');
+assert.equal(prepared.auditItems.length, 2);
+assert.deepEqual(prepared.relatedVoucherIds, ['V-1', 'V-2']);
+assert.equal(prepared.state.products[0].kardex.at(-1).operationId, 'STK-OK');
+assert.equal(prepared.state.products[0].kardex.at(-1).sourceType, 'stocktake');
 assert.equal(prepared.state.vouchers.find(v => v.sourceEvent === 'P1').lines[0].debit, 10, 'FIFO shortage must use actual consumed batch cost');
 assert.equal(original.products[0].stock, 10, 'successful preparation must not mutate original state before commit');
 assert.equal(original.products[1].stock, 5);
