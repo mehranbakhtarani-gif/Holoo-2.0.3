@@ -86,7 +86,10 @@
       const found = allWarehouses.find(item => item && String(item.id) === String(id));
       return found ? String(found.name || found.title || id) : String(id || 'نامشخص');
     };
-    const verified = pairUnique && quantityMatches && dateMatches;
+    const productMatches = !!source && !!destination &&
+      String(source.product.baseProductId || source.product.id) === String(destination.product.baseProductId || destination.product.id);
+    const warehouseDiffers = !!source && !!destination && String(source.product.warehouseId || '') !== String(destination.product.warehouseId || '');
+    const verified = pairUnique && quantityMatches && dateMatches && productMatches && warehouseDiffers;
     return {
       kind: 'transfer',
       transferId,
@@ -112,6 +115,8 @@
       } : null,
       quantityMatches,
       dateMatches,
+      productMatches,
+      warehouseDiffers,
       batchLinks,
       beforeSnapshotAvailable: false,
       actorAvailable: false,
