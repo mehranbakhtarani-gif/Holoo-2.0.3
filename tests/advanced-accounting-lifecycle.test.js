@@ -93,7 +93,7 @@ test('treasury rejects an invoice belonging to a different party without side ef
   const save = load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
     state, document: doc({ 'tr-dir':'receive','tr-party':'P1','tr-method':'cash','tr-amount':'100','tr-alloc-inv':'2001','tr-bank-acc':'B1','tr-desc':'test' }),
     getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); },
-    postVoucher(...a) { posted.push(a); }, saveState() { saves++; }, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
+    postVoucher(...a) { posted.push(a); }, saveState() { saves++; return true; }, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
   });
   save();
   assert.equal(posted.length, 0);
@@ -110,7 +110,7 @@ test('settled invoice cancellation is blocked and leaves stock and journal uncha
   };
   const posted = []; let saves = 0;
   const cancel = load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2002);
   assert.equal(state.invoices[0].status, 'active');
@@ -128,7 +128,7 @@ test('invoice cancellation is blocked by a linked treasury allocation when paidA
   };
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2005);
   assert.equal(state.invoices[0].status,'active');
@@ -145,7 +145,7 @@ test('invoice cancellation is blocked by an active cheque allocation when paidAm
   };
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2006);
   assert.equal(state.invoices[0].status,'active');
@@ -162,7 +162,7 @@ test('invoice cancellation is allowed after a cheque allocation was formally rel
   };
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2007);
   assert.equal(state.invoices[0].status,'cancelled');
@@ -180,7 +180,7 @@ test('partial sales return restores only returned quantity and posts a linked jo
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2003','pret-qty-0':'3'}),
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,5);
@@ -202,7 +202,7 @@ test('partial return rejects quantity above remaining invoice quantity', () => {
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2004','pret-qty-0':'2'}),
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,4);
@@ -232,7 +232,7 @@ test('partial FIFO sales return reverses exact allocated COGS and restores inven
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'2050','pret-qty-0':'4'}),
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   const lines=posted[0][1];
@@ -264,7 +264,7 @@ test('sales invoice cancellation reverses only the unreturned FIFO COGS', () => 
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, getInvoiceReturnedAmount(inv){return (inv.returnRefs||[]).reduce((sum,ref)=>sum+Number(ref.amount||0),0);},
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2051);
   const lines=posted[0][1];
@@ -288,7 +288,7 @@ test('check issue rejects duplicate SAYAD and does not create a treasury transac
   const posted=[]; let saves=0;
   const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'500','tr-alloc-inv':'0','tr-desc':'duplicate','tr-sayad':'111122223333444455556666','tr-chk-due':'1405/09/01','tr-chk-bank':'بانک تست','tr-bank-acc':'B1','tr-check-account':'B1'};
   const save=load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
-    state, document:doc(values), getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
+    state, document:doc(values), getInvoiceOutstanding(inv) { return Math.max(0, Number(inv.grandTotal || 0) - (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0) - Number(inv.paidAmount || 0)); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}, faNum:String
   });
   save();
   assert.equal(state.checks.length,1);
@@ -304,7 +304,7 @@ test('failed cheque issue journal does not leave a check or treasury transaction
   const save=load(section('function saveTreasuryEntry()', 'function renderTreasuryModule()'), 'saveTreasuryEntry', {
     state, document:doc(values), getTodayJalaliDate(){return '1405/09/02';},
     getInvoiceOutstanding(){return 0;}, postVoucher(...args){assert.equal(args[3].deferSave,true);throw new Error('simulated journal failure');},
-    saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(msg,type){messages.push({msg,type});}, faNum:String
+    saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(msg,type){messages.push({msg,type});}, faNum:String
   });
   save();
   assert.equal(state.checks.length,0);
@@ -323,7 +323,7 @@ test('failed bounced-check journal leaves check status and invoice allocation un
   let saves=0; const messages=[];
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
     state, postVoucher(...args){assert.equal(args[3].deferSave,true);throw new Error('simulated journal failure');},
-    showToast(msg,type){messages.push({msg,type});}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    showToast(msg,type){messages.push({msg,type});}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}
   });
   update('CHK-FAIL','bounced');
   assert.equal(state.checks[0].status,'in_progress');
@@ -341,7 +341,7 @@ test('bounced received check posts once and repeated status change has no side e
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}
   });
   update('CHK-1','bounced');
   update('CHK-1','bounced');
@@ -361,7 +361,7 @@ test('bounced cheque releases its original invoice allocations exactly once', ()
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}
   });
   update('CHK-ALLOC','bounced');
   update('CHK-ALLOC','bounced');
@@ -381,7 +381,7 @@ test('voided supplier cheque releases purchase invoice allocation', () => {
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}
   });
   update('CHK-VOID','voided');
   assert.equal(state.invoices[0].paidAmount,0);
@@ -399,7 +399,7 @@ test('cheque allocation reversal is rejected if invoice balance no longer contai
   };
   const posted=[]; let saves=0;
   const update=load(section('function updateCheckStatus(id, st)', 'function computeCheckRas()'), 'updateCheckStatus', {
-    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;}, renderAll(){}
+    state, postVoucher(...a){posted.push(a);return 1;}, showToast(){}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}
   });
   update('CHK-STALE','bounced');
   assert.equal(state.invoices[0].paidAmount,100);
@@ -427,7 +427,7 @@ test('partial return validates every row before changing any stock or invoice qu
   const posted=[]; let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3101','pret-qty-0':'2','pret-qty-1':'3'}),
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,0);
@@ -447,7 +447,7 @@ test('partial return stores return value so the invoice outstanding is reduced',
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3102','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   submit();
   const outstanding=load(section('function getInvoiceReturnedAmount(inv)', 'function agingBucket(daysPastDue)'), 'getInvoiceOutstanding', {});
@@ -466,7 +466,7 @@ test('cancelling an invoice after partial returns reverses only its remaining va
   };
   const posted=[]; let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
-    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
+    state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(3103);
   assert.equal(state.invoices[0].status,'cancelled');
@@ -488,7 +488,7 @@ test('return on a fully settled sales invoice creates customer credit instead of
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3201','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
   submit();
   assert.equal(state.treasuryTxs.length,1);
@@ -512,7 +512,7 @@ test('return below the unpaid invoice balance does not create excess party credi
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3202','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){return true;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
   submit();
   assert.equal(state.treasuryTxs.length,0);
@@ -546,7 +546,7 @@ test('customer credit applies to the same party sales invoice and reduces both b
   const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
     state, document:doc({'credit-invoice-CREDIT-1':'3301','credit-amount-CREDIT-1':'80'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-Number(inv.paidAmount||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0));},
-    createStableId(){return 'APPLY-1';}, postVoucher(...a){posted.push(a);return 44;}, addAudit(){}, saveState(){saves++;}, renderAll(){}, showToast(){}
+    createStableId(){return 'APPLY-1';}, postVoucher(...a){posted.push(a);return 44;}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}
   });
   apply('CREDIT-1');
   assert.equal(state.invoices[0].paidAmount,180);
@@ -568,7 +568,7 @@ test('supplier credit cannot be applied to another party or to a sales invoice',
     const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
       state, document:doc({'credit-invoice-CREDIT-2':String(invoice.id),'credit-amount-CREDIT-2':'50'}),
       getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
-      createStableId(){return 'APPLY-2';}, postVoucher(...a){posted.push(a);return 1;}, addAudit(){}, saveState(){saves++;}, renderAll(){}, showToast(){}
+      createStableId(){return 'APPLY-2';}, postVoucher(...a){posted.push(a);return 1;}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}
     });
     apply('CREDIT-2');
     assert.equal(posted.length,0);
@@ -584,7 +584,7 @@ test('credit application rejects an amount above either the credit or invoice ba
   const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
     state, document:doc({'credit-invoice-CREDIT-3':'3304','credit-amount-CREDIT-3':'50'}),
     getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
-    createStableId(){return 'APPLY-3';}, postVoucher(...a){posted.push(a);return 1;}, addAudit(){}, saveState(){saves++;}, renderAll(){}, showToast(){}
+    createStableId(){return 'APPLY-3';}, postVoucher(...a){posted.push(a);return 1;}, addAudit(){}, saveState(){saves++;return true;}, renderAll(){}, showToast(){}
   });
   apply('CREDIT-3');
   assert.equal(posted.length,0);
@@ -602,7 +602,7 @@ test('customer credit refund decreases the selected bank balance and customer cr
   const posted=[]; let saves=0;
   const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'CREDIT-R1','credit-refund-amount':'40','credit-refund-bank':'B1'}),
-    createStableId(){return 'REFUND-1';}, postVoucher(...a){posted.push(a);return 77;}, addAudit(){}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    createStableId(){return 'REFUND-1';}, postVoucher(...a){posted.push(a);return 77;}, addAudit(){}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   refund();
   assert.equal(state.bankAccounts[0].balance,460);
@@ -622,7 +622,7 @@ test('supplier credit refund records an incoming bank receipt and increases bank
   const posted=[];
   const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'CREDIT-R2','credit-refund-amount':'30','credit-refund-bank':'B2'}),
-    createStableId(){return 'REFUND-2';}, postVoucher(...a){posted.push(a);return 78;}, addAudit(){}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}
+    createStableId(){return 'REFUND-2';}, postVoucher(...a){posted.push(a);return 78;}, addAudit(){}, saveState(){return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   refund();
   assert.equal(state.bankAccounts[0].balance,130);
@@ -637,7 +637,7 @@ test('party credit refund rejects an amount above the remaining credit', () => {
   const posted=[]; let saves=0;
   const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'CREDIT-R3','credit-refund-amount':'30','credit-refund-bank':'B1'}),
-    createStableId(){return 'REFUND-3';}, postVoucher(...a){posted.push(a);return 79;}, addAudit(){}, saveState(){saves++;}, closeModal(){}, renderAll(){}, showToast(){}
+    createStableId(){return 'REFUND-3';}, postVoucher(...a){posted.push(a);return 79;}, addAudit(){}, saveState(){saves++;return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   refund();
   assert.equal(posted.length,0);
@@ -658,7 +658,7 @@ test('fully paid supplier purchase return books excess as supplier prepayment in
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state, getTodayJalaliDate(){return '1405/09/02';}, document:doc({'partial-ret-inv-id':'3401','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
-    postVoucher(...a){posted.push(a);return 1;}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
+    postVoucher(...a){posted.push(a);return 1;}, saveState(){return true;}, closeModal(){}, renderAll(){}, showToast(){}, getTodayJalaliDate(){return '1405/08/27';}
   });
   submit();
   const lines=posted[0][1];
@@ -678,7 +678,7 @@ test('supplier credit application clears supplier payable against prepayment acc
   const apply=load(section('function applyPartyCredit(creditId)', 'function renderTreasuryModule()'), 'applyPartyCredit', {
     state, document:doc({'credit-invoice-SUP-CREDIT':'3402','credit-amount-SUP-CREDIT':'60'}),
     getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
-    createStableId(){return 'SUP-APPLY';}, postVoucher(...a){posted.push(a);return 45;}, addAudit(){}, saveState(){}, renderAll(){}, showToast(){}
+    createStableId(){return 'SUP-APPLY';}, postVoucher(...a){posted.push(a);return 45;}, addAudit(){}, saveState(){return true;}, renderAll(){}, showToast(){}
   });
   apply('SUP-CREDIT');
   assert.equal(posted[0][1].find(line=>line.code==='2101')?.debit,60);
@@ -694,7 +694,7 @@ test('supplier credit cash refund clears prepayment account 1107, not receivable
   const posted=[];
   const refund=load(section('function openPartyCreditRefund(creditId)', 'function renderTreasuryModule()'), 'submitPartyCreditRefund', {
     state, document:doc({'credit-refund-id':'SUP-REFUND','credit-refund-amount':'30','credit-refund-bank':'BANK-SUP'}),
-    createStableId(){return 'SUP-REFUND-1';}, postVoucher(...a){posted.push(a);return 46;}, addAudit(){}, saveState(){}, closeModal(){}, renderAll(){}, showToast(){}
+    createStableId(){return 'SUP-REFUND-1';}, postVoucher(...a){posted.push(a);return 46;}, addAudit(){}, saveState(){return true;}, closeModal(){}, renderAll(){}, showToast(){}
   });
   refund();
   assert.equal(posted[0][1].find(line=>line.code==='1107')?.credit,30);
@@ -711,7 +711,7 @@ test('failed return journal leaves stock, invoice quantities and return history 
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
     state,document:doc({'partial-ret-inv-id':'3403','pret-qty-0':'2'}),
     getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-Number(inv.paidAmount||0);},
-    postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;},closeModal(){},renderAll(){},showToast(msg,type){messages.push({msg,type});}
+    postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(msg,type){messages.push({msg,type});}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,0);
@@ -749,7 +749,7 @@ test('sequential partial FIFO sales returns restore the exact remaining original
     getTodayJalaliDate(){return '1405/09/02';},
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0));},
     postVoucher(...args){posted.push(args);return posted.length;},
-    saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+    saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){}
   });
 
   submit();
@@ -795,7 +795,7 @@ test('FIFO supplier purchase return consumes the original batches and posts bala
     document:doc({'partial-ret-inv-id':'3502','pret-qty-0':'3'}),
     getInvoiceOutstanding(inv){return Math.max(0,Number(inv.grandTotal||0)-Number(inv.paidAmount||0));},
     postVoucher(...args){posted.push(args);return 1;},
-    saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+    saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){}
   });
   submit();
   assert.equal(state.invoices[0].items[0].returnedKg,3);
@@ -824,7 +824,7 @@ test('partial sales return allocates discounted net revenue and output VAT separ
     state,document:doc({'partial-ret-inv-id':'3601','pret-qty-0':'2'}),
     getTodayJalaliDate(){return '1405/09/02';},
     getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0);},
-    postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+    postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){}
   });
   submit();
   const lines=posted[0][1];
@@ -851,7 +851,7 @@ test('partial purchase return allocates discounted inventory value and input VAT
     state,document:doc({'partial-ret-inv-id':'3602','pret-qty-0':'2'}),
     getTodayJalaliDate(){return '1405/09/02';},
     getInvoiceOutstanding(inv){return Number(inv.grandTotal||0)-(inv.returnRefs||[]).reduce((n,r)=>n+Number(r.amount||0),0)-Number(inv.paidAmount||0);},
-    postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+    postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){}
   });
   submit();
   const lines=posted[0][1];
@@ -882,7 +882,7 @@ test('partial FIFO sales cancellation reverses remaining net sales and VAT atomi
   };
   const posted=[];let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
-    state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
+    state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;return true;},renderAll(){},showToast(){},faNum:String
   });
   cancel(3701);
   const lines=posted[0][1];
@@ -914,7 +914,7 @@ test('failed cancellation journal leaves invoice and FIFO stock unchanged', () =
   };
   let saves=0;const messages=[];
   const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
-    state,postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;},renderAll(){},showToast(msg,type){messages.push({msg,type});},faNum:String
+    state,postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;return true;},renderAll(){},showToast(msg,type){messages.push({msg,type});},faNum:String
   });
   cancel(3702);
   assert.equal(state.invoices[0].status,'active');
@@ -935,7 +935,7 @@ test('purchase cancellation reverses inventory and input VAT in separate account
   };
   const posted=[];let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
-    state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
+    state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;return true;},renderAll(){},showToast(){},faNum:String
   });
   cancel(3703);
   const lines=posted[0][1];
@@ -963,7 +963,7 @@ test('new cheque stores the selected bank and clearing updates only that bank', 
   const posted=[];let saves=0;
   const save=load(section('function saveTreasuryEntry()','function renderTreasuryModule()'),'saveTreasuryEntry',{
     state,document:doc(values),getTodayJalaliDate(){return '1405/09/02';},getInvoiceOutstanding(){return 0;},
-    postVoucher(...args){posted.push(args);return 7001;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){},faNum:String
+    postVoucher(...args){posted.push(args);return 7001;},saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){},faNum:String
   });
   save();
   assert.equal(state.checks.length,1);
@@ -971,7 +971,7 @@ test('new cheque stores the selected bank and clearing updates only that bank', 
   assert.equal(posted.length,1);
   assert.equal(saves,1);
   const update=load(section('function updateCheckStatus(id, st)','function computeCheckRas()'),'updateCheckStatus',{
-    state,postVoucher(...args){posted.push(args);return 7002;},showToast(){},addAudit(){},saveState(){saves++;},renderAll(){}
+    state,postVoucher(...args){posted.push(args);return 7002;},showToast(){},addAudit(){},saveState(){saves++;return true;},renderAll(){}
   });
   update(state.checks[0].id,'cleared');
   assert.equal(state.bankAccounts[0].balance,100);
@@ -989,7 +989,7 @@ test('legacy cheque with multiple banks and no bank reference cannot clear again
   const posted=[];let saves=0;const messages=[];
   const update=load(section('function updateCheckStatus(id, st)','function computeCheckRas()'),'updateCheckStatus',{
     state,postVoucher(...args){posted.push(args);return 1;},showToast(msg,type){messages.push({msg,type});},
-    addAudit(){},saveState(){saves++;},renderAll(){}
+    addAudit(){},saveState(){saves++;return true;},renderAll(){}
   });
   update('LEGACY-MULTI','cleared');
   assert.equal(state.checks[0].status,'in_progress');
@@ -1011,7 +1011,7 @@ test('sales invoice cancellation reverses commission expense and payable on the 
   };
   const posted=[];
   const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
-    state,postVoucher(...args){posted.push(args);return 88;},saveState(){},renderAll(){},showToast(){},faNum:String
+    state,postVoucher(...args){posted.push(args);return 88;},saveState(){return true;},renderAll(){},showToast(){},faNum:String
   });
   assert.equal(cancel(3801),true);
   const lines=posted[0][1];
@@ -1041,7 +1041,7 @@ test('manual voucher correction posts a reversal and balanced replacement withou
     document:{getElementById(id){if(id==='modal-manual-voucher-correction')return modal;if(id==='mvc-desc')return {value:values[id]};if(id==='mvc-date')return {value:values[id]};return {value:''};},querySelectorAll(){return rows;}},
     jalaliDateOrdinal(){return 1;},getTodayJalaliDate(){return '1405/09/03';},createStableId(){return 'VCORR-77'},
     postVoucher(...args){posted.push(args);return posted.length===1?88:89;},
-    addAudit(){audits++;},saveState(){saves++;},closeModal(){},renderAll(){},setAccTab(){},showToast(){}
+    addAudit(){audits++;},saveState(){saves++;return true;},closeModal(){},renderAll(){},setAccTab(){},showToast(){}
   });
   correct();
   assert.equal(posted.length,2);
@@ -1088,7 +1088,7 @@ test('treasury correction reverses the original voucher and posts a replacement 
     state,document:{getElementById(key){if(key==='modal-treasury-correction')return modal;return {value:values[key] ?? '',classList:{add(){},remove(){}},textContent:''};}},
     createStableId(){id++;return 'CORR-'+id;},getTodayJalaliDate(){return '1405/09/03';},
     postVoucher(...args){posted.push(args);return posted.length===1?80:81;},
-    addAudit(){audits++;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+    addAudit(){audits++;},saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){}
   });
   correct();
   assert.equal(posted.length,2);
@@ -1136,7 +1136,7 @@ test('pending cheque correction reverses original issue voucher and posts a repl
     state,document:{getElementById(key){if(key==='modal-check-correction')return modal;return {value:values[key] ?? '',classList:{add(){},remove(){}},textContent:''};}},
     jalaliDateOrdinal(){return 1;},getTodayJalaliDate(){return '1405/09/03';},createStableId(){id++;return 'CHECK-CORR-'+id;},
     postVoucher(...args){posted.push(args);return posted.length===1?91:92;},
-    addAudit(){audits++;},saveState(){saves++;},closeModal(){},renderAll(){},showToast(){}
+    addAudit(){audits++;},saveState(){saves++;return true;},closeModal(){},renderAll(){},showToast(){}
   });
   correct();
   assert.equal(posted.length,2);
