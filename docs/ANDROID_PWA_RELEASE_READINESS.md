@@ -8,8 +8,8 @@ This repository currently ships a Progressive Web App (PWA) through GitHub Pages
 
 - Web app manifest declares Persian RTL metadata, standalone display, portrait orientation, and 192/512 SVG icons.
 - The page registers `sw.js` on HTTPS and requests persistent browser storage only after the user taps the relevant control.
-- The service worker uses a versioned shell cache, claims clients after activation, and does not intercept Supabase REST/auth/storage traffic.
-- Navigation is network-first with the cached app shell as offline fallback. Same-origin static GET assets are cached on first successful fetch.
+- The service worker uses a versioned shell cache, pre-caches every first-party JavaScript module referenced by the page, claims clients after activation, and does not intercept Supabase REST/auth/storage traffic.
+- Navigation is network-first with the cached app shell as offline fallback. First-party application scripts are available from the install-time shell cache; other same-origin static GET assets are cached on first successful fetch.
 - CDN assets are cached on first successful fetch for the explicitly allowlisted hosts.
 - Cloud sync is not an offline database: receiving/sending cloud data requires connectivity. A local app shell being available offline does not mean another device's latest accounting data is available offline.
 
@@ -42,7 +42,7 @@ These cannot be proven by static CI alone and must be checked on the actual Andr
 - No signed APK/AAB, Android Studio project, Capacitor wrapper, Play Store package, or signing keystore is present in this repository.
 - The three-device acceptance test is pending because the two Ehsan devices are not currently available.
 - Physical Android download, printer, scanner, and PDF flows have not been tested by CI.
-- The application currently uses external CDN resources (Tailwind, Chart.js, and Vazirmatn fonts). The service worker can cache these after a successful online fetch, but a fresh installation on a device that has never loaded online is not guaranteed to run fully offline.
+- The application currently uses external CDN resources (Tailwind, Chart.js, and Vazirmatn fonts). The service worker can cache these after a successful online fetch, but a fresh installation on a device that has never loaded online is not guaranteed to run fully offline. Install and first-load testing must therefore be performed while connected.
 - The SVG manifest icons are present, but install behavior must be confirmed in Chrome on the target Android version.
 - Live Supabase migration history was checked on 2026-11-18 and confirms that `payroll_fixed_asset_sync_collections`, `guarantees_payable_commitments`, and `same_device_sequential_merge` are applied. The `holoo_apply_state_operation` RPC is present as `SECURITY INVOKER`. This confirms schema/RPC deployment only; the three-physical-device acceptance test below is still required.
 
