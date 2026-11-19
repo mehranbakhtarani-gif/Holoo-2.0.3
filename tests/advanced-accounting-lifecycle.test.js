@@ -99,7 +99,7 @@ test('settled invoice cancellation is blocked and leaves stock and journal uncha
     products: [{ id:'X1', stock:5 }]
   };
   const posted = []; let saves = 0;
-  const cancel = load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+  const cancel = load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2002);
@@ -117,7 +117,7 @@ test('invoice cancellation is blocked by a linked treasury allocation when paidA
     treasuryTxs: [{ id:'TR-LINKED', allocations:[{invoiceId:2005,amount:100}] }]
   };
   const posted=[]; let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+  const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2005);
@@ -134,7 +134,7 @@ test('invoice cancellation is blocked by an active cheque allocation when paidAm
     checks: [{ id:'CHK-LINKED', status:'in_progress', allocations:[{invoiceId:2006,amount:100}] }]
   };
   const posted=[]; let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+  const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2006);
@@ -151,7 +151,7 @@ test('invoice cancellation is allowed after a cheque allocation was formally rel
     checks: [{ id:'CHK-RELEASED', status:'bounced', allocationsReleasedAt:'2026-11-19T00:00:00.000Z', allocations:[{invoiceId:2007,amount:250}] }]
   };
   const posted=[]; let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+  const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, postVoucher(...args){posted.push(args);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(2007);
@@ -252,7 +252,7 @@ test('sales invoice cancellation reverses only the unreturned FIFO COGS', () => 
     ],kardex:[]}]
   };
   const posted=[]; let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+  const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, getInvoiceReturnedAmount(inv){return (inv.returnRefs||[]).reduce((sum,ref)=>sum+Number(ref.amount||0),0);},
     postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
@@ -455,7 +455,7 @@ test('cancelling an invoice after partial returns reverses only its remaining va
     products:[{id:'X1',stock:2,kardex:[]}]
   };
   const posted=[]; let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)', 'function printOfficialInvoice('), 'cancelInvoice', {
+  const cancel=load(section('function cancelInvoice(invId, options = {})', 'function printOfficialInvoice('), 'cancelInvoice', {
     state, getInvoiceReturnedAmount(inv) { return (inv.returnRefs || []).reduce((sum, ref) => sum + Number(ref.amount || 0), 0); }, postVoucher(...a){posted.push(a);return 1;}, saveState(){saves++;}, renderAll(){}, showToast(){}, faNum:String
   });
   cancel(3103);
@@ -871,7 +871,7 @@ test('partial FIFO sales cancellation reverses remaining net sales and VAT atomi
     products:[{id:'CANCEL-SALE',stock:2,buyPrice:100,batches:[{id:'CANCEL-B1',quantity:10,remainingQty:2,unitCost:100}],kardex:[]}]
   };
   const posted=[];let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)','function printOfficialInvoice('),'cancelInvoice',{
+  const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
     state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
   });
   cancel(3701);
@@ -903,7 +903,7 @@ test('failed cancellation journal leaves invoice and FIFO stock unchanged', () =
     products:[{id:'CANCEL-FAIL',stock:0,buyPrice:10,batches:[{id:'FAIL-B1',quantity:5,remainingQty:0,unitCost:10}],kardex:[]}]
   };
   let saves=0;const messages=[];
-  const cancel=load(section('function cancelInvoice(invId)','function printOfficialInvoice('),'cancelInvoice',{
+  const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
     state,postVoucher(){throw new Error('simulated journal failure');},saveState(){saves++;},renderAll(){},showToast(msg,type){messages.push({msg,type});},faNum:String
   });
   cancel(3702);
@@ -924,7 +924,7 @@ test('purchase cancellation reverses inventory and input VAT in separate account
     products:[{id:'CANCEL-PUR',stock:10,buyPrice:10,batches:[{id:'CANCEL-PUR-B1',quantity:10,remainingQty:10,unitCost:10}],kardex:[]}]
   };
   const posted=[];let saves=0;
-  const cancel=load(section('function cancelInvoice(invId)','function printOfficialInvoice('),'cancelInvoice',{
+  const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
     state,postVoucher(...args){posted.push(args);return 1;},saveState(){saves++;},renderAll(){},showToast(){},faNum:String
   });
   cancel(3703);
