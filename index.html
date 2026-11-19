@@ -7909,7 +7909,8 @@
           '<div class="flex justify-between gap-2"><span>مالیات قابل‌بازیافت (خارج از بهای موجودی)</span><b>' + money(r.recoverableTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>فروش پیش‌بینی‌شده</span><b>' + money(r.revenue) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
-          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش (هزینه غیرموجودی)</span><b>' + money(r.finance + r.selling) + '</b></div>' +\n          '<div class="flex justify-between gap-2"><span>کارمزد حواله منظورشده در بهای واردات</span><b>' + money(r.bankFees) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش (هزینه غیرموجودی)</span><b>' + money(r.finance + r.selling) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>کارمزد حواله منظورشده در بهای واردات</span><b>' + money(r.bankFees) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی موجودی طبق NRV</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی پس از آزمون NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
           '<div class="flex justify-between gap-2 ' + profitClass + ' font-black text-xs border-t pt-1"><span>سود پیش‌بینی‌شده قبل از مالیات</span><b>' + money(r.profitBeforeTax) + '</b></div>' +
