@@ -532,22 +532,17 @@
 
         <!-- ==================== MODULE 1: DASHBOARD ==================== -->
         <section id="mod-dashboard" class="mod-section space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="min-w-0">
-              <h2 class="text-base lg:text-lg font-black text-slate-900">داشبورد مدیریتی</h2>
-              <p class="text-xs text-slate-500">خلاصه مالی، عملیات و هشدارهای قابل پیگیری</p>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-base lg:text-lg font-black text-slate-900">داشبورد مدیریتی یکپارچه و وضعیت ابری</h2>
+              <p class="text-xs text-slate-500">نمای زنده وضعیت نقدینگی، فروش، خرید، انبار نساجی، محموله‌های وارداتی، چک‌ها و همگام‌سازی Supabase</p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <button type="button" onclick="navigateTo('invoices'); openInvoiceForm('sale')" class="touch-btn min-h-[44px] bg-holoo-700 hover:bg-holoo-800 text-white font-bold px-4 rounded-xl">+ ثبت فروش</button>
-              <details class="relative">
-                <summary class="touch-btn min-h-[44px] cursor-pointer list-none rounded-xl border border-slate-200 bg-white px-3 flex items-center text-xs font-bold text-slate-700">ابزارهای بیشتر <span class="mr-2" aria-hidden="true">⌄</span></summary>
-                <div class="absolute left-0 top-full z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl space-y-1">
-                  <button type="button" onclick="navigateTo('imports')" class="touch-btn min-h-[42px] w-full rounded-lg px-3 text-right text-xs font-bold hover:bg-slate-50">ثبت و مشاهده واردات</button>
-                  <button type="button" onclick="runSystemDiagnostics()" class="touch-btn min-h-[42px] w-full rounded-lg px-3 text-right text-xs font-bold hover:bg-slate-50">تست سلامت سیستم</button>
-                  <button type="button" onclick="installAndroidApp()" class="android-install-btn touch-btn min-h-[42px] w-full rounded-lg px-3 text-right text-xs font-bold hover:bg-slate-50">نصب برنامه روی اندروید</button>
-                  <button type="button" onclick="requestPersistentStorage()" class="touch-btn min-h-[42px] w-full rounded-lg px-3 text-right text-xs font-bold hover:bg-slate-50">درخواست حافظه پایدار</button>
-                </div>
-              </details>
+            <div class="flex flex-wrap gap-1.5 text-xs">
+              <button onclick="navigateTo('invoices'); openInvoiceForm('sale')" class="touch-btn bg-holoo-700 hover:bg-holoo-800 text-white font-bold px-3 rounded-xl">+ فاکتور فروش (F2)</button>
+              <button onclick="navigateTo('imports')" class="touch-btn bg-sky-700 hover:bg-sky-800 text-white font-bold px-3 rounded-xl">+ محموله وارداتی</button>
+              <button onclick="runSystemDiagnostics()" class="touch-btn bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 rounded-xl">🩺 تست سلامت سیستم</button>
+              <button onclick="installAndroidApp()" class="android-install-btn touch-btn bg-amber-400 text-slate-950 font-black px-3 rounded-xl">📲 نصب روی اندروید</button>
+              <button onclick="requestPersistentStorage()" class="touch-btn bg-slate-800 text-white font-bold px-3 rounded-xl">💾 حافظه پایدار</button>
             </div>
           </div>
 
@@ -577,42 +572,43 @@
             </div>
             <button type="button" onclick="dashFromDate=String(state.fiscalYear || '1405')+'/01/01'; dashToDate=getTodayJalaliDate(); renderDashboard()" class="touch-btn min-h-[44px] bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg px-3 text-xs font-bold">سال مالی جاری تا امروز</button>
           </section>
-          <div id="dash-kpis" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3" aria-label="شاخص‌های مالی داشبورد" aria-live="polite" aria-atomic="true"></div>
+          <div id="dash-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3" aria-label="شاخص‌های مالی داشبورد" aria-live="polite" aria-atomic="true"></div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-            <section class="order-1 lg:order-2 bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs space-y-2.5 min-w-0" aria-label="هشدارهای داشبورد">
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-xs font-extrabold text-slate-800">هشدارهای مهم</h3>
-                <span id="dash-alert-count" class="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">۰ مورد</span>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-2">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-extrabold text-slate-800">📈 روند ماهانه درآمد، بهای تمام‌شده، هزینه و سود (زیان)</h3>
+                <span class="text-[10px] text-slate-400">به‌روزرسانی خودکار</span>
               </div>
-              <div id="dash-alert-severity" class="grid grid-cols-3 gap-1 text-[10px] font-bold" aria-live="polite"><span id="dash-alert-critical" class="rounded-lg bg-rose-50 text-rose-800 px-2 py-1 text-center">۰ بحرانی</span><span id="dash-alert-warning" class="rounded-lg bg-amber-50 text-amber-800 px-2 py-1 text-center">۰ هشدار</span><span id="dash-alert-info" class="rounded-lg bg-slate-100 text-slate-700 px-2 py-1 text-center">۰ عادی</span></div><div id="dash-alerts" class="space-y-2 text-xs max-h-[28rem] overflow-y-auto" role="status" aria-live="polite" aria-relevant="additions text"></div>
-              <button id="dash-alert-toggle" type="button" onclick="toggleDashboardAlerts()" class="hidden min-h-[40px] w-full rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50">نمایش همه هشدارها</button>
-            </section>
-            <section class="order-2 lg:order-1 lg:col-span-2 bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs space-y-2 min-w-0">
-              <h3 class="text-xs font-extrabold text-slate-800">روند ماهانه درآمد، بهای تمام‌شده، هزینه و سود (زیان)</h3>
-              <div class="h-52 sm:h-60 w-full min-w-0"><canvas id="dashChart" role="img" aria-label="نمودار روند ماهانه درآمد خالص، بهای تمام‌شده، هزینه‌ها و سود یا زیان خالص در بازه انتخابی"></canvas></div><div id="dash-trend-insights" class="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-live="polite"></div>
-            </section>
+              <div class="h-64 sm:h-72 w-full"><canvas id="dashChart" role="img" aria-label="نمودار روند ماهانه درآمد خالص، بهای تمام‌شده، هزینه‌ها و سود یا زیان خالص در بازه انتخابی"></canvas></div>
+            </div>
+
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-2.5">
+              <h3 class="text-xs font-extrabold text-slate-800">🚨 هشدارهای مهم مالی، چک و انبار</h3>
+              <div id="dash-alerts" class="space-y-2 text-xs max-h-56 overflow-y-auto" role="status" aria-live="polite" aria-relevant="additions text"></div>
+            </div>
           </div>
 
-          <section class="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs space-y-3" aria-label="دسترسی سریع به بخش‌ها">
-            <div class="flex items-center justify-between gap-2"><h3 class="text-xs font-extrabold text-slate-800">دسترسی سریع</h3><span class="text-[10px] font-bold text-slate-500">۱۴ میان‌بر از ۱۹ ماژول</span></div>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 text-xs">
-              <button type="button" onclick="navigateTo('invoices'); openInvoiceForm('sale')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-holoo-50 border border-holoo-200 font-bold text-holoo-950 hover:bg-holoo-100 text-right">ثبت فاکتور فروش</button>
-              <button type="button" onclick="navigateTo('products')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-teal-50 border border-teal-200 font-bold text-teal-950 hover:bg-teal-100 text-right">کالا و نخ نساجی</button>
-              <button type="button" onclick="navigateTo('inventory')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 font-bold text-emerald-950 hover:bg-emerald-100 text-right">موجودی و کاردکس</button>
-              <button type="button" onclick="navigateTo('treasury')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-rose-50 border border-rose-200 font-bold text-rose-950 hover:bg-rose-100 text-right">خزانه و چک‌ها</button>
-              <button type="button" onclick="navigateTo('accounting')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-900 hover:bg-slate-100 text-right">حسابداری و تراز</button>
-              <button type="button" onclick="navigateTo('imports')" class="touch-btn min-h-[52px] rounded-xl bg-sky-50 border border-sky-200 font-bold text-sky-950 hover:bg-sky-100 text-right">واردات و کانتینر</button>
-              <button type="button" onclick="navigateTo('reconcile')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-cyan-50 border border-cyan-200 font-bold text-cyan-950 hover:bg-cyan-100 text-right">مغایرت‌گیری بانکی</button>
-              <button type="button" onclick="navigateTo('aging')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950 hover:bg-amber-100 text-right">مطالبات و بدهی‌ها</button>
-              <button type="button" onclick="navigateTo('cashflow')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-purple-50 border border-purple-200 font-bold text-purple-950 hover:bg-purple-100 text-right">پیش‌بینی نقدینگی</button>
-              <button type="button" onclick="navigateTo('orders')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-slate-100 border border-slate-300 font-bold text-slate-900 hover:bg-slate-200 text-right">سفارش و پیش‌فاکتور</button>
-              <button type="button" onclick="navigateTo('fx')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950 hover:bg-amber-100 text-right">تعهدات ارزی</button>
-              <button type="button" onclick="navigateTo('planner')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 font-bold text-indigo-950 hover:bg-indigo-100 text-right">برنامه‌ریزی سرمایه</button>
-              <button type="button" onclick="navigateTo('hr')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-orange-50 border border-orange-200 font-bold text-orange-950 hover:bg-orange-100 text-right">حقوق و دستمزد</button>
-              <button type="button" onclick="navigateTo('approvals')" class="touch-btn min-h-[52px] p-2.5 rounded-xl bg-zinc-100 border border-zinc-300 font-bold text-zinc-900 hover:bg-zinc-200 text-right">تأییدیه‌ها و سوابق</button>
+          <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-2.5">
+            <h3 class="text-xs font-extrabold text-slate-800">⚡ دسترسی سریع به ۱۹ ماژول تخصصی سیستم</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+              <button onclick="navigateTo('products')" class="p-2.5 rounded-xl bg-teal-50 border border-teal-200 font-bold text-teal-950 hover:bg-teal-100">🧵 کالا و نخ نساجی</button>
+              <button onclick="navigateTo('inventory')" class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 font-bold text-emerald-950 hover:bg-emerald-100">📦 چندانباری و کاردکس</button>
+              <button onclick="navigateTo('imports')" class="p-2.5 rounded-xl bg-sky-50 border border-sky-200 font-bold text-sky-950 hover:bg-sky-100">🚢 واردات و کانتینر</button>
+              <button onclick="navigateTo('planner')" class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 font-bold text-indigo-950 hover:bg-indigo-100">🧮 برنامه‌ریزی سرمایه</button>
+              <button onclick="navigateTo('fx')" class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950 hover:bg-amber-100">💱 تعهدات ارزی</button>
+              <button onclick="navigateTo('cashflow')" class="p-2.5 rounded-xl bg-purple-50 border border-purple-200 font-bold text-purple-950 hover:bg-purple-100">📈 نقدینگی ۳۰/۶۰/۹۰</button>
+              <button onclick="navigateTo('aging')" class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 font-bold text-amber-950 hover:bg-amber-100">📅 سنی مطالبات و بدهی‌ها</button>
+              <button onclick="navigateTo('orders')" class="p-2.5 rounded-xl bg-slate-100 border border-slate-300 font-bold text-slate-900 hover:bg-slate-200">📋 پیش‌فاکتور و سفارش</button>
+              <button onclick="navigateTo('treasury')" class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 font-bold text-rose-950 hover:bg-rose-100">💳 خزانه و چک صیادی</button>
+              <button onclick="navigateTo('reconcile')" class="p-2.5 rounded-xl bg-cyan-50 border border-cyan-200 font-bold text-cyan-950 hover:bg-cyan-100">⚖️ مغایرت‌گیری بانکی</button>
+              <button onclick="navigateTo('accounting')" class="p-2.5 rounded-xl bg-holoo-50 border border-holoo-200 font-bold text-holoo-950 hover:bg-holoo-100">📊 حسابداری و تراز</button>
+              <button onclick="navigateTo('hr')" class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 font-bold text-orange-950 hover:bg-orange-100">👔 حقوق و دستمزد</button>
+              <button onclick="navigateTo('approvals')" class="p-2.5 rounded-xl bg-zinc-100 border border-zinc-300 font-bold text-zinc-900 hover:bg-zinc-200">🛡️ تأییدیه‌ها و قفل</button>
             </div>
-          </section>
+          </div>
+        </section>
+
         <!-- ==================== MODULE 2: PRODUCTS & TEXTILE SPECS ==================== -->
         <section id="mod-products" class="mod-section hidden space-y-4">
           <div class="bg-white rounded-2xl p-4 border border-slate-200 flex flex-wrap items-center justify-between gap-2">
@@ -3259,87 +3255,22 @@
 
     let currentMod = 'dashboard';
     function navigateTo(mod) {
-      const target = document.getElementById(`mod-${mod}`);
-      const workspace = document.getElementById('main-workspace');
-      // Never hide the current module when a stale or invalid navigation target is supplied.
-      if (!target || !workspace) {
-        console.warn('Holoo navigation target not found:', mod);
-        if (typeof showToast === 'function') showToast('بخش انتخاب‌شده پیدا نشد؛ صفحه فعلی حفظ شد.', 'error');
-        return false;
-      }
-
       currentMod = mod;
-      document.querySelectorAll('.mod-section').forEach(section => section.classList.add('hidden'));
-      target.classList.remove('hidden');
-      document.querySelectorAll('.side-nav-btn').forEach(button => {
-        if (button.dataset.nav === mod) {
-          button.classList.add('bg-holoo-700', 'text-white', 'shadow');
-          button.classList.remove('text-slate-700', 'hover:bg-slate-100');
-        } else {
-          button.classList.remove('bg-holoo-700', 'text-white', 'shadow');
-          button.classList.add('text-slate-700', 'hover:bg-slate-100');
-        }
-      });
-      document.querySelectorAll('.m-nav-btn').forEach(button => {
-        const active = button.dataset.mnav === mod;
-        button.classList.toggle('bg-holoo-700', active);
-        button.classList.toggle('text-white', active);
-        if (active) button.setAttribute('aria-current', 'page');
-        else button.removeAttribute('aria-current');
-      });
-      workspace.scrollTop = 0;
+      document.querySelectorAll('.mod-section').forEach(s => s.classList.add('hidden'));
+      const target = document.getElementById(`mod-${mod}`);
+      if (target) target.classList.remove('hidden');
 
-      // Navigation renders only the requested module. Rendering every module on
-      // each tap allowed an unrelated module's initialization to disrupt navigation.
-      const moduleRenderers = {
-        dashboard: renderDashboard,
-        products: renderProductsModule,
-        inventory: renderInventoryModule,
-        parties: renderPartiesModule,
-        invoices: renderInvoicesModule,
-        orders: renderOrdersModule,
-        imports: renderImportsModule,
-        treasury: renderTreasuryModule,
-        accounting: renderAccountingModule,
-        reconcile: renderReconcileModule,
-        fx: renderFxModule,
-        cashflow: renderCashflowModule,
-        aging: renderAgingModule,
-        planner: renderCapitalPlanner,
-        hr: renderHrModule,
-        assets: renderAssetsModule,
-        approvals: renderApprovalsModule,
-        settings: renderSettingsModule
-      };
-      try {
-        const renderer = moduleRenderers[mod];
-        if (renderer) renderer();
-      } catch (error) {
-        console.error('Holoo navigation render failed (' + mod + '):', error);
-        let notice = target.querySelector('[data-module-render-error]');
-        if (!notice) {
-          notice = document.createElement('div');
-          notice.dataset.moduleRenderError = 'true';
-          notice.className = 'm-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800';
-          notice.setAttribute('role', 'alert');
-          target.prepend(notice);
-        }
-        notice.textContent = 'بارگذاری این بخش با خطا مواجه شد. صفحه را دوباره باز کنید؛ جزئیات خطا در گزارش فنی ثبت شد.';
-      }
-      return true;
+      document.querySelectorAll('.side-nav-btn').forEach(b => {
+        if (b.dataset.nav === mod) { b.classList.add('bg-holoo-700', 'text-white', 'shadow'); b.classList.remove('text-slate-700', 'hover:bg-slate-100'); }
+        else { b.classList.remove('bg-holoo-700', 'text-white', 'shadow'); b.classList.add('text-slate-700', 'hover:bg-slate-100'); }
+      });
+      document.querySelectorAll('.m-nav-btn').forEach(b => {
+        if (b.dataset.mnav === mod) b.classList.add('bg-holoo-700', 'text-white');
+        else b.classList.remove('bg-holoo-700', 'text-white');
+      });
+      document.getElementById('main-workspace').scrollTop = 0;
+      renderAll();
     }
-
-    // Stable global entry point for inline controls and installed-PWA webviews.
-    window.navigateTo = navigateTo;
-    // Capture mobile dock taps before inline handlers for consistent touch navigation.
-    document.addEventListener('click', event => {
-      const origin = event.target instanceof Element ? event.target : null;
-      const button = origin && origin.closest('.mobile-bottom-nav button[data-mnav]');
-      if (!button) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      navigateTo(button.dataset.mnav);
-    }, true);
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') document.querySelectorAll('[id^="modal-"]').forEach(m => m.classList.add('hidden'));
@@ -3475,12 +3406,6 @@
     let dashChartInst = null;
     let dashFromDate = null;
     let dashToDate = null;
-    let dashboardShowAllAlerts = false;
-
-    function toggleDashboardAlerts() {
-      dashboardShowAllAlerts = !dashboardShowAllAlerts;
-      renderDashboard();
-    }
 
     function getDashboardPeriodRange() {
       const from = String(dashFromDate || (String(state.fiscalYear || '1405') + '/01/01')).trim();
@@ -3593,7 +3518,7 @@
           <span class="text-[11px] text-slate-500 block">بدهی خالص و تعهدات</span>
           <strong class="text-sm font-black text-rose-700 tabular-nums mt-1 block">${money(payables)}</strong>
         </div>
-        <div class="col-span-2 sm:col-span-3 xl:col-span-1 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
+        <div class="md:col-span-2 ${netProfit < 0 ? 'bg-rose-800' : 'bg-gradient-to-l from-emerald-800 to-holoo-900'} text-white rounded-2xl p-3.5 flex items-center justify-between">
           <div>
             <span class="text-[11px] text-emerald-100 block">سود (زیان) خالص بازه انتخابی</span>
             <span class="text-[10px] text-emerald-100/90 block mt-0.5">${faNum(period.from)} تا ${faNum(period.to)} · مطابق صورت سود و زیان</span>
@@ -3622,40 +3547,13 @@
           alerts.push(`<div class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-950 flex justify-between"><span>🐢 کالای راکد (${faNum(stagnantDays)} روز بدون گردش): ${p.name}</span><strong class="tabular-nums">${faNum(p.stock)} KG</strong></div>`);
         }
       });
-      const alertPriority = html => html.includes('bg-rose-') ? 0 : (html.includes('bg-amber-') || html.includes('bg-orange-') ? 1 : 2);
-      const orderedAlerts = alerts.slice().sort((a, b) => alertPriority(a) - alertPriority(b));
-      const severityCounts = { critical: orderedAlerts.filter(html => html.includes('bg-rose-')).length, warning: orderedAlerts.filter(html => html.includes('bg-amber-') || html.includes('bg-orange-')).length, info: orderedAlerts.filter(html => !html.includes('bg-rose-') && !html.includes('bg-amber-') && !html.includes('bg-orange-')).length };
-      [['dash-alert-critical', severityCounts.critical, 'بحرانی'], ['dash-alert-warning', severityCounts.warning, 'هشدار'], ['dash-alert-info', severityCounts.info, 'عادی']].forEach(([id, count, label]) => { const node = document.getElementById(id); if (node) node.textContent = faNum(count) + ' ' + label; });
-      const visibleAlerts = dashboardShowAllAlerts ? orderedAlerts : orderedAlerts.slice(0, 5);
-      const alertCount = document.getElementById('dash-alert-count');
-      if (alertCount) alertCount.textContent = faNum(orderedAlerts.length) + ' مورد';
-      const alertToggle = document.getElementById('dash-alert-toggle');
-      if (alertToggle) {
-        alertToggle.classList.toggle('hidden', orderedAlerts.length <= 5);
-        alertToggle.textContent = dashboardShowAllAlerts ? 'نمایش هشدارهای کمتر' : 'نمایش همه ' + faNum(orderedAlerts.length) + ' هشدار';
-      }
-      document.getElementById('dash-alerts').innerHTML = orderedAlerts.length
-        ? visibleAlerts.map(html => {
-            const isCheck = html.includes('چک سررسیدشده') || html.includes('چک در جریان');
-            const isProduct = html.includes('کالای راکد');
-            const destination = isCheck ? 'treasury' : isProduct ? 'inventory' : 'accounting';
-            const action = isCheck ? 'مشاهده چک‌ها' : isProduct ? 'مشاهده کالا و موجودی' : 'بررسی اسناد حسابداری';
-            return '<article class="rounded-xl border border-slate-200 bg-white p-2 space-y-2">' + html + '<button type="button" onclick="navigateTo(\'' + destination + '\')" class="touch-btn min-h-[36px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-[10px] font-extrabold text-slate-700">' + action + ' ←</button></article>';
-          }).join('')
-        : '<p class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 font-bold text-emerald-800">هشدار فعالی وجود ندارد.</p>';
+      document.getElementById('dash-alerts').innerHTML = alerts.length ? alerts.join('') : '<p class="text-emerald-700 font-bold">هیچ هشدار بحرانی وجود ندارد ✔</p>';
 
       const ctx = document.getElementById('dashChart');
       if (ctx && typeof Chart !== 'undefined') {
         if (dashChartInst) dashChartInst.destroy();
         const monthly = buildDashboardMonthlySeries(period.from, period.to);
         const unitDivisor = state.currency === 'IRT' ? 10 : 1;
-        const trendBox = document.getElementById('dash-trend-insights');
-        if (trendBox) {
-          const latest = monthly[monthly.length - 1];
-          const previous = monthly.length > 1 ? monthly[monthly.length - 2] : null;
-          const metrics = [['درآمد ماه آخر', latest ? latest.revenue : 0, previous ? latest.revenue - previous.revenue : null], ['سود خالص ماه آخر', latest ? latest.netProfit : 0, previous ? latest.netProfit - previous.netProfit : null], ['هزینه ماه آخر', latest ? latest.expenses : 0, previous ? latest.expenses - previous.expenses : null], ['بهای تمام‌شده', latest ? latest.cogs : 0, previous ? latest.cogs - previous.cogs : null]];
-          trendBox.innerHTML = metrics.map(([label, value, delta]) => '<div class="rounded-xl bg-slate-50 border border-slate-200 p-2 min-w-0"><span class="block text-[10px] text-slate-500">' + label + '</span><strong class="block text-xs font-black tabular-nums mt-1">' + money(value) + '</strong><span class="block text-[10px] mt-1 ' + (delta === null ? 'text-slate-500' : delta > 0 ? 'text-emerald-700' : delta < 0 ? 'text-rose-700' : 'text-slate-500') + '">' + (delta === null ? 'بدون ماه مبنا' : (delta > 0 ? '▲ ' : delta < 0 ? '▼ ' : '— ') + money(Math.abs(delta)) + ' نسبت به ماه قبل') + '</span></div>').join('');
-        }
         dashChartInst = new Chart(ctx, {
           type: 'line',
           data: {
@@ -6219,7 +6117,7 @@
       const vatAmount = Math.round(sub * (vatRate / 100));
       const commAmount = Math.round(sub * (commRate / 100));
       const salespersonName = String(document.getElementById('inv-salesperson').value || '').trim();
-      const normalizePartyName = value => String(value || '').normalize('NFKC').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\s]+/g, ' ').trim().toLocaleLowerCase('fa');
+      const normalizePartyName = value => String(value || '').normalize('NFKC').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\\u200c\\s]+/g, ' ').trim().toLocaleLowerCase('fa');
       const salespersonParty = type === 'sale' && commAmount > 0
         ? state.parties.find(p => normalizePartyName(p.name) === normalizePartyName(salespersonName) && p.accountingStatus !== 'inactive')
         : null;
@@ -8931,8 +8829,8 @@
         }
         if (ch === '"' && field.length === 0) quoted = true;
         else if (ch === ',') { row.push(field); field = ''; }
-        else if (ch === '\n' || ch === '\r') {
-          if (ch === '\r' && input[i + 1] === '\n') i++;
+        else if (ch === '\n' || ch === '\\r') {
+          if (ch === '\\r' && input[i + 1] === '\n') i++;
           row.push(field); rows.push(row); row = []; field = '';
         } else field += ch;
       }
@@ -8951,7 +8849,7 @@
     }
 
     function parseBankCSV() {
-      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\uFEFF/, '').trim();
+      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\\uFEFF/, '').trim();
       if (!input) { showToast('محتوای صورتحساب خالی است.', 'error'); return; }
       let rows;
       try { rows = parseBankCSVRecords(input); }
