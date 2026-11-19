@@ -43,7 +43,9 @@
     const related = [];
     allProducts.forEach(item => {
       (Array.isArray(item && item.kardex) ? item.kardex : []).forEach(row => {
-        if (row && String(row.doc || '').includes(transferId)) related.push({ product: item, movement: row });
+        if (row && !row.reversalOf && !row.correctionOf && String(row.doc || '').includes(transferId)) {
+          related.push({ product: item, movement: row });
+        }
       });
     });
     const outgoing = related.filter(row => Number(row.movement.outQty || 0) > 0);
