@@ -4750,9 +4750,17 @@
         salesperson: salespersonName, salespersonPartyId: salespersonParty?.id || null, commRate, commAmount,
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
         paidAmount: payMethod === 'credit' ? 0 : grandTotal,
-        status: 'active', items: invoiceLines
+        status: 'active', items: invoiceLines,
+        ...(invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null ? { correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId) } : {})
       };
 
+      let correctionOriginalState = null;
+      if (invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null) {
+        correctionOriginalState = state;
+        state = JSON.parse(JSON.stringify(state));
+        const cancelled = cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true });
+        if (!cancelled) { state = correctionOriginalState; showToast('اصلاح متوقف شد؛ فاکتور قبلی قابل ابطال امن نیست و هیچ تغییری ثبت نشد.', 'error'); return; }
+      }
       // Prepare all stock/batch changes on clones first. A failed preflight leaves live state untouched.
       const productPlans = [];
       const simulatedProducts = new Map();
@@ -4792,6 +4800,7 @@
           }
         }
       } catch (error) {
+        if (correctionOriginalState) state = correctionOriginalState;
         showToast('کنترل موجودی یا بچ‌های فاکتور ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return;
       }
@@ -4830,8 +4839,19 @@
         state.vouchers = (state.vouchers || []).filter(voucher =>
           !(voucher.sourceType === 'invoice' && String(voucher.sourceId) === String(id))
         );
+        if (correctionOriginalState) state = correctionOriginalState;
         showToast('صدور سند فاکتور ناموفق بود؛ فاکتور، موجودی و مانده صندوق/بانک تغییر نکردند. ' + (error?.message || ''), 'error');
         return;
+      }
+
+      if (invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null) {
+        const originalInvoice = state.invoices.find(item => Number(item.id) === Number(invDraft.correctionOfInvoiceId));
+        if (originalInvoice) { originalInvoice.correctedByInvoiceId = Number(id); originalInvoice.correctionCompletedAt = new Date().toISOString(); }
+        addAudit('اصلاح فاکتور #' + invDraft.correctionOfInvoiceId + ' با صدور نسخه #' + id, {
+          mode: 'manual', sourceType: 'invoice_correction', sourceId: String(id),
+          previous: { invoiceId: Number(invDraft.correctionOfInvoiceId), status: 'active' },
+          note: 'فاکتور اولیه حفظ شد؛ سند معکوس و فاکتور جایگزین در همین عملیات ثبت شدند.'
+        });
       }
 
       // Journal posting succeeded; apply the prevalidated stock/batch plan to live products.
@@ -4862,8 +4882,11 @@
         settlementAccount.balance = Number(settlementAccount.balance || 0) + (type === 'sale' ? grandTotal : -grandTotal);
       }
 
+      const wasCorrection = invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null;
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
-      showToast(`فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
+      invDraft = { type, lines: [] };
+      const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
+      showToast(wasCorrection ? `نسخه اصلاحی فاکتور #${faNum(id)} ثبت شد ✔` : `فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
     }
 
         function canCorrectInvoice(inv) {
