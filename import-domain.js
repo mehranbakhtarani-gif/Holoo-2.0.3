@@ -300,9 +300,16 @@
           return 'ردیف کاردکس یا بچ وارداتی برای قلم ' + item.id + ' یکتا نیست.';
         }
         const batch = batches[0];
-        if (Math.abs(Number(rows[0].inQty || 0) - qty) > 0.000001 ||
-            Math.abs(Number(batch.quantity || 0) - qty) > 0.000001 ||
-            Math.abs(Number(batch.remainingQty || 0) - qty) > 0.000001) {
+        if (!batch.id || sourceBatchIds.has(String(batch.id))) {
+          return 'شناسه بچ رسید برای قلم ' + item.id + ' معتبر یا یکتا نیست.';
+        }
+        if (!Number.isFinite(qty) || qty <= 0 ||
+            !Number.isFinite(Number(rows[0].inQty)) ||
+            !Number.isFinite(Number(batch.quantity)) ||
+            !Number.isFinite(Number(batch.remainingQty)) ||
+            Math.abs(Number(rows[0].inQty) - qty) > 0.000001 ||
+            Math.abs(Number(batch.quantity) - qty) > 0.000001 ||
+            Math.abs(Number(batch.remainingQty) - qty) > 0.000001) {
           return 'بخشی از موجودی قلم ' + item.id + ' مصرف، منتقل یا تغییر داده شده است.';
         }
         sourceBatchIds.add(String(batch.id));
