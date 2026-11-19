@@ -4160,6 +4160,7 @@
       }
       const originalState = state;
       let draft;
+      let committed = false;
       try {
         draft = JSON.parse(JSON.stringify(state));
         const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(draft, transferId);
@@ -4260,7 +4261,8 @@
         source.kardex.push({
           date, doc: 'حواله خروج انتقال ' + replacementId + ' (جایگزین ' + plan.transferId + ') به ' + getWhName(newDestinationId),
           inQty: 0, outQty: qty, bal: source.stock, price: source.buyPrice,
-          correctionOf: plan.transferId, correctionId: reversalId, reason: String(reason).trim()
+          correctionOf: plan.transferId, correctionId: reversalId, reason: String(reason).trim(),
+          actor: draft.activeRole || 'mehran', deviceId: DEVICE_ID, createdAt: now.toISOString()
         });
         if (draft.costingMethod === 'FIFO') {
           fifoPlan.allocations.forEach((allocation, index) => {
@@ -4280,7 +4282,8 @@
           date, doc: 'حواله ورود انتقال ' + replacementId + ' (جایگزین ' + plan.transferId + ') از ' + sourceName,
           inQty: qty, outQty: 0, bal: newDestination.stock,
           price: draft.costingMethod === 'FIFO' ? fifoPlan.unitCost : source.buyPrice,
-          correctionOf: plan.transferId, correctionId: reversalId, reason: String(reason).trim()
+          correctionOf: plan.transferId, correctionId: reversalId, reason: String(reason).trim(),
+          actor: draft.activeRole || 'mehran', deviceId: DEVICE_ID, createdAt: now.toISOString()
         });
 
         draft.warehouseTransferCorrections = Array.isArray(draft.warehouseTransferCorrections)
@@ -4305,12 +4308,17 @@
           state = originalState;
           return { ok: false, reason: 'ذخیره محلی عملیات انجام نشد؛ وضعیت قبلی حفظ شد.' };
         }
-        renderAll();
-        openKardexModal(String(focusProductId || plan.sourceProductId));
+        committed = true;
+        try {
+          renderAll();
+          openKardexModal(String(focusProductId || plan.sourceProductId));
+        } catch (renderError) {
+          console.error('Warehouse correction saved but view refresh failed:', renderError);
+        }
         showToast('برگشت حواله و ثبت حواله جایگزین در یک عملیات ذخیره شد ✔');
         return { ok: true, reversalId, replacementTransferId: replacementId };
       } catch (error) {
-        state = originalState;
+        if (!committed) state = originalState;
         return { ok: false, reason: error?.message || 'خطای پیش‌بینی‌نشده؛ هیچ تغییری ذخیره نشد.' };
       }
     }
