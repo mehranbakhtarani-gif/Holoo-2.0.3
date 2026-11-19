@@ -11173,10 +11173,21 @@
             }));
           }
         } else if (sourceType === 'invoice_return') {
+          item.returnId = sourceId;
           item.invoiceId = String(voucher.sourceEvent || '');
           const invoice = invoices.get(item.invoiceId);
           item.invoiceType = invoice ? String(invoice.type || '') : '';
-          item.returnDescription = 'برگشت جزئی؛ برای ردیابی کالا باید ردیف‌های برگشت و تخصیص سری ساخت بررسی شوند.';
+          const returnRecord = invoice && (invoice.returnRefs || []).find(entry => String(entry.id) === sourceId);
+          item.returnItems = returnRecord && Array.isArray(returnRecord.items) ? returnRecord.items.map(line => ({
+            productId: String(line.productId ?? ''),
+            productName: String((state.products || []).find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
+            quantity: Number(line.qty || 0),
+            inventoryCost: Number(line.inventoryCost || 0),
+            batchAllocations: Array.isArray(line.batchAllocations) ? line.batchAllocations : []
+          })) : [];
+          item.returnDescription = returnRecord
+            ? 'جزئیات برگشت از سابقه برگشت فاکتور و تخصیص سری ساخت خوانده شده است.'
+            : 'سابقه جزئیات برگشت در فاکتور پیدا نشد؛ این گردش نیازمند بررسی دستی است.';
         }
       });
       const labels = { invoice: 'فاکتور خرید/فروش', invoice_return: 'برگشت فاکتور', invoice_cancel: 'ابطال فاکتور', stocktake: 'انبارگردانی', import: 'محموله وارداتی', manual: 'سند دستی یا بدون منشأ' };
@@ -11232,6 +11243,7 @@
           '<div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]"><span>بدهکار: <b>'+money(item.debit)+'</b></span><span>بستانکار: <b>'+money(item.credit)+'</b></span><span>خالص: <b>'+money(item.net)+'</b></span><span>شماره سند: <b>'+escapeLedgerText(item.voucherIds.join('، '))+'</b></span></div>' +
           (item.invoiceId ? '<p class="text-[10px]">فاکتور مرتبط: '+escapeLedgerText(item.invoiceId)+' | نوع: '+escapeLedgerText(item.invoiceType || 'نامشخص')+'</p>' : '') +
           (item.productLines.length ? '<div class="text-[10px]">اقلام فاکتور: '+item.productLines.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، بهای تمام‌شده '+money(line.cogs)+')').join('؛ ')+'</div>' : '') +
+          (item.returnItems && item.returnItems.length ? '<div class="text-[10px]">اقلام برگشتی: '+item.returnItems.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، ارزش برگشتی '+money(line.inventoryCost)+'، سری ساخت '+faNum(line.batchAllocations.length)+')').join('؛ ')+'</div>' : '') +
           (item.returnDescription ? '<p class="text-[10px] text-amber-800">'+escapeLedgerText(item.returnDescription)+'</p>' : '') +
           '<p class="text-[10px] text-slate-500">شرح: '+escapeLedgerText(item.descriptions.slice(0,3).join(' | ') || 'بدون شرح')+'</p></div>'
         ).join('') + '</div>' : '<p class="text-xs text-slate-500">گردش ثبت‌شده‌ای برای حساب ۱۱۰۵ پیدا نشد.</p>') +
