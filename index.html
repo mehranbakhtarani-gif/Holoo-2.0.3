@@ -2354,7 +2354,8 @@
         accountCatalog: [],
         approvals: [],
         auditLogs: [],
-        accountingPeriodLocks: []
+        accountingPeriodLocks: [],
+        fiscalYearClosures: []
       };
     }
 
@@ -2626,6 +2627,7 @@
     })();
 
     if (!Array.isArray(state.accountingPeriodLocks)) state.accountingPeriodLocks = [];
+    if (!Array.isArray(state.fiscalYearClosures)) state.fiscalYearClosures = [];
     if (!Array.isArray(state.checks)) state.checks = [];
     if (!Array.isArray(state.guarantees)) state.guarantees = [];
     if (!Array.isArray(state.payableCommitments)) state.payableCommitments = [];
@@ -2683,7 +2685,7 @@
     const SYNC_ENTITY_COLLECTIONS = [
       'capitalPlans', 'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports', 'fxCommitments',
       'bankAccounts', 'checks', 'guarantees', 'payableCommitments', 'treasuryTxs', 'bankReconcileItems',
-      'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits', 'accountingPeriodLocks'
+      'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits', 'accountingPeriodLocks', 'fiscalYearClosures'
     ];
     let lastSavedState = JSON.parse(JSON.stringify(state));
     // آخرین رویداد حسابرسی که برای یک عملیات ثبت شده؛ از تکرار خلاصهٔ قدیمی در ذخیره‌های بعدی جلوگیری می‌کند.
@@ -3546,9 +3548,10 @@
       if (source?.type === 'fiscal_year_close' && !isFiscalYearClose) {
         throw new Error('سند اختتامیه فقط با شناسه همان سال و تاریخ پایان معتبر سال مالی مجاز است.');
       }
+      if (isFiscalYearClose && getFiscalYearCloseRecord(postingYear)) throw new Error('این سال مالی قبلاً بسته شده است و صدور اختتامیه مجدد مجاز نیست.');
       if (!isFiscalYearClose && postingYear) {
-        const closedYear = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId || '') === postingYear && (v.sourceEvent || 'default') === 'closing');
-        if (closedYear) throw new Error('سال مالی ' + closedYear.sourceId + ' بسته شده است؛ ثبت با تاریخ این سال مجاز نیست.');
+        const closedYear = getFiscalYearCloseRecord(postingYear);
+        if (closedYear) throw new Error('سال مالی ' + postingYear + ' بسته شده است؛ ثبت با تاریخ این سال مجاز نیست.');
       }
       if (!Array.isArray(lines) || lines.length < 2) throw new Error('سند نامعتبر است: حداقل دو ردیف لازم است.');
       const invalidLine = lines.some(line => {
@@ -6658,7 +6661,7 @@
       if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
       if (getAccountingPeriodLockForDate(inv.date)) return false;
       const invoiceYear = String(normalizeLedgerDate(inv.date) || '').slice(0, 4);
-      if (invoiceYear && (state.vouchers || []).some(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === invoiceYear && (item.sourceEvent || 'default') === 'closing')) return false;
+      if (invoiceYear && getFiscalYearCloseRecord(invoiceYear)) return false;
       if ((inv.items || []).some(item => Number(item.returnedKg || 0) > 0)) return false;
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => tx.kind !== 'party_credit' && (((tx.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0)) || Number(tx.allocInvId) === Number(inv.id)));
       const hasActiveChequeAllocation = (state.checks || []).some(check => !check.allocationsReleasedAt && !['bounced','voided'].includes(check.status) && (check.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0));
@@ -6988,7 +6991,7 @@
         return false;
       }
       const invoiceYear = String(normalizeLedgerDate(inv.date) || '').slice(0, 4);
-      const closedFiscalYear = invoiceYear && (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === invoiceYear && (item.sourceEvent || 'default') === 'closing');
+      const closedFiscalYear = invoiceYear && getFiscalYearCloseRecord(invoiceYear);
       if (closedFiscalYear) { if (!options.silent) showToast('ابطال فاکتور متعلق به سال مالی بسته‌شده مجاز نیست؛ ابتدا سال مالی باید با فرایند کنترل‌شده بازگشایی شود.', 'error'); return false; }
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
         if (tx.kind === 'party_credit') return false;
@@ -10686,6 +10689,14 @@
         '<p class="text-[10px] text-slate-500">گردش‌ها فقط مربوط به بازه انتخابی‌اند؛ مانده‌ها شامل تمام گردش‌های ثبت‌شده از ابتدای سوابق تا تاریخ پایان هستند. این گزارش صرفاً خواندنی است و هیچ سندی ایجاد یا اصلاح نمی‌کند.</p></div>';
     }
 
+    function getFiscalYearCloseRecord(year) {
+      const key = normalizeAccountingDate(year);
+      const stored = (state.fiscalYearClosures || []).find(item => normalizeAccountingDate(item.year) === key && item.status !== 'reopened');
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === key && (item.sourceEvent || 'default') === 'closing');
+      if (!stored && !voucher) return null;
+      return { ...(stored || {}), year: key, voucherId: stored?.voucherId || voucher?.id || null, voucher: voucher || null };
+    }
+
     function getFiscalYearEndDate(year) {
       const candidate30 = String(year) + '/12/30';
       return jalaliDateOrdinal(candidate30) !== null ? candidate30 : String(year) + '/12/29';
@@ -10732,8 +10743,8 @@
       if (jalaliDateOrdinal(today) === null || normalizeLedgerDate(today) < normalizeLedgerDate(to)) {
         throw new Error('بستن سال مالی فقط پس از پایان واقعی سال (' + to + ') مجاز است.');
       }
-      const existing = (state.vouchers || []).find(v => v.sourceType === 'fiscal_year_close' && String(v.sourceId) === fiscalYear && (v.sourceEvent || 'default') === 'closing');
-      if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.id, rows: [], profit: 0, blocked: false, warnings: [], incomeSummary: null, carryForward: buildFiscalYearCarryForwardSummary(fiscalYear) };
+      const existing = getFiscalYearCloseRecord(fiscalYear);
+      if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.voucherId, closureRecord: existing, rows: [], profit: 0, blocked: false, warnings: [], incomeSummary: null, carryForward: buildFiscalYearCarryForwardSummary(fiscalYear) };
 
       const balances = new Map();
       const warnings = [];
@@ -10798,7 +10809,7 @@
       if (!retainedEarningsAccount) warnings.push('حساب سود (زیان) انباشته ۳۱۰۲ در سرفصل‌های حسابداری تعریف نشده است.');
       const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit);
       if (Math.abs(carryForward.difference) > 0.5) warnings.push('تراز انتقال مانده حساب‌های دائمی پس از اختتامیه متوازن نیست؛ اختلاف: ' + money(carryForward.difference));
-      return { year: fiscalYear, from, to, alreadyClosed: false, rows, profit, blocked: warnings.length > 0 || rows.length === 0, warnings, incomeSummary, carryForward, priorUnclosed };
+      return { year: fiscalYear, from, to, alreadyClosed: false, rows, profit, blocked: warnings.length > 0, warnings, incomeSummary, carryForward, priorUnclosed };
     }
 
     function closeFiscalYear() {
@@ -10976,10 +10987,7 @@
       const periodLock = getAccountingPeriodLockForDate(voucherDate);
       if (periodLock) return 'این سند متعلق به ' + periodLock.label + ' قفل‌شده است؛ ابتدا باید همان دوره با مجوز و ثبت علت بازگشایی شود.';
       const voucherYear = voucherDateKey ? voucherDateKey.slice(0, 4) : '';
-      if (voucherYear && (state.vouchers || []).some(item =>
-        item.sourceType === 'fiscal_year_close' &&
-        String(item.sourceId || '') === voucherYear &&
-        (item.sourceEvent || 'default') === 'closing')) {
+      if (voucherYear && getFiscalYearCloseRecord(voucherYear)) {
         return 'سال مالی ' + voucherYear + ' بسته شده است؛ اصلاح سند آن فقط پس از بازگشایی کنترل‌شده و ثبت سابقه مجاز است.';
       }
       if (voucher.sourceType === 'manual_voucher') return '';
