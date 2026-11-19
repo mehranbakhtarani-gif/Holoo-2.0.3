@@ -9619,7 +9619,7 @@
     }
 
     function parseBankCSV() {
-      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\\uFEFF/, '').trim();
+      const input = String(document.getElementById('bank-csv-text').value || '').replace(/^\uFEFF/, '').trim();
       if (!input) { showToast('محتوای صورتحساب خالی است.', 'error'); return; }
       let rows;
       try { rows = parseBankCSVRecords(input); }
@@ -9627,7 +9627,7 @@
       const bankAccountId = String(document.getElementById('bank-csv-account')?.value || '');
       if (!(state.bankAccounts || []).some(account => account.type === 'bank' && String(account.id) === bankAccountId)) { showToast('حساب بانکی صورتحساب را به‌درستی انتخاب کنید.', 'error'); return; }
       let added = 0, dup = 0, invalid = 0;
-      const normalizeDuplicateText = value => String(value || '').normalize('NFKC').replace(/[\\u200c\\s]+/g, ' ').trim().toLocaleLowerCase('fa');
+      const normalizeDuplicateText = value => String(value || '').normalize('NFKC').replace(/[\u200c\s]+/g, ' ').trim().toLocaleLowerCase('fa');
       const fingerprint = item => [String(item.bankAccountId == null ? 'legacy' : item.bankAccountId), bankTxDateKey(item.date) || String(item.date || ''), Number(item.amount), normalizeDuplicateText(item.desc)].join('|');
       const seenFingerprints = new Set((state.bankReconcileItems || []).map(fingerprint));
       const seenRefs = new Set((state.bankReconcileItems || []).filter(x => String(x.ref || '').trim()).map(x => `${x.bankAccountId == null ? 'legacy' : String(x.bankAccountId)}::${String(x.ref).trim()}`));
