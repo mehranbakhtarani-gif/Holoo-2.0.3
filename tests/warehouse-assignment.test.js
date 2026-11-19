@@ -147,5 +147,18 @@ testCase('rejects ambiguous product IDs instead of selecting one history', () =>
   assert.equal(report.classification, 'unresolved');
 });
 
+
+testCase('inherits warehouse provenance from the parent document and blocks transfer references', () => {
+  const source = state({ id: 'P1', name: 'کالا', stock: 0, warehouseId: 'GONE', kardex: [], batches: [] }, {
+    invoices: [{ id: 'INV-2', warehouseId: 'A', items: [{ productId: 'P1' }] }],
+    warehouseTransfers: [{ id: 'TR-2', items: [{ product_id: 'P1' }] }]
+  });
+  const report = inspectWarehouseAssignmentHistory(source, 'P1');
+  assert.equal(report.documentReferenceCount, 2);
+  assert.ok(report.warehouseIds.includes('A'));
+  assert.equal(report.unresolvedWarehouseEvidenceCount, 1);
+  assert.equal(buildWarehouseAssignmentPlan(source, 'P1', 'B').ok, false);
+});
+
 console.log('PASS: 6 historical warehouse assignment inspection tests');
 console.log('PASS: 8 controlled warehouse assignment tests');
