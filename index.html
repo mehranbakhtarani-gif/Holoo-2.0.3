@@ -9225,6 +9225,9 @@
         const bankLines = (v.lines || []).filter(line => String(line.code) === '1102');
         if (bankLines.length !== 1) return false;
         const line = bankLines[0];
+        const voucherDescription = [v.desc, v.description, v.memo, line.desc, line.description, line.memo]
+          .filter(Boolean).join(' ').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        if (voucherDescription.includes('افتتاحیه') && voucherDescription.includes('بانک')) return false;
         const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
         if (selectedBankId) {
           if (voucherBankId ? voucherBankId !== selectedBankId : !allowLegacyUnassigned) return false;
