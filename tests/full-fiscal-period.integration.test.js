@@ -26,6 +26,7 @@ function load(name, context) {
     ...context
   };
   vm.createContext(sandbox);
+  if (name === 'getPartyNetBalance') vm.runInContext(sourceOf('getPartyAccountNetBalance') + '; this.getPartyAccountNetBalance = getPartyAccountNetBalance;', sandbox);
   vm.runInContext(sourceOf(name) + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
@@ -56,7 +57,7 @@ const post=load('postVoucher',{
 });
 const balances=load('getAccountBalances',{state,CHART_ACCOUNTS});
 const partyAccountBalance=load('getPartyAccountNetBalance',{state});
-const partyBalance=load('getPartyNetBalance',{state,getPartyAccountNetBalance:partyAccountBalance});
+const partyBalance=load('getPartyNetBalance',{state});
 const updateCheck=load('updateCheckStatus',{
   state, getTodayJalaliDate(){return '1405/09/02';}, postVoucher:post, addAudit(message){state.auditLogs.push(message);},
   saveState(){saves++;}, renderAll(){}, showToast(){}
