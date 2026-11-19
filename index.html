@@ -4564,6 +4564,7 @@
 
     function openInvoiceForm(type) {
       invDraft = { type, lines: [] };
+      const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
       document.getElementById('invoice-form-card').classList.remove('hidden');
       document.getElementById('inv-type-badge').textContent = type === 'sale' ? 'فاکتور فروش رسمی' : 'فاکتور خرید کالا';
       const nextNo = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
@@ -4758,7 +4759,9 @@
       if (invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null) {
         correctionOriginalState = state;
         state = JSON.parse(JSON.stringify(state));
-        const cancelled = cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true });
+        let cancelled = false;
+        try { cancelled = cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true }); }
+        catch (error) { state = correctionOriginalState; showToast('ابطال آزمایشی فاکتور برای اصلاح ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error'); return; }
         if (!cancelled) { state = correctionOriginalState; showToast('اصلاح متوقف شد؛ فاکتور قبلی قابل ابطال امن نیست و هیچ تغییری ثبت نشد.', 'error'); return; }
       }
       // Prepare all stock/batch changes on clones first. A failed preflight leaves live state untouched.
