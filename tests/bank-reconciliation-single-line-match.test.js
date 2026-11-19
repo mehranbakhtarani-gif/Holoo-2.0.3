@@ -30,8 +30,8 @@ assert.deepEqual(Array.from(sandbox.getBankReconciliationCandidates(withdrawal),
 state.bankReconcileItems.push({ id: 'OTHER', matched: true, linkedVoucherId: 1 });
 assert.deepEqual(Array.from(sandbox.getBankReconciliationCandidates(deposit), x => x.id), []);
 
-assert.deepEqual(sandbox.getBankReconciliationCandidates({ id: 'BAD', date: '1405/09/02', amount: 0 }), []);
-assert.deepEqual(sandbox.getBankReconciliationCandidates({ id: 'BAD2', date: 'invalid', amount: 100 }), []);
+assert.deepEqual(Array.from(sandbox.getBankReconciliationCandidates({ id: 'BAD', date: '1405/09/02', amount: 0 })), []);
+assert.deepEqual(Array.from(sandbox.getBankReconciliationCandidates({ id: 'BAD2', date: 'invalid', amount: 100 })), []);
 
 console.log('PASS: only one exact, same-direction, same-date bank ledger line is proposed');
 console.log('PASS: split/multi-line bank vouchers are not falsely matched by aggregate amount');
