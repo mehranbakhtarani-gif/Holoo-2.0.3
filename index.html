@@ -9341,11 +9341,79 @@
     }
 
 
+    function buildBankTransferAuditSummary() {
+      const txs = (state.treasuryTxs || []).filter(tx => tx.kind === 'bank_transfer' || tx.transferId);
+      const vouchers = state.vouchers || [];
+      const groups = new Map();
+      txs.forEach(tx => {
+        const id = String(tx.transferId || String(tx.id || '').replace(/-(?:OUT|IN)$/, ''));
+        if (!id) return;
+        if (!groups.has(id)) groups.set(id, []);
+        groups.get(id).push(tx);
+      });
+      const result = { transfers: groups.size, missingPair: 0, duplicatePair: 0, missingVoucher: 0, invalidVoucher: 0, invalidAccounts: 0, amountMismatch: 0, issues: [] };
+      groups.forEach((events, id) => {
+        const outs = events.filter(tx => tx.dir === 'pay');
+        const ins = events.filter(tx => tx.dir === 'receive');
+        const label = id;
+        if (outs.length !== 1 || ins.length !== 1) {
+          if (outs.length > 1 || ins.length > 1) result.duplicatePair++;
+          else result.missingPair++;
+          result.issues.push(label + ': جفت دریافت/پرداخت انتقال ناقص یا تکراری است.');
+          return;
+        }
+        const out = outs[0], incoming = ins[0];
+        if (!out.bankAccountId || !incoming.bankAccountId ||
+            !(state.bankAccounts || []).some(a => a.type === 'bank' && String(a.id) === String(out.bankAccountId)) ||
+            !(state.bankAccounts || []).some(a => a.type === 'bank' && String(a.id) === String(incoming.bankAccountId)) ||
+            String(out.bankAccountId) === String(incoming.bankAccountId)) {
+          result.invalidAccounts++;
+          result.issues.push(label + ': حساب مبدأ یا مقصد نامعتبر است.');
+        }
+        const amount = Number(incoming.amount), paid = Number(out.amount);
+        const fee = paid - amount;
+        if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(paid) || paid < amount || !Number.isFinite(fee)) {
+          result.amountMismatch++;
+          result.issues.push(label + ': مبلغ انتقال یا کارمزد ناسازگار است.');
+        }
+        const voucherId = out.voucherId || incoming.voucherId;
+        const voucher = vouchers.find(v => String(v.id) === String(voucherId)) ||
+          vouchers.find(v => v.sourceType === 'bank_transfer' && String(v.sourceId) === id);
+        if (!voucher) {
+          result.missingVoucher++;
+          result.issues.push(label + ': سند حسابداری انتقال پیدا نشد.');
+          return;
+        }
+        const integrity = inspectTrialBalanceVoucher(voucher);
+        const lines = voucher.lines || [];
+        const sourceCredit = lines.filter(l => String(l.code) === '1102' && String(l.bankAccountId) === String(out.bankAccountId)).reduce((n,l)=>n+Number(l.credit||0),0);
+        const destinationDebit = lines.filter(l => String(l.code) === '1102' && String(l.bankAccountId) === String(incoming.bankAccountId)).reduce((n,l)=>n+Number(l.debit||0),0);
+        const feeDebit = lines.filter(l => String(l.code) === '6101').reduce((n,l)=>n+Number(l.debit||0),0);
+        if (integrity.invalidLines || integrity.invalidStructure || integrity.unbalanced || jalaliDateOrdinal(voucher.date || voucher.operationDate) === null) {
+          result.invalidVoucher++;
+          result.issues.push(label + ': سند انتقال نامعتبر، نامتوازن یا دارای تاریخ نامعتبر است.');
+        }
+        if (Math.abs(sourceCredit - paid) >= 0.01 || Math.abs(destinationDebit - amount) >= 0.01 || Math.abs(feeDebit - fee) >= 0.01) {
+          result.amountMismatch++;
+          result.issues.push(label + ': مبالغ دو گردش خزانه با ردیف‌های سند یا کارمزد تطبیق ندارند.');
+        }
+        if (String(out.voucherId) !== String(incoming.voucherId) || String(out.date) !== String(incoming.date)) {
+          result.amountMismatch++;
+          result.issues.push(label + ': تاریخ یا شماره سند دو سمت انتقال یکسان نیست.');
+        }
+      });
+      result.issues = [...new Set(result.issues)].slice(0, 25);
+      result.issueCount = result.missingPair + result.duplicatePair + result.missingVoucher +
+        result.invalidVoucher + result.invalidAccounts + result.amountMismatch;
+      return result;
+    }
+
     function renderTreasuryModule() {
        computeCheckRas();
        const bookBalances = getBankAccountBookBalances();
        const balanceById = new Map(bookBalances.accounts.map(row => [String(row.account.id), row]));
        const cashBalances = getCashAccountBookBalances();
+       const transferAudit = buildBankTransferAuditSummary();
        const bankGrid = document.getElementById('bank-accounts-grid');
        bankGrid.innerHTML = `
         <div class="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
@@ -9364,6 +9432,12 @@
               ${mismatch ? '<div class="rounded-lg bg-amber-50 p-2 text-[10px] leading-5 text-amber-800">مانده ذخیره‌شده قدیمی با دفترکل متفاوت است؛ عدد دفترکل نمایش داده شده و مقدار قدیمی مبنای گزارش نیست.</div>' : ''}
             </div>`;
         }).join('') || '<div class="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">هنوز حساب بانکی تعریف نشده است. برای شروع، «تعریف حساب بانکی» را انتخاب کنید.</div>'}
+        <div class="col-span-full rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2"><strong class="text-sm">کنترل حسابرسی انتقال بین بانکی</strong><span class="text-xs font-bold">${transferAudit.issueCount ? faNum(transferAudit.issueCount) + ' مغایرت' : 'بدون مغایرت شناسایی‌شده'}</span></div>
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]"><span>انتقال‌ها: <b>${faNum(transferAudit.transfers)}</b></span><span>جفت ناقص: <b>${faNum(transferAudit.missingPair)}</b></span><span>جفت تکراری: <b>${faNum(transferAudit.duplicatePair)}</b></span><span>سند مفقود: <b>${faNum(transferAudit.missingVoucher)}</b></span><span>سند نامعتبر: <b>${faNum(transferAudit.invalidVoucher)}</b></span><span>حساب نامعتبر: <b>${faNum(transferAudit.invalidAccounts)}</b></span><span>مغایرت مبلغ/کارمزد: <b>${faNum(transferAudit.amountMismatch)}</b></span></div>
+          ${transferAudit.issues.length ? '<details class="rounded-lg bg-amber-50 p-2 text-[11px]"><summary class="cursor-pointer font-bold">مشاهده موارد نیازمند بررسی</summary><ul class="mt-2 list-disc pr-5 space-y-1">' + transferAudit.issues.map(x => '<li>' + window.escapeBankReconcileText(x) + '</li>').join('') + '</ul></details>' : '<p class="text-[10px] text-emerald-700">جفت گردش‌ها، سند حسابداری، حساب‌های مبدأ/مقصد و کارمزد بررسی شد.</p>'}
+          <p class="text-[10px] text-slate-500">این کنترل فقط گزارش می‌دهد و تراکنش یا سندی را تغییر نمی‌دهد.</p>
+        </div>
         <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2"><div><strong class="text-sm">کنترل مانده صندوق‌ها</strong><p class="mt-1 text-[10px] text-slate-500">مانده بر اساس ردیف‌های دفترکل حساب ۱۱۰۱ و شناسه صندوق</p></div><span class="text-[10px] font-bold">تعداد صندوق: ${faNum(cashBalances.accounts.length)}</span></div>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-2">${cashBalances.accounts.map(row => '<div class="rounded-lg border bg-slate-50 p-2"><div class="text-[10px] text-slate-500">' + window.escapeBankReconcileText(row.account.name || 'صندوق') + '</div><strong class="tabular-nums">' + money(row.net) + '</strong></div>').join('') || '<p class="text-xs text-slate-500">صندوقی تعریف نشده است.</p>'}</div>
