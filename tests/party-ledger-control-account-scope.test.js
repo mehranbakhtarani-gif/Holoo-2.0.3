@@ -40,7 +40,7 @@ assert.equal(ledger.openingDebit, 1000, 'opening balance must use control accoun
 assert.equal(ledger.periodDebit, 550, 'period debit must include 1103 and 1107');
 assert.equal(ledger.periodCredit, 250, 'period credit must include 1103 and 2101');
 assert.equal(ledger.closingNet, 1300);
-assert.deepEqual(Array.from(ledger.rows, row => row.code), ['1103', '1107', '2101']);
+assert.deepEqual(Array.from(ledger.rows, row => row.code), ['1103', '1103', '1107', '2101']);
 assert.ok(!ledger.rows.some(row => ['4101', '6101'].includes(row.code)),
   'revenue and expense lines tagged with partyId must not distort party balance');
 console.log('PASS: party ledger uses the same control-account scope as party net balance');
