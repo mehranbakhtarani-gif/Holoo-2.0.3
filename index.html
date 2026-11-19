@@ -3557,9 +3557,9 @@
           alerts.push(`<div class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-950 flex justify-between"><span>🐢 کالای راکد (${faNum(stagnantDays)} روز بدون گردش): ${p.name}</span><strong class="tabular-nums">${faNum(p.stock)} KG</strong></div>`);
         }
       });
-      const alertPriority = html => html.includes('bg-rose-') ? 0 : (html.includes('bg-amber-') ? 1 : 2);
+      const alertPriority = html => html.includes('bg-rose-') ? 0 : (html.includes('bg-amber-') || html.includes('bg-orange-') ? 1 : 2);
       const orderedAlerts = alerts.slice().sort((a, b) => alertPriority(a) - alertPriority(b));
-      const severityCounts = { critical: orderedAlerts.filter(html => html.includes('bg-rose-')).length, warning: orderedAlerts.filter(html => html.includes('bg-amber-')).length, info: orderedAlerts.filter(html => !html.includes('bg-rose-') && !html.includes('bg-amber-')).length };
+      const severityCounts = { critical: orderedAlerts.filter(html => html.includes('bg-rose-')).length, warning: orderedAlerts.filter(html => html.includes('bg-amber-') || html.includes('bg-orange-')).length, info: orderedAlerts.filter(html => !html.includes('bg-rose-') && !html.includes('bg-amber-') && !html.includes('bg-orange-')).length };
       [['dash-alert-critical', severityCounts.critical, 'بحرانی'], ['dash-alert-warning', severityCounts.warning, 'هشدار'], ['dash-alert-info', severityCounts.info, 'عادی']].forEach(([id, count, label]) => { const node = document.getElementById(id); if (node) node.textContent = faNum(count) + ' ' + label; });
       const visibleAlerts = dashboardShowAllAlerts ? orderedAlerts : orderedAlerts.slice(0, 5);
       const alertCount = document.getElementById('dash-alert-count');
@@ -3570,7 +3570,13 @@
         alertToggle.textContent = dashboardShowAllAlerts ? 'نمایش هشدارهای کمتر' : 'نمایش همه ' + faNum(orderedAlerts.length) + ' هشدار';
       }
       document.getElementById('dash-alerts').innerHTML = orderedAlerts.length
-        ? visibleAlerts.join('')
+        ? visibleAlerts.map(html => {
+            const isCheck = html.includes('چک سررسیدشده') || html.includes('چک در جریان');
+            const isProduct = html.includes('کالای راکد');
+            const destination = isCheck ? 'treasury' : isProduct ? 'inventory' : 'accounting';
+            const action = isCheck ? 'مشاهده چک‌ها' : isProduct ? 'مشاهده کالا و موجودی' : 'بررسی اسناد حسابداری';
+            return '<article class="rounded-xl border border-slate-200 bg-white p-2 space-y-2">' + html + '<button type="button" onclick="navigateTo(\'' + destination + '\')" class="touch-btn min-h-[36px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-[10px] font-extrabold text-slate-700">' + action + ' ←</button></article>';
+          }).join('')
         : '<p class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 font-bold text-emerald-800">هشدار فعالی وجود ندارد.</p>';
 
       const ctx = document.getElementById('dashChart');
