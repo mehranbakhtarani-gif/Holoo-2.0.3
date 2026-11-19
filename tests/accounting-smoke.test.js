@@ -161,6 +161,7 @@ test('kardex reconciliation sorts dated movements and preserves an earlier openi
   const source = section('function inspectInventoryReconciliation(products, warehouses)', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 15, tracked: 15, difference: 0 }; },
+    inspectWarehouseProductTopology() { return { issues: [], checkedBaseProducts: 0, companyTotalStock: 0, summaries: [] }; },
     jalaliDateOrdinal(value) {
       const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
@@ -182,6 +183,7 @@ test('kardex baseline remains unverified when the earliest dated movement is an 
   const source = section('function inspectInventoryReconciliation(products, warehouses)', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 4200, tracked: 4200, difference: 0 }; },
+    inspectWarehouseProductTopology() { return { issues: [], checkedBaseProducts: 0, companyTotalStock: 0, summaries: [] }; },
     jalaliDateOrdinal(value) {
       const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : null;
