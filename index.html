@@ -10818,45 +10818,57 @@
       let preview;
       try { preview = buildFiscalYearClosePreview(year); }
       catch (error) { showToast(error.message, 'error'); return; }
-      if (preview.alreadyClosed) { showToast('این سال مالی قبلاً با سند #' + preview.voucherId + ' بسته شده است.', 'error'); return; }
+      if (preview.alreadyClosed) { showToast('این سال مالی قبلاً بسته شده است.', 'error'); return; }
       if (preview.blocked) { showToast(preview.warnings[0] || 'کنترل‌های اختتامیه کامل نیستند؛ ابتدا مغایرت‌ها را رفع کنید.', 'error'); return; }
-      const confirmation = 'آیا از بستن قطعی سال مالی ' + year + ' مطمئن هستید؟\nسود/زیان قابل انتقال: ' + money(preview.profit) + '\nپس از ثبت، اسناد این سال قفل می‌شوند.';
+      const noJournalNeeded = preview.rows.length === 0 && Math.abs(preview.profit) <= 0.5;
+      const confirmation = 'آیا از بستن قطعی سال مالی ' + year + ' مطمئن هستید؟\\n' +
+        (noJournalNeeded ? 'مانده حساب‌های نتیجه‌دار صفر است؛ ثبت اختتامیه بدون سند مالی انجام می‌شود.' : 'سود/زیان قابل انتقال: ' + money(preview.profit) + '\\nپس از ثبت، اسناد این سال قفل می‌شوند.');
       if (!confirm(confirmation)) return;
-      const lines = preview.rows.map(row => ({
-        code: row.code, partyId: null, desc: 'بستن حساب سود و زیان سال ' + year,
-        debit: row.net < 0 ? Math.abs(row.net) : 0,
-        credit: row.net > 0 ? row.net : 0
-      }));
-      if (preview.profit > 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال سود خالص سال ' + year + ' به سود انباشته', debit: 0, credit: preview.profit });
-      else if (preview.profit < 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال زیان خالص سال ' + year + ' به سود انباشته', debit: Math.abs(preview.profit), credit: 0 });
-      const debitTotal = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
-      const creditTotal = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
-      if (lines.length < 2 || Math.abs(debitTotal - creditTotal) > 0.000001 || debitTotal <= 0) {
-        showToast('سند اختتامیه پیشنهادی از نظر توازن یا تعداد ردیف معتبر نیست؛ ثبت متوقف شد.', 'error'); return;
-      }
       const closeSnapshot = JSON.parse(JSON.stringify(state));
-      let voucherId;
+      let voucherId = null;
       try {
-        voucherId = postVoucher('سند اختتامیه سود و زیان سال مالی ' + year, lines, preview.to,
-          { type: 'fiscal_year_close', id: year, event: 'closing', deferSave: true });
-        const voucher = (state.vouchers || []).find(item => String(item.id) === String(voucherId));
-        if (!voucher || voucher.sourceType !== 'fiscal_year_close' || String(voucher.sourceId) !== year ||
-            (voucher.sourceEvent || 'default') !== 'closing' || normalizeLedgerDate(voucher.date || voucher.operationDate) !== normalizeLedgerDate(preview.to)) {
-          throw new Error('سند اختتامیه با شناسه، سال یا تاریخ مورد انتظار مطابقت ندارد.');
+        if (!noJournalNeeded) {
+          const lines = preview.rows.map(row => ({
+            code: row.code, partyId: null, desc: 'بستن حساب سود و زیان سال ' + year,
+            debit: row.net < 0 ? Math.abs(row.net) : 0,
+            credit: row.net > 0 ? row.net : 0
+          }));
+          if (preview.profit > 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال سود خالص سال ' + year + ' به سود انباشته', debit: 0, credit: preview.profit });
+          else if (preview.profit < 0) lines.push({ code: '3102', partyId: null, desc: 'انتقال زیان خالص سال ' + year + ' به سود انباشته', debit: Math.abs(preview.profit), credit: 0 });
+          const debitTotal = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
+          const creditTotal = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+          if (lines.length < 2 || Math.abs(debitTotal - creditTotal) > 0.000001 || debitTotal <= 0) {
+            throw new Error('سند اختتامیه پیشنهادی از نظر توازن یا تعداد ردیف معتبر نیست.');
+          }
+          voucherId = postVoucher('سند اختتامیه سود و زیان سال مالی ' + year, lines, preview.to,
+            { type: 'fiscal_year_close', id: year, event: 'closing', deferSave: true });
+          const voucher = (state.vouchers || []).find(item => String(item.id) === String(voucherId));
+          if (!voucher || voucher.sourceType !== 'fiscal_year_close' || String(voucher.sourceId) !== year ||
+              (voucher.sourceEvent || 'default') !== 'closing' || normalizeLedgerDate(voucher.date || voucher.operationDate) !== normalizeLedgerDate(preview.to)) {
+            throw new Error('سند اختتامیه با شناسه، سال یا تاریخ مورد انتظار مطابقت ندارد.');
+          }
+          const validation = inspectTrialBalanceVoucher(voucher);
+          if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) throw new Error('سند اختتامیه صادرشده از کنترل توازن عبور نکرد.');
+          if ((voucher.lines || []).some(line => !/^[456]\\d*$/.test(String(line.code || '')) && String(line.code || '') !== '3102')) {
+            throw new Error('سند اختتامیه شامل حسابی خارج از حساب‌های نتیجه‌دار و سود انباشته است.');
+          }
+          voucher.locked = true;
+          voucher.fiscalYearClose = { year, from: preview.from, to: preview.to, profit: preview.profit, carryForwardDifference: preview.carryForward.difference, actor: state.activeRole || 'mehran', closedAt: new Date().toISOString() };
         }
-        const validation = inspectTrialBalanceVoucher(voucher);
-        if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) throw new Error('سند اختتامیه صادرشده از کنترل توازن عبور نکرد.');
-        if ((voucher.lines || []).some(line => !/^[456]\d*$/.test(String(line.code || '')) && String(line.code || '') !== '3102')) {
-          throw new Error('سند اختتامیه شامل حسابی خارج از حساب‌های نتیجه‌دار و سود انباشته است.');
-        }
-        voucher.locked = true;
-        voucher.fiscalYearClose = { year, from: preview.from, to: preview.to, profit: preview.profit, carryForwardDifference: preview.carryForward.difference, actor: state.activeRole || 'mehran', closedAt: new Date().toISOString() };
-        addAudit('بستن سال مالی ' + year + ' با سند اختتامیه #' + voucherId, {
+        const closureRecord = {
+          year, from: preview.from, to: preview.to, status: 'closed',
+          closeMode: noJournalNeeded ? 'no_result_activity' : 'journal',
+          voucherId, profit: preview.profit, actor: state.activeRole || 'mehran',
+          closedAt: new Date().toISOString(), carryForward: preview.carryForward
+        };
+        state.fiscalYearClosures = (state.fiscalYearClosures || []).filter(item => normalizeAccountingDate(item.year) !== year);
+        state.fiscalYearClosures.push(closureRecord);
+        addAudit('بستن سال مالی ' + year + (voucherId ? ' با سند اختتامیه #' + voucherId : ' بدون نیاز به سند اختتامیه'), {
           mode: 'manual', sourceType: 'fiscal_year_close', sourceId: year, operationDate: preview.to,
-          relatedVoucherIds: [voucherId], note: 'اختتامیه پس از کنترل توازن اسناد، سود و زیان و انتقال مانده حساب‌های دائمی ثبت شد.',
-          details: { actor: state.activeRole || 'mehran', voucherId, profit: preview.profit, incomeSummary: preview.incomeSummary, carryForward: preview.carryForward, from: preview.from, to: preview.to }
+          relatedVoucherIds: voucherId ? [voucherId] : [], note: noJournalNeeded ? 'مانده حساب‌های نتیجه‌دار صفر بود؛ سال بدون صدور سند مالی بسته شد.' : 'اختتامیه پس از کنترل توازن اسناد، سود و زیان و انتقال مانده حساب‌های دائمی ثبت شد.',
+          details: { actor: state.activeRole || 'mehran', voucherId, closeMode: closureRecord.closeMode, profit: preview.profit, incomeSummary: preview.incomeSummary, carryForward: preview.carryForward, from: preview.from, to: preview.to }
         });
-        if (!saveState()) throw new Error('ذخیره محلی سند اختتامیه ناموفق بود؛ تغییرات بازگردانده شدند.');
+        if (!saveState()) throw new Error('ذخیره محلی وضعیت اختتامیه ناموفق بود؛ تغییرات بازگردانده شدند.');
       } catch (error) {
         state = closeSnapshot;
         renderAccountingModule();
@@ -10864,7 +10876,7 @@
         return;
       }
       renderAccountingModule();
-      showToast('سال مالی ' + year + ' با سند اختتامیه #' + voucherId + ' بسته شد.');
+      showToast('سال مالی ' + year + (voucherId ? ' با سند اختتامیه #' + voucherId : ' بدون نیاز به سند مالی') + ' بسته شد.');
     }
 
     function renderFiscalYearCloseModule() {
@@ -10878,7 +10890,7 @@
       }
       if (preview.alreadyClosed) {
         const carry = preview.carryForward || buildFiscalYearCarryForwardSummary(year);
-        box.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3"><h3 class="font-black">سال مالی ' + escapeLedgerText(faNum(year)) + '</h3><p class="text-emerald-700 font-bold">این سال قبلاً بسته شده است؛ سند اختتامیه #' + faNum(preview.voucherId) + '</p><div class="grid grid-cols-1 sm:grid-cols-2 gap-2"><div class="p-3 rounded-xl bg-slate-50">مانده دارایی‌های دائمی تا پایان سال<strong class="block">' + money(carry.assets) + '</strong></div><div class="p-3 rounded-xl bg-slate-50">مانده بدهی و حقوق مالکانه<strong class="block">' + money(carry.liabilitiesAndEquity) + '</strong></div></div><p class="text-xs ' + (Math.abs(carry.difference) > 0.5 ? 'text-rose-700' : 'text-emerald-700') + '">اختلاف تراز انتقال مانده‌ها: ' + money(carry.difference) + '</p><p class="text-xs text-slate-500">مانده افتتاحیه سال بعد از مانده تجمعی حساب‌های دائمی (گروه‌های ۱، ۲ و ۳) در دفترکل تا ' + faNum(carry.endDate) + ' به دست می‌آید. سند افتتاحیه تکراری صادر نمی‌شود تا دارایی‌ها، بدهی‌ها و حقوق مالکانه دوباره‌شماری نشوند.</p></div>';
+        box.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3"><h3 class="font-black">سال مالی ' + escapeLedgerText(faNum(year)) + '</h3><p class="text-emerald-700 font-bold">' + (preview.voucherId ? 'این سال قبلاً با سند اختتامیه #' + faNum(preview.voucherId) + ' بسته شده است.' : 'این سال بدون نیاز به سند مالی بسته شده است؛ مانده حساب‌های نتیجه‌دار صفر بوده‌اند.') + '</p><div class="grid grid-cols-1 sm:grid-cols-2 gap-2"><div class="p-3 rounded-xl bg-slate-50">مانده دارایی‌های دائمی تا پایان سال<strong class="block">' + money(carry.assets) + '</strong></div><div class="p-3 rounded-xl bg-slate-50">مانده بدهی و حقوق مالکانه<strong class="block">' + money(carry.liabilitiesAndEquity) + '</strong></div></div><p class="text-xs ' + (Math.abs(carry.difference) > 0.5 ? 'text-rose-700' : 'text-emerald-700') + '">اختلاف تراز انتقال مانده‌ها: ' + money(carry.difference) + '</p><p class="text-xs text-slate-500">مانده افتتاحیه سال بعد از مانده تجمعی حساب‌های دائمی (گروه‌های ۱، ۲ و ۳) در دفترکل تا ' + faNum(carry.endDate) + ' به دست می‌آید. سند افتتاحیه تکراری صادر نمی‌شود تا دارایی‌ها، بدهی‌ها و حقوق مالکانه دوباره‌شماری نشوند.</p></div>';
         return;
       }
       const rows = preview.rows.map(row => '<div class="flex justify-between gap-2 p-2 rounded-lg bg-slate-50 border text-xs"><span>' + escapeLedgerText(faNum(row.code)) + '</span><strong>' + money(Math.abs(row.net)) + (row.net > 0 ? ' بدهکار' : ' بستانکار') + '</strong></div>').join('');
