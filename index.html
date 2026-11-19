@@ -11336,10 +11336,11 @@
         '<p class="text-[10px] text-slate-500">گردش‌ها فقط مربوط به بازه انتخابی‌اند؛ مانده‌ها شامل تمام گردش‌های ثبت‌شده از ابتدای سوابق تا تاریخ پایان هستند. این گزارش صرفاً خواندنی است و هیچ سندی ایجاد یا اصلاح نمی‌کند.</p></div>';
     }
 
-    function getFiscalYearCloseRecord(year) {
+    function getFiscalYearCloseRecord(year, options = {}) {
       const key = normalizeAccountingDate(year);
       const stored = (state.fiscalYearClosures || []).find(item => normalizeAccountingDate(item.year) === key && item.status !== 'reopened');
-      const voucher = (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === key && (item.sourceEvent || 'default') === 'closing');
+      const excludedVoucherId = options.excludeVoucherId == null ? null : String(options.excludeVoucherId);
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === key && (item.sourceEvent || 'default') === 'closing' && (!excludedVoucherId || String(item.id) !== excludedVoucherId));
       if (!stored && !voucher) return null;
       return { ...(stored || {}), year: key, voucherId: stored?.voucherId || voucher?.id || null, voucher: voucher || null };
     }
@@ -11380,7 +11381,7 @@
       return { year: fiscalYear, endDate, assets, liabilitiesAndEquity, difference: assets - liabilitiesAndEquity, accountCount: accounts.size, invalidDateVouchers, invalidAmountLines, invalidStructureVouchers, unbalancedVouchers };
     }
 
-    function buildFiscalYearClosePreview(year) {
+    function buildFiscalYearClosePreview(year, options = {}) {
       const fiscalYear = normalizeAccountingDate(year);
       if (!/^14\d{2}$/.test(fiscalYear)) throw new Error('سال مالی انتخاب‌شده معتبر نیست.');
       const from = fiscalYear + '/01/01';
@@ -11390,7 +11391,7 @@
       if (jalaliDateOrdinal(today) === null || normalizeLedgerDate(today) < normalizeLedgerDate(to)) {
         throw new Error('بستن سال مالی فقط پس از پایان واقعی سال (' + to + ') مجاز است.');
       }
-      const existing = getFiscalYearCloseRecord(fiscalYear);
+      const existing = getFiscalYearCloseRecord(fiscalYear, options);
       if (existing) return { year: fiscalYear, from, to, alreadyClosed: true, voucherId: existing.voucherId, closureRecord: existing, rows: [], profit: 0, blocked: false, warnings: [], incomeSummary: null, carryForward: buildFiscalYearCarryForwardSummary(fiscalYear) };
 
       const balances = new Map();
@@ -11399,6 +11400,7 @@
       const incomeSummary = { revenue: 0, cogs: 0, expenses: 0, netProfit: 0 };
       const openingResultIssues = [];
       (state.vouchers || []).forEach(voucher => {
+        if (options.excludeVoucherId != null && String(voucher.id) === String(options.excludeVoucherId)) return;
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) {
@@ -11506,7 +11508,7 @@
           voucher.locked = true;
           voucher.fiscalYearClose = { year, from: preview.from, to: preview.to, profit: preview.profit, carryForwardDifference: preview.carryForward.difference, actor: state.activeRole || 'mehran', closedAt: new Date().toISOString() };
         }
-        const freshPreview = buildFiscalYearClosePreview(year);
+        const freshPreview = buildFiscalYearClosePreview(year, { excludeVoucherId: voucherId });
         if (freshPreview.alreadyClosed || freshPreview.blocked || Math.abs(Number(freshPreview.profit) - Number(preview.profit)) > 0.5 || Math.abs(Number(freshPreview.carryForward?.difference || 0)) > 0.5) {
           throw new Error('کنترل نهایی اختتامیه با پیش‌نمایش اولیه یکسان نیست؛ عملیات برای جلوگیری از ثبت بر مبنای اطلاعات تغییرکرده متوقف شد.');
         }
