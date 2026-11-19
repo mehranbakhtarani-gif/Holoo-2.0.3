@@ -1618,6 +1618,7 @@
   </div>
 
   <script src="./import-domain.js"></script>
+  <script src="./warehouse-audit-domain.js"></script>
   <script>
     // Shared HTML escaping helper used by HR, assets, approvals and bank reconciliation.
     window.escapeBankReconciliationText = function(value) {
@@ -4027,6 +4028,40 @@
       openKardexModal(selectedKardexProductId);
     }
 
+    function renderWarehouseMovementAuditPanel(product, movement) {
+      const audit = HolooWarehouseAudit.getWarehouseMovementAuditView(state.products, state.warehouses, product, movement, state.vouchers);
+      const esc = HolooWarehouseAudit.escapeAuditText;
+      if (audit.kind === 'stocktake') {
+        const voucherRows = audit.voucherCandidates.length
+          ? audit.voucherCandidates.map(item => '<div>سند احتمالی: ' + esc(item.id || 'بدون شناسه') + ' — ' + esc(item.description) + '</div>').join('')
+          : '<div>سند متناظر با شرح و تاریخ دقیق پیدا نشد.</div>';
+        return '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-950 space-y-1"><strong>سوابق انبارگردانی — بررسی محدود</strong>' +
+          '<div>کالا: ' + esc(audit.productName) + ' (' + esc(audit.productId) + ') • تاریخ: ' + esc(audit.movementDate || 'ثبت نشده') + '</div>' +
+          '<div>ورود: ' + faNum(audit.inQty) + ' KG • خروج: ' + faNum(audit.outQty) + ' KG • مانده: ' + faNum(audit.balance) + ' KG</div>' +
+          '<div>اسناد هم‌شرح و هم‌تاریخ: ' + faNum(audit.voucherCandidates.length) + '</div>' + voucherRows +
+          '<div class="font-bold">' + esc(audit.reason) + '</div><div>snapshot قبل از عملیات، کاربر و دستگاه ذخیره نشده‌اند؛ اصلاح خودکار مجاز نیست.</div></div>';
+      }
+      if (audit.kind !== 'transfer') return '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px]">' + esc(audit.reason || 'اطلاعات حسابرسی در دسترس نیست.') + '</div>';
+      const side = (label, entry) => entry
+        ? '<div><strong>' + label + ':</strong> ' + esc(entry.productName) + ' / ' + esc(entry.warehouseName) +
+          '<div>تاریخ: ' + esc(entry.date || 'ثبت نشده') + ' • مقدار: ' + faNum(entry.quantity) + ' KG • مانده: ' + faNum(entry.balanceAfter) + ' KG</div></div>'
+        : '<div><strong>' + label + ':</strong> ردیف متناظر پیدا نشد.</div>';
+      const batchRows = audit.batchLinks.length
+        ? audit.batchLinks.map(link => '<div class="border-t border-indigo-100 pt-1">بچ مقصد: ' + esc(link.destinationBatchId) +
+          ' • بچ مبدأ: ' + esc(link.sourceBatchId || 'ثبت نشده') + ' • مقدار: ' + faNum(link.quantity) +
+          ' KG • باقی‌مانده: ' + faNum(link.remainingQty) + ' KG • بهای واحد: ' + money(link.unitCost) +
+          (link.parentFound ? '' : ' • پیوند بچ مبدأ پیدا نشد') + '</div>').join('')
+        : '<div>بچ انتقالی FIFO در داده فعلی پیدا نشد یا روش قیمت‌گذاری FIFO نبوده است.</div>';
+      return '<div class="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-[11px] text-indigo-950 space-y-1">' +
+        '<strong>تاریخچه قابل بازیابی حواله ' + esc(audit.transferId) + '</strong>' +
+        side('خروج از انبار', audit.source) + side('ورود به انبار', audit.destination) +
+        '<div>ردیف‌های مرتبط: ' + faNum(audit.pairCount) + ' • تطبیق مقدار: ' + (audit.quantityMatches ? 'بله' : 'خیر') +
+        ' • تطبیق تاریخ: ' + (audit.dateMatches ? 'بله' : 'خیر') + '</div>' +
+        '<div class="font-bold">' + esc(audit.reason) + '</div><div class="border-t border-indigo-100 pt-1"><strong>پیوند بچ‌های FIFO:</strong>' + batchRows + '</div>' +
+        '<div>snapshot قبل از انتقال، کاربر و دستگاه در رکورد قدیمی موجود نیست؛ این گزارش بازسازی محدود است.</div>' +
+        '<div class="font-bold text-rose-800">اصلاح یا برگشت مستقیم تا پیاده‌سازی معکوس‌سازی اتمیک دو انبار و اسناد وابسته مسدود است.</div></div>';
+    }
+
     function getWarehouseMovementCorrectionBlockReason(product, movement) {
       const description = String(movement?.doc || '');
       if (/اصلاحیه انبارگردانی/.test(description)) {
@@ -4131,6 +4166,7 @@
             ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
             ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
             ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? `<button onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${movements.indexOf(k)})" class="mt-1 bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg font-bold">✏️ بررسی اصلاح گردش انبار</button>` : ''}
+            ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? renderWarehouseMovementAuditPanel(p, k) : ''}
           </div>
         `;
       }).join('');
