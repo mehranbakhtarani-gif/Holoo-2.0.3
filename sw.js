@@ -1,5 +1,16 @@
-const CACHE_NAME = 'holoo-pwa-shell-v19';
-const APP_SHELL = ['./', './index.html', './import-domain.js', './manifest.json', './icons/icon.svg', './icons/icon-192.svg', './icons/icon-512.svg'];
+const CACHE_NAME = 'holoo-pwa-shell-v20';
+const APP_SHELL = [
+  './',
+  './index.html',
+  './import-domain.js',
+  './warehouse-audit-domain.js',
+  './warehouse-assignment-domain.js',
+  './operational-tools.js',
+  './manifest.json',
+  './icons/icon.svg',
+  './icons/icon-192.svg',
+  './icons/icon-512.svg'
+];
 const CDN_HOSTS = new Set([
   'cdn.tailwindcss.com',
   'cdn.jsdelivr.net',

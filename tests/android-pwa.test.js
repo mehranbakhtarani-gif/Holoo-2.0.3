@@ -9,6 +9,10 @@ assert.ok(manifest.display_override.includes('standalone'));
 assert.equal(manifest.orientation, 'portrait-primary');
 assert.ok(manifest.icons.some(x => x.sizes === '192x192'));
 assert.ok(manifest.icons.some(x => x.sizes === '512x512'));
+assert.equal(manifest.start_url, './');
+assert.equal(manifest.scope, './');
+assert.equal(manifest.lang, 'fa');
+assert.equal(manifest.dir, 'rtl');
 assert.equal(manifest.shortcuts.length, 3);
 assert.match(html, /function installAndroidApp\(/);
 assert.match(html, /function requestPersistentStorage\(/);
@@ -22,6 +26,17 @@ assert.match(html, /return digits\.slice\(0, 4\) \+ '\/' \+ digits\.slice\(4, 6\
 // The cache version must be versioned, but this test must not pin it to an obsolete release.
 assert.match(sw, /holoo-pwa-shell-v\d+/);
 assert.match(sw, /import-domain\.js/);
+// Every first-party script referenced by the page must be pre-cached at install,
+// not merely cached after its first successful online request.
+const shellMatch = sw.match(/const APP_SHELL = \[([\s\S]*?)\];/);
+assert.ok(shellMatch, 'service worker must declare an app shell');
+const shellAssets = [...shellMatch[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
+const localScripts = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js)["']/gi)].map(match => match[1]).filter(src => src.startsWith('./'));
+assert.ok(localScripts.length > 0, 'page must expose first-party script assets');
+for (const script of localScripts) {
+  assert.ok(shellAssets.includes(script), script + ' must be pre-cached in APP_SHELL');
+  assert.ok(fs.existsSync(script.slice(2)), script + ' must exist in the release');
+}
 assert.match(sw, /icon-192\.svg/);
 assert.match(sw, /icon-512\.svg/);
 for (const file of ['icons/icon-192.svg', 'icons/icon-512.svg']) {
