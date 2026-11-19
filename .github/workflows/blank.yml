@@ -60,4 +60,5 @@ jobs:
           node tests/invoice-return-correction-review.test.js
           node tests/warehouse-movement-correction-review.test.js
           node tests/import-receipt-correction-review.test.js
+          node tests/import-receipt-dependency-preflight.test.js
           node tests/full-fiscal-period.integration.test.js

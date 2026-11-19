@@ -5779,21 +5779,50 @@
       if (!items.length) return 'اقلام رسید قابل بازیابی نیست؛ اصلاح متوقف شد.';
       const registrationVoucher = (state.vouchers || []).find(voucher => voucher.sourceType === 'import' && String(voucher.sourceId) === String(shipment.id) && (voucher.sourceEvent || 'default') === 'registration');
       if (!registrationVoucher) return 'سند ثبت بهای تمام‌شده محموله پیدا نشد؛ اصلاح رسید بدون بررسی سند مالی مجاز نیست.';
-      const mismatches = [];
+      const issues = [], sourceBatchIds = new Set();
+      let consumedQty = 0, transferDescendants = 0, untrackedLaterMovements = 0;
       items.forEach(item => {
         const product = (state.products || []).find(p => String(p.id) === String(item.productId));
-        if (!product) { mismatches.push(String(item.productId) + ': کالا پیدا نشد'); return; }
+        if (!product) { issues.push(String(item.productId) + ': کالا پیدا نشد'); return; }
         const qty = Number(item.quantityKg || 0);
-        const rows = (Array.isArray(product.kardex) ? product.kardex : []).filter(row => String(row.batchRef || '') === String(shipment.id) && String(row.sourceItemId || '') === String(item.id) && String(row.doc || '').includes(String(shipment.id)) && Number(row.inQty || 0) > 0);
+        const rows = (Array.isArray(product.kardex) ? product.kardex : []).map((row, index) => ({ row, index })).filter(entry => String(entry.row.batchRef || '') === String(shipment.id) && String(entry.row.sourceItemId || '') === String(item.id) && String(entry.row.doc || '').includes(String(shipment.id)) && Number(entry.row.inQty || 0) > 0);
         const batches = (Array.isArray(product.batches) ? product.batches : []).filter(batch => String(batch.sourceType || '') === 'import' && String(batch.sourceRef || '') === String(shipment.id) && String(batch.sourceItemId || '') === String(item.id));
-        const rowQty = rows.reduce((sum, row) => sum + Number(row.inQty || 0), 0);
+        const rowQty = rows.reduce((sum, entry) => sum + Number(entry.row.inQty || 0), 0);
         const batchQty = batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
-        if (Math.abs(rowQty - qty) > 0.000001 || Math.abs(batchQty - qty) > 0.000001 || rows.length !== 1 || batches.length !== 1) mismatches.push(String(product.name || item.productId) + ': مقدار یا تعداد ردیف کاردکس/بچ با قلم محموله تطبیق ندارد');
-      });
-      if (mismatches.length) return 'ردیابی رسید کامل نیست: ' + mismatches.join('؛ ') + '؛ اصلاح متوقف شد تا سوابق انبار بازبینی شوند.';
-      return 'رسید محموله به موجودی، بچ‌های FIFO، کاردکس و بهای تمام‌شده میانگین متصل است؛ ممکن است بخشی از بچ‌ها در فروش یا انتقال مصرف شده باشند. مسیر معکوس‌سازی اتمیک و بررسی فروش‌های وابسته هنوز وجود ندارد؛ ویرایش یا حذف مستقیم رسید مسدود است. اصلاح امن باید تمام بچ‌های باقی‌مانده و مصرف‌شده، گردش‌های وابسته و اثرات مالی را با هم معکوس کند.';
-    }
+        if (Math.abs(rowQty - qty) > 0.000001 || Math.abs(batchQty - qty) > 0.000001 || rows.length !== 1 || batches.length !== 1) issues.push(String(product.name || item.productId) + ': مقدار یا تعداد ردیف کاردکس/بچ با قلم محموله تطبیق ندارد');
+        batches.forEach(batch => {
+          sourceBatchIds.add(String(batch.id));
+          const remaining = Number(batch.remainingQty);
+          if (!Number.isFinite(remaining) || remaining < -0.000001 || remaining > Number(batch.quantity || 0) + 0.000001) issues.push(String(product.name || item.productId) + ': مانده بچ وارداتی نامعتبر است');
 
+        });
+        if (rows.length === 1) {
+          const later = (product.kardex || []).slice(rows[0].index + 1).filter(row => Number(row.inQty || 0) > 0 || Number(row.outQty || 0) > 0);
+          if (later.length && state.costingMethod !== 'FIFO') untrackedLaterMovements += later.length;
+        }
+      });
+      const allBatches = (state.products || []).flatMap(product => (Array.isArray(product.batches) ? product.batches : []).map(batch => ({ product, batch })));
+      const descendants = new Set(sourceBatchIds);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        allBatches.forEach(entry => {
+          const parentId = String(entry.batch.sourceBatchId || '');
+          if (parentId && descendants.has(parentId) && !descendants.has(String(entry.batch.id))) { descendants.add(String(entry.batch.id)); transferDescendants++; grew = true; }
+        });
+      }
+      const originalQty = allBatches.filter(entry => sourceBatchIds.has(String(entry.batch.id))).reduce((sum, entry) => sum + Math.max(0, Number(entry.batch.quantity || 0)), 0);
+      const lineageRemaining = allBatches.filter(entry => descendants.has(String(entry.batch.id))).reduce((sum, entry) => sum + Math.max(0, Number(entry.batch.remainingQty || 0)), 0);
+      consumedQty = Math.max(0, originalQty - lineageRemaining);
+      const invoiceIds = new Set();
+      (state.invoices || []).forEach(invoice => (invoice.items || []).forEach(line => (line.fifoAllocations || []).forEach(allocation => {
+        if (descendants.has(String(allocation.batchId || ''))) invoiceIds.add(String(invoice.id));
+      })));
+      const invoiceReferences = invoiceIds.size;
+      if (issues.length) return 'ردیابی رسید کامل نیست: ' + issues.join('؛ ') + '؛ اصلاح متوقف شد تا سوابق انبار بازبینی شوند.';
+      const dependencySummary = 'مصرف خالص ثبت‌شده از بچ‌های اصلی: ' + faNum(consumedQty) + ' کیلوگرم؛ بچ‌های انتقالی وابسته: ' + faNum(transferDescendants) + '؛ فاکتورهای دارای تخصیص FIFO مرتبط: ' + faNum(invoiceReferences) + '؛ گردش‌های بعدی بدون ردیابی بچ در روش میانگین: ' + faNum(untrackedLaterMovements) + '. ';
+      return dependencySummary + 'معکوس‌سازی خودکار هنوز امن نیست: نسخه فعلی snapshot قبل از رسید برای بازگردانی دقیق موجودی و بهای میانگین ندارد و سند ثبت محموله نیز اثر مالی مستقل دارد. بنابراین اصلاح/حذف مستقیم مسدود است؛ ابتدا باید زنجیره بچ‌های منتقل‌شده و مصرف‌شده و اثر سند مالی در یک عملیات اتمیک پوشش داده شود.';
+    }
     function requestImportReceiptCorrection(importId) {
       const shipment = (state.imports || []).find(item => String(item.id) === String(importId));
       showToast('بررسی اصلاح رسید ' + String(importId) + ': ' + getImportReceiptCorrectionBlockReason(shipment), 'error');
