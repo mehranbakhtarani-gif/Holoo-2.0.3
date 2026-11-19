@@ -2611,6 +2611,13 @@
     // Add the supplier-advance account to existing installations without replacing their custom chart.
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '1107')) state.accountCatalog.push({ id: 'SUB-1107', code: '1107', name: 'پیش‌پرداخت به تأمین‌کنندگان', level: 'subsidiary', parentId: 'GL-11', system: true, active: true });
     if (!state.accountCatalog.some(a => a.level === 'subsidiary' && a.code === '2106')) state.accountCatalog.push({ id: 'SUB-2106', code: '2106', name: 'بستانکاران هزینه‌های واردات', level: 'subsidiary', parentId: 'GL-21', system: true, active: true });
+    // Add the new inventory and FX result accounts to existing company charts without replacing custom accounts.
+    ['4199', '6105', '6106'].forEach(code => {
+      const account = CHART_ACCOUNTS.find(item => item.code === code);
+      if (account && !state.accountCatalog.some(item => item.level === 'subsidiary' && String(item.code) === code)) {
+        state.accountCatalog.push({ id: 'SUB-' + code, code, name: account.name, level: 'subsidiary', parentId: 'GL-' + code.slice(0, 2), system: true, active: true });
+      }
+    });
     if (!Array.isArray(state.fxCommitments)) state.fxCommitments = [];
     if (!Array.isArray(state.employees)) state.employees = [];
     if (!Array.isArray(state.payrollRuns)) state.payrollRuns = [];
@@ -5099,6 +5106,8 @@
         return sum;
       }, { inQty: 0, outQty: 0, valid: true });
       const closing = opening !== null && totals.valid ? opening + totals.inQty - totals.outQty : null;
+      const openingEstimated = !lastPrior && !!firstValid;
+      const currentBookValue = typeof getInventoryBookValue === 'function' ? getInventoryBookValue(p) : null;
       const lastPeriod = periodRows.slice().reverse().find(row => row.valid);
       const storedClosing = lastPeriod ? lastPeriod.balance : opening;
       const latest = ordered.slice().reverse().find(row => row.valid);
@@ -5113,11 +5122,12 @@
         '<div class="rounded-xl border p-3 min-w-0 ' + cls + '"><div class="text-[10px] font-bold">' + label +
         '</div><strong class="block mt-1 text-sm sm:text-base tabular-nums break-words">' + value +
         '</strong><div class="mt-1 text-[9px] opacity-75">' + (note || '') + '</div></div>';
-      const summary = '<section class="grid grid-cols-2 xl:grid-cols-4 gap-2">' +
+      const summary = '<section class="grid grid-cols-2 xl:grid-cols-5 gap-2">' +
         card('مانده ابتدای بازه', qtyText(opening), openingBasis, 'bg-slate-50 border-slate-200 text-slate-800') +
         card('جمع ورود دوره', qtyText(totals.valid ? totals.inQty : null), 'مجموع ورود در بازه انتخابی', 'bg-emerald-50 border-emerald-200 text-emerald-900') +
         card('جمع خروج دوره', qtyText(totals.valid ? totals.outQty : null), 'مجموع خروج در بازه انتخابی', 'bg-rose-50 border-rose-200 text-rose-900') +
         card('مانده پایان بازه', qtyText(closing), storedClosing === null ? 'مانده ثبت‌شده در دسترس نیست' : 'مانده ثبت‌شده: ' + qtyText(storedClosing), 'bg-teal-50 border-teal-200 text-teal-900') +
+        card('ارزش دفتری موجودی فعلی', currentBookValue === null ? 'نیازمند تطبیق' : money(currentBookValue), 'طبق روش قیمت‌گذاری جاری؛ تطبیق با دفتر کل جداگانه لازم است', 'bg-indigo-50 border-indigo-200 text-indigo-900') +
         '</section>';
 
       const invoiceInfo = movement => {
@@ -5164,6 +5174,8 @@
       if (balanceMismatch) warnings.push('مانده محاسباتی با مانده ذخیره‌شده پایان بازه برابر نیست.');
       if (stockMismatch) warnings.push('مانده آخرین گردش با موجودی فعلی کالا برابر نیست؛ گزارش تطبیق موجودی را اجرا کنید.');
       if (opening === null) warnings.push('مانده ابتدای بازه قابل اتکا نیست؛ سابقه پایه معتبر پیدا نشد.');
+      else if (openingEstimated) warnings.push('مانده ابتدای بازه از اولین گردش برآورد شده است و مانده افتتاحیه مستقل نیست.');
+      if (!latest && Number.isFinite(currentStock) && currentStock > 0) warnings.push('کالا موجودی فعلی دارد اما گردش معتبر برای اثبات مانده آن ثبت نشده است.');
       const warningPanel = warnings.length
         ? '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-[10px] text-amber-950 space-y-1">' +
           warnings.map(item => '<p>• ' + escapeKardexText(item) + '</p>').join('') +
