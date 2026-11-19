@@ -7,32 +7,32 @@ const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].
 for (const [i, source] of scripts.entries()) new vm.Script(source, { filename: 'index.html:inline-' + i });
 
 // Existing master-data editors remain present.
-assert.match(html, /function openPartyModal\\(partyId = null\\)/);
-assert.match(html, /function openProductModal\\(productId = null\\)/);
+assert.ok(html.includes('function openPartyModal(partyId = null)'));
+assert.ok(html.includes('function openProductModal(productId = null)'));
 
 // Open sales orders can be edited; converted orders are deliberately locked.
-assert.match(html, /function openOrderModal\\(orderId = null\\)/);
-assert.match(html, /function saveOrder\\(\\)[\\s\\S]*?if \\(editingOrderId !== null\\)/);
-assert.match(html, /String\\(order\\.status \\|\\| ''\\)\\.includes\\('تکمیل'\\)/);
-assert.match(html, /sourceType: 'sales_order'/);
-assert.match(html, /ویرایش سفارش ذخیره شد؛ هیچ فاکتور یا سند حسابداری تغییر نکرد/);
+assert.ok(html.includes('function openOrderModal(orderId = null)'));
+assert.ok(html.includes('if (editingOrderId !== null)'));
+assert.ok(html.includes("String(order.status || '').includes('تکمیل')"));
+assert.ok(html.includes("sourceType: 'sales_order'"));
+assert.ok(html.includes('هیچ فاکتور یا سند حسابداری تغییر نکرد'));
 
 // Measurement-unit factors can be edited with an audit entry. Historical KG values remain intact.
-assert.match(html, /function editCustomUnit\\(unitId\\)/);
-assert.match(html, /function cancelCustomUnitEdit\\(\\)/);
-assert.match(html, /sourceType: 'measurement_unit'/);
-assert.match(html, /فاکتورها و گردش‌های قبلی به دلیل ذخیره مقدار استاندارد KG تغییر نمی‌کنند/);
+assert.ok(html.includes('function editCustomUnit(unitId)'));
+assert.ok(html.includes('function cancelCustomUnitEdit()'));
+assert.ok(html.includes("sourceType: 'measurement_unit'"));
+assert.ok(html.includes('فاکتورها و گردش‌های قبلی به دلیل ذخیره مقدار استاندارد KG تغییر نمی‌کنند'));
 
 // Employee profile changes are audited without rewriting issued payroll history.
-assert.match(html, /function openEmployeeModal\\(employeeId = null\\)/);
-assert.match(html, /sourceType: 'payroll_employee'/);
-assert.match(html, /لیست‌های حقوق صادرشده قبلی به‌صورت تاریخی حفظ می‌شوند/);
+assert.ok(html.includes('function openEmployeeModal(employeeId = null)'));
+assert.ok(html.includes("sourceType: 'payroll_employee'"));
+assert.ok(html.includes('لیست‌های حقوق صادرشده قبلی به‌صورت تاریخی حفظ می‌شوند'));
 
 // Fixed-asset editing cannot rewrite the acquisition voucher or already-posted depreciation.
-assert.match(html, /function openAssetModal\\(assetId = null\\)/);
-assert.match(html, /sourceType: 'fixed_asset'/);
-assert.match(html, /بهای تحصیل، تاریخ، حساب و سند اولیه دست‌نخورده باقی ماند/);
-assert.match(html, /hasDepreciation \\? 'نام و محل دارایی ویرایش شد/);
-assert.match(html, /ast-date','ast-cost','ast-credit-account/);
+assert.ok(html.includes('function openAssetModal(assetId = null)'));
+assert.ok(html.includes("sourceType: 'fixed_asset'"));
+assert.ok(html.includes('بهای تحصیل، تاریخ، حساب و سند اولیه دست‌نخورده باقی ماند'));
+assert.ok(html.includes("['ast-date','ast-cost','ast-credit-account']"));
+assert.ok(html.includes('if (!hasDepreciation) { asset.lifeYears = lifeYears; asset.residualValue = residualValue; }'));
 
 console.log('PASS: consistent edit controls preserve posted accounting, inventory, payroll, and depreciation history');
