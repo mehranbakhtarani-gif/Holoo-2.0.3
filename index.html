@@ -5815,7 +5815,7 @@
         editingPartyId = null;
         return;
       }
-      const partyId = 'P-' + Date.now();
+      const partyId = createStableId('party');
       const previousAuditLogs = Array.isArray(state.auditLogs) ? state.auditLogs.slice() : [];
       const previousQueuedAuditId = lastQueuedAuditId;
       state.parties.push({
