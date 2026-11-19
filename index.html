@@ -6593,6 +6593,9 @@
           <div class="flex flex-wrap justify-between items-center pt-1 border-t gap-1">
             <strong class="tabular-nums">${money(c.amount)}</strong>
             <div class="flex gap-1">
+              ${canCorrectCheck(c) ? `<button type="button" onclick="openCheckCorrection('${c.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-1 rounded font-bold text-[10px]">✏️ اصلاح حسابرسی‌شده</button>` : ''}
+              ${c.correctedByCheckId ? `<span class="text-[10px] text-slate-600">اصلاح‌شده با چک جایگزین ${c.correctedByCheckId}</span>` : ''}
+              ${c.correctsCheckId ? `<span class="text-[10px] text-indigo-700">نسخه اصلاحی چک ${c.correctsCheckId}</span>` : ''}
               ${['in_progress', 'overdue'].includes(c.status) ? `
                 <button onclick="updateCheckStatus('${c.id}','cleared')" class="bg-emerald-600 text-white px-2 py-1 rounded font-bold text-[10px]">وصول</button>
                 <button onclick="updateCheckStatus('${c.id}','bounced')" class="bg-rose-600 text-white px-2 py-1 rounded font-bold text-[10px]">برگشت</button>
