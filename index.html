@@ -3288,7 +3288,44 @@
         else button.removeAttribute('aria-current');
       });
       workspace.scrollTop = 0;
-      renderAll();
+
+      // Navigation renders only the requested module. Rendering every module on
+      // each tap allowed an unrelated module's initialization to disrupt navigation.
+      const moduleRenderers = {
+        dashboard: renderDashboard,
+        products: renderProductsModule,
+        inventory: renderInventoryModule,
+        parties: renderPartiesModule,
+        invoices: renderInvoicesModule,
+        orders: renderOrdersModule,
+        imports: renderImportsModule,
+        treasury: renderTreasuryModule,
+        accounting: renderAccountingModule,
+        reconcile: renderReconcileModule,
+        fx: renderFxModule,
+        cashflow: renderCashflowModule,
+        aging: renderAgingModule,
+        planner: renderCapitalPlanner,
+        hr: renderHrModule,
+        assets: renderAssetsModule,
+        approvals: renderApprovalsModule,
+        settings: renderSettingsModule
+      };
+      try {
+        const renderer = moduleRenderers[mod];
+        if (renderer) renderer();
+      } catch (error) {
+        console.error('Holoo navigation render failed (' + mod + '):', error);
+        let notice = target.querySelector('[data-module-render-error]');
+        if (!notice) {
+          notice = document.createElement('div');
+          notice.dataset.moduleRenderError = 'true';
+          notice.className = 'm-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800';
+          notice.setAttribute('role', 'alert');
+          target.prepend(notice);
+        }
+        notice.textContent = 'بارگذاری این بخش با خطا مواجه شد. صفحه را دوباره باز کنید؛ جزئیات خطا در گزارش فنی ثبت شد.';
+      }
       return true;
     }
 
