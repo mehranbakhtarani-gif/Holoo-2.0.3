@@ -3320,8 +3320,11 @@
           <strong class="tabular-nums">${money(c.amount)}</strong>
         </div>`);
       });
-      state.products.filter(p => p.lastMoveDays >= 60).forEach(p => {
-        alerts.push(`<div class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-950 flex justify-between"><span>🐢 کالای راکد (${faNum(p.lastMoveDays)} روز بدون گردش): ${p.name}</span><strong class="tabular-nums">${faNum(p.stock)} KG</strong></div>`);
+      state.products.forEach(p => {
+        const stagnantDays = getProductDaysSinceLastMovement(p);
+        if (stagnantDays !== null && stagnantDays >= 60) {
+          alerts.push(`<div class="p-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-950 flex justify-between"><span>🐢 کالای راکد (${faNum(stagnantDays)} روز بدون گردش): ${p.name}</span><strong class="tabular-nums">${faNum(p.stock)} KG</strong></div>`);
+        }
       });
       document.getElementById('dash-alerts').innerHTML = alerts.length ? alerts.join('') : '<p class="text-emerald-700 font-bold">هیچ هشدار بحرانی وجود ندارد ✔</p>';
 
@@ -4146,7 +4149,8 @@
         const todayOrdinal = currentJalaliOrdinal();
         const expiredCount = activeBatches.filter(batch => batch.expiryDate && jalaliDateOrdinal(batch.expiryDate) !== null && jalaliDateOrdinal(batch.expiryDate) < todayOrdinal).length;
         const expiringSoonCount = activeBatches.filter(batch => { const expiry = batch.expiryDate ? jalaliDateOrdinal(batch.expiryDate) : null; return expiry !== null && expiry >= todayOrdinal && expiry - todayOrdinal <= 30; }).length;
-        const isStagnant = p.lastMoveDays >= 60;
+        const stagnantDays = getProductDaysSinceLastMovement(p);
+        const isStagnant = stagnantDays !== null && stagnantDays >= 60;
         const cartonKg = Number(p.cartonKg);
         const cartonCount = Number.isFinite(cartonKg) && cartonKg > 0 ? Math.round(Number(p.stock || 0) / cartonKg) : null;
         const batchLabels = activeBatches.map(batch => escapeKardexText(batch.lot || '—')).slice(0, 3).join('، ') || escapeKardexText(p.lot || '—');
@@ -4158,7 +4162,7 @@
             <td class="p-2.5 font-black tabular-nums">${faNum(p.stock)} KG</td>
             <td class="p-2.5 tabular-nums">${cartonCount === null ? '—' : faNum(cartonCount) + ' کارتن'}</td>
             <td class="p-2.5 tabular-nums">${displayedUnitCost === null ? '<span class="text-amber-700 font-bold">نیازمند تطبیق</span>' : money(displayedUnitCost, false)}</td>
-            <td class="p-2.5">${isStagnant ? '<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">🐢 راکد</span>' : '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">فعال ✔</span>'}</td>
+            <td class="p-2.5">${stagnantDays === null ? '<span class="text-slate-500 text-[10px]">بدون سابقه گردش معتبر</span>' : (isStagnant ? '<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">🐢 راکد</span>' : '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">فعال ✔</span>')}</td>
             <td class="p-2.5"><button onclick="openKardexModal('${String(p.id).replace(/'/g, '')}')" class="bg-holoo-50 text-holoo-800 border border-holoo-200 px-2.5 py-1 rounded-lg font-bold">کاردکس</button></td>
           </tr>
         `;
@@ -7110,6 +7114,22 @@
       addAudit(`پرداخت ${payFx} ${shipment.currency} از تعهد محموله ${shipment.id}`, { mode: 'automatic', sourceType: 'import' });
       saveState(); renderAll();
       showToast(`پرداخت مرحله‌ای ${faNum(payFx)} ${shipment.currency} و سند تسعیر ارز ثبت شد ✔`);
+    }
+
+    function getProductDaysSinceLastMovement(product, todayOrdinal = currentJalaliOrdinal()) {
+      if (!product || !Number.isFinite(todayOrdinal)) return null;
+      let latestMovementOrdinal = null;
+      const movements = Array.isArray(product.kardex) ? product.kardex : [];
+      for (const movement of movements) {
+        const movementOrdinal = jalaliDateOrdinal(movement?.date);
+        if (movementOrdinal === null) continue;
+        if (latestMovementOrdinal === null || movementOrdinal > latestMovementOrdinal) {
+          latestMovementOrdinal = movementOrdinal;
+        }
+      }
+      if (latestMovementOrdinal !== null) return Math.max(0, Math.floor(todayOrdinal - latestMovementOrdinal));
+      const legacyDays = Number(product.lastMoveDays);
+      return Number.isFinite(legacyDays) && legacyDays > 0 ? Math.floor(legacyDays) : null;
     }
 
     function jalaliDateOrdinal(value) {
