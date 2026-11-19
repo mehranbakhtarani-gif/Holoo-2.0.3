@@ -785,8 +785,8 @@ test('FIFO supplier purchase return consumes the original batches and posts bala
     fiscalYear:'1405', costingMethod:'FIFO', treasuryTxs:[],
     invoices:[{id:3502,type:'purchase',partyId:'SUP-FIFO',grandTotal:40,paidAmount:0,items:[{productId:'FIFO-PUR',kg:4,returnedKg:0,price:10}]}],
     products:[{id:'FIFO-PUR',stock:10,buyPrice:9,batches:[
-      {id:'PUR-B1',quantity:6,remainingQty:6,unitCost:8},
-      {id:'PUR-B2',quantity:4,remainingQty:4,unitCost:10}
+      {id:'PUR-B1',lot:'PUR-3502-FIFO-PUR',sourceType:'purchase',sourceRef:3502,quantity:6,remainingQty:6,unitCost:8},
+      {id:'PUR-B2',lot:'PUR-3502-FIFO-PUR',sourceType:'purchase',sourceRef:3502,quantity:4,remainingQty:4,unitCost:10}
     ],kardex:[]}]
   };
   const posted=[]; let saves=0;
@@ -844,7 +844,7 @@ test('partial purchase return allocates discounted inventory value and input VAT
     fiscalYear:'1405',costingMethod:'AVG',treasuryTxs:[],
     invoices:[{id:3602,type:'purchase',partyId:'SUP-VAT',grandTotal:165,subtotal:200,netSubtotal:150,vatRate:10,vatAmount:15,paidAmount:0,
       items:[{productId:'VAT-PUR',kg:10,returnedKg:0,price:20,disc:50,total:150}]}],
-    products:[{id:'VAT-PUR',stock:10,buyPrice:15,batches:[{id:'VAT-PUR-B1',quantity:10,remainingQty:10,unitCost:15}],kardex:[]}]
+    products:[{id:'VAT-PUR',stock:10,buyPrice:15,batches:[{id:'VAT-PUR-B1',lot:'PUR-3602-VAT-PUR',sourceType:'purchase',sourceRef:3602,quantity:10,remainingQty:10,unitCost:15}],kardex:[]}]
   };
   const posted=[];let saves=0;
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('),'submitPartialReturn',{
@@ -931,7 +931,7 @@ test('purchase cancellation reverses inventory and input VAT in separate account
     fiscalYear:'1405',
     invoices:[{id:3703,type:'purchase',status:'active',partyId:'SUP-CANCEL',grandTotal:110,netSubtotal:100,vatAmount:10,paidAmount:0,
       items:[{productId:'CANCEL-PUR',kg:10,returnedKg:0,price:10,total:100}]}],
-    products:[{id:'CANCEL-PUR',stock:10,buyPrice:10,batches:[{id:'CANCEL-PUR-B1',quantity:10,remainingQty:10,unitCost:10}],kardex:[]}]
+    products:[{id:'CANCEL-PUR',stock:10,buyPrice:10,batches:[{id:'CANCEL-PUR-B1',lot:'PUR-3703-CANCEL-PUR',sourceType:'purchase',sourceRef:3703,quantity:10,remainingQty:10,unitCost:10}],kardex:[]}]
   };
   const posted=[];let saves=0;
   const cancel=load(section('function cancelInvoice(invId, options = {})','function printOfficialInvoice('),'cancelInvoice',{
