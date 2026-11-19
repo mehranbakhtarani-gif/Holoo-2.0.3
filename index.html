@@ -4520,29 +4520,33 @@
             <div class="text-[11px] text-slate-700">${transactionPrice}${invoiceTotal}</div>
             ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
             ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
-            ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? `<button onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${movements.indexOf(k)})" class="mt-1 bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg font-bold">✏️ اصلاح حواله انتقال</button>` : ''}
             ${(/TR-\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? renderWarehouseMovementAuditPanel(p, k) : ''}
           </div>
         `;
       }).join('');
 
-      const transferCorrectionRows = movements.map((movement, index) => {
-        const transferMatch = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
-        if (!transferMatch) return '';
-        const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferMatch[0]);
+      const transferGroups = new Map();
+      movements.forEach((movement, index) => {
+        const transferMatch = String(movement?.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+        if (!transferMatch || transferGroups.has(transferMatch[0])) return;
+        transferGroups.set(transferMatch[0], { movement, index });
+      });
+      const transferCorrectionRows = Array.from(transferGroups.entries()).map(([transferId, entry]) => {
+        const { movement, index } = entry;
+        const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferId);
         return `
           <div class="rounded-xl border border-indigo-200 bg-white p-2.5 flex flex-wrap items-center justify-between gap-2">
             <div class="min-w-0 flex-1">
-              <strong class="block text-[11px] text-indigo-950">${escapeKardexText(transferMatch[0])}</strong>
+              <strong class="block text-[11px] text-indigo-950">${escapeKardexText(transferId)}</strong>
               <span class="block text-[10px] text-slate-600">${escapeKardexText(movement.doc || 'حواله انتقال')} • ${escapeKardexText(movement.date || 'بدون تاریخ')}</span>
               <span class="block text-[10px] ${plan.ok ? 'text-emerald-700' : 'text-rose-700'}">${plan.ok ? 'آماده بررسی و اصلاح' : 'اصلاح مسدود: ' + escapeKardexText(plan.reason)}</span>
             </div>
             <button type="button" onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${index})"
               class="shrink-0 bg-indigo-700 text-white border border-indigo-800 px-3 py-2 rounded-lg font-black text-[11px]">
-              اصلاح این حواله
+              بررسی / اصلاح حواله
             </button>
           </div>`;
-      }).filter(Boolean).join('');
+      }).join('');
       const transferCorrectionPanel = `
         <section class="rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-3 space-y-2">
           <div class="font-black text-sm text-indigo-950">اصلاح حواله‌های انتقال</div>
