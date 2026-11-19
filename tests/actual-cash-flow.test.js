@@ -66,7 +66,7 @@ vm.createContext(sandbox);
 const voucherValidationStart = html.indexOf('    function inspectTrialBalanceVoucher(');
 const voucherValidationEnd = html.indexOf('    function ', voucherValidationStart + 10);
 assert.ok(voucherValidationStart >= 0 && voucherValidationEnd > voucherValidationStart, 'trial balance validator must exist');
-vm.runInContext(html.slice(voucherValidationStart, voucherValidationEnd), sandbox);
+vm.runInContext(html.slice(voucherValidationStart, voucherValidationEnd) + '; this.inspectTrialBalanceVoucher = inspectTrialBalanceVoucher;', sandbox);
 vm.runInContext(html.slice(jalaliStart,jalaliEnd),sandbox);
 vm.runInContext(html.slice(normalizeStart,normalizeEnd),sandbox);
 vm.runInContext(html.slice(reportStart,reportEnd)+'; this.buildActualCashFlowReport=buildActualCashFlowReport;',sandbox);
