@@ -9599,8 +9599,8 @@
         }
         if (ch === '"' && field.length === 0) quoted = true;
         else if (ch === ',') { row.push(field); field = ''; }
-        else if (ch === '\n' || ch === '\\r') {
-          if (ch === '\\r' && input[i + 1] === '\n') i++;
+        else if (ch === '\n' || ch === '\r') {
+          if (ch === '\r' && input[i + 1] === '\n') i++;
           row.push(field); rows.push(row); row = []; field = '';
         } else field += ch;
       }
