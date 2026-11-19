@@ -4263,7 +4263,7 @@
       return batch;
     }
 
-    function consumeFifoStock(product, quantity) {
+    function consumeFifoStock(product, quantity, options = {}) {
       const qty = Number(quantity || 0);
       if (!product || !Number.isFinite(qty) || qty <= 0) throw new Error('مقدار خروج موجودی معتبر نیست.');
       const reconciliation = inspectProductBatchReconciliation(product);
@@ -4272,7 +4272,9 @@
       }
       const batches = ensureProductBatches(product);
       const todayOrdinal = typeof currentJalaliOrdinal === 'function' ? currentJalaliOrdinal() : null;
-      const eligible = batches.filter(batch => isBatchEligibleForFifo(batch, todayOrdinal));
+      const eligible = options.includeExpired
+        ? batches.filter(batch => Number(batch.remainingQty || 0) > 0)
+        : batches.filter(batch => isBatchEligibleForFifo(batch, todayOrdinal));
       const available = eligible.reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty || 0)), 0);
       if (available + 0.000001 < qty) throw new Error('موجودی سری‌های ساخت منقضی‌نشده برای خروج FIFO کافی نیست.');
       const ordered = eligible.sort((a, b) => {
@@ -4561,11 +4563,13 @@
         return;
       }
       rows.innerHTML = unassignedWarning + products.map(product => `
-        <div class="p-3 rounded-xl bg-slate-50 border flex justify-between items-center gap-3">
+        <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-3">
           <div class="min-w-0 flex-1"><strong class="block break-words">${escapeKardexText(product.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(product.stock)} KG</span><span class="block text-[10px] text-slate-400">کد کالا: ${escapeKardexText(product.id)} • ${escapeKardexText(getWhName(product.warehouseId))}</span></div>
-          <label class="w-28 shrink-0 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
+          <div class="flex flex-wrap gap-2 shrink-0"><label class="w-28 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
             <input type="number" inputmode="decimal" min="0" step="any" required id="st-real-${String(product.id).replace(/"/g, '&quot;')}" value="${Number(product.stock || 0)}" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
-          </label>
+          </label>${state.costingMethod === 'FIFO' ? `<label class="w-36 text-[10px] font-bold text-slate-600">فی اضافه‌موجودی (ریال)
+            <input type="number" inputmode="decimal" min="0.01" step="any" id="st-cost-${String(product.id).replace(/"/g, '&quot;')}" placeholder="فقط هنگام افزایش" class="touch-btn mt-1 w-full border rounded-lg px-2 text-center font-bold tabular-nums bg-white" />
+          </label>` : ''} </div>
         </div>
       `).join('');
     }
@@ -5417,10 +5421,13 @@
         if (!raw) throw new Error('مقدار شمارش واقعی برای همه کالاها الزامی است.');
         const real = Number(raw);
         if (!Number.isFinite(real) || real < 0) throw new Error('موجودی واقعی باید عددی معتبر و صفر یا بیشتر باشد.');
-        entryMap.set(id, real);
+        const rawUnitCost = entry.rawUnitCost == null ? '' : String(entry.rawUnitCost).trim();
+        const unitCost = rawUnitCost === '' ? null : Number(rawUnitCost);
+        if (rawUnitCost !== '' && (!Number.isFinite(unitCost) || unitCost < 0)) throw new Error('بهای واحد اضافه موجودی معتبر نیست.');
+        entryMap.set(id, { real, unitCost });
       });
       if (entryMap.size !== productIds.size) throw new Error('برای بعضی کالاها مقدار شمارش وارد نشده است.');
-      return scopedProducts.map(product => ({ productId: String(product.id), real: entryMap.get(String(product.id)) }));
+      return scopedProducts.map(product => ({ productId: String(product.id), ...entryMap.get(String(product.id)) }));
     }
 
     function buildPhysicalStocktakingDraft(baseState, entries, operationId, postingDate, warehouseId = null) {
@@ -5444,20 +5451,24 @@
 
           let fifoPlan = null;
           if (draft.costingMethod === 'FIFO' && diff > 0) {
+            if (!Number.isFinite(Number(count.unitCost)) || Number(count.unitCost) <= 0) {
+              throw new Error('برای اضافه موجودی در روش FIFO، بهای واحد تأییدشده را وارد کنید؛ بهای خرید قدیمی به‌صورت خودکار جایگزین نمی‌شود.');
+            }
             addStockBatch(product, {
               id: 'STK-' + operationId + '-' + count.productId,
               lot: 'ADJ-' + operationId,
               quantity: diff,
-              unitCost: Number(product.buyPrice ?? 0),
+              unitCost: Number(count.unitCost),
               receivedDate: postingDate,
               sourceType: 'stocktake',
               sourceRef: operationId
             });
           } else if (draft.costingMethod === 'FIFO' && diff < 0) {
-            fifoPlan = consumeFifoStock(product, Math.abs(diff));
+            fifoPlan = consumeFifoStock(product, Math.abs(diff), { includeExpired: true });
           }
 
-          const unitCost = fifoPlan ? Number(fifoPlan.unitCost) : Number(product.buyPrice ?? 0);
+          const unitCost = fifoPlan ? Number(fifoPlan.unitCost) :
+            (draft.costingMethod === 'FIFO' && diff > 0 ? Number(count.unitCost) : Number(product.buyPrice ?? 0));
           const valuation = fifoPlan ? Number(fifoPlan.totalCost) : Math.abs(diff) * unitCost;
           if (!Number.isFinite(valuation) || valuation <= 0) {
             throw new Error('برای مغایرت کالای «' + String(product.name || product.id) + '» بهای معتبر و بیشتر از صفر وجود ندارد؛ ابتدا بهای کالا را اصلاح کنید.');
@@ -5472,6 +5483,8 @@
             outQty: diff < 0 ? Math.abs(diff) : 0,
             bal: count.real,
             price: unitCost,
+            inventoryCost: valuation,
+            valuationBasis: draft.costingMethod === 'FIFO' && diff > 0 ? 'manual-verified-surplus-cost' : (draft.costingMethod === 'FIFO' ? 'fifo-layer-cost' : 'moving-average-cost'),
             operationId,
             sourceType: 'stocktake',
             sourceId: count.productId
@@ -5507,6 +5520,8 @@
             countedStock: count.real,
             difference: diff,
             valuation,
+            unitCost,
+            valuationBasis: draft.costingMethod === 'FIFO' && diff > 0 ? 'manual-verified-surplus-cost' : (draft.costingMethod === 'FIFO' ? 'fifo-layer-cost' : 'moving-average-cost'),
             voucherId: String(voucherId),
             fifoAllocations: fifoPlan && Array.isArray(fifoPlan.allocations) ? JSON.parse(JSON.stringify(fifoPlan.allocations)) : []
           });
@@ -5547,7 +5562,8 @@
         if (!warehouseProducts.length) throw new Error('در انبار انتخاب‌شده کالایی برای شمارش وجود ندارد.');
         const entries = warehouseProducts.map(product => {
           const input = document.getElementById(`st-real-${product.id}`);
-          return { productId: String(product.id), rawValue: input ? input.value : '' };
+          const costInput = document.getElementById(`st-cost-${product.id}`);
+          return { productId: String(product.id), rawValue: input ? input.value : '', rawUnitCost: costInput ? costInput.value : '' };
         });
         const operationId = createStableId('stocktake');
         const postingDate = getTodayJalaliDate();
