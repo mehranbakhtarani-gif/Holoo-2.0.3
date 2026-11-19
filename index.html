@@ -4027,6 +4027,48 @@
       openKardexModal(selectedKardexProductId);
     }
 
+    function getWarehouseMovementCorrectionBlockReason(product, movement) {
+      const description = String(movement?.doc || '');
+      if (/اصلاحیه انبارگردانی/.test(description)) {
+        return 'این ردیف شناسه یکتای عملیات و پیوند قطعی به سند مغایرت ندارد؛ موجودی FIFO و سند حسابداری نیز تغییر کرده‌اند. اصلاح تا زمان ایجاد سابقه یکپارچه و قابل ردیابی مسدود است.';
+      }
+      const transferMatch = description.match(/TR-\\d+-[a-z0-9]+/i);
+      if (!transferMatch) return 'نوع گردش انبار یا شناسه عملیات قابل تشخیص نیست؛ اصلاح متوقف شد.';
+      const transferId = transferMatch[0];
+      const related = [];
+      (state.products || []).forEach(item => {
+        (Array.isArray(item.kardex) ? item.kardex : []).forEach(row => {
+          if (String(row.doc || '').includes(transferId)) related.push({ product: item, movement: row });
+        });
+      });
+      const outgoing = related.filter(row => Number(row.movement.outQty || 0) > 0);
+      const incoming = related.filter(row => Number(row.movement.inQty || 0) > 0);
+      if (related.length !== 2 || outgoing.length !== 1 || incoming.length !== 1) {
+        return 'دو سمت خروج و ورود انتقال به‌صورت یکتا پیدا نشد؛ اصلاح برای جلوگیری از مغایرت بین انبارها مسدود است.';
+      }
+      const outQty = Number(outgoing[0].movement.outQty), inQty = Number(incoming[0].movement.inQty);
+      if (!Number.isFinite(outQty) || !Number.isFinite(inQty) || Math.abs(outQty - inQty) > 0.000001 ||
+          String(outgoing[0].movement.date || '') !== String(incoming[0].movement.date || '')) {
+        return 'مقدار یا تاریخ دو سمت انتقال با هم تطبیق ندارد؛ ابتدا باید مغایرت بررسی شود.';
+      }
+      const linkedBatches = (state.products || []).flatMap(item => Array.isArray(item.batches) ? item.batches : [])
+        .filter(batch => String(batch.sourceRef || '') === transferId || String(batch.id || '').includes(transferId));
+      return linkedBatches.length
+        ? 'انتقال به بچ‌های FIFO متصل است؛ برگشت امن باید هم‌زمان بچ‌های مبدأ و مقصد، دو کاردکس و موجودی هر دو انبار را اصلاح کند. این عملیات فعلاً به‌صورت مستقل مجاز نیست.'
+        : 'انتقال دوطرفه شناسایی شد؛ اما مسیر معکوس‌سازی اتمیک برای هر دو انبار و کاردکس هنوز وجود ندارد. اصلاح مستقیم مسدود است.';
+    }
+
+    function requestWarehouseMovementCorrection(productId, movementIndex) {
+      const product = (state.products || []).find(item => String(item.id) === String(productId));
+      const movement = product && Array.isArray(product.kardex) ? product.kardex[Number(movementIndex)] : null;
+      if (!product || !movement) {
+        showToast('گردش انبار پیدا نشد؛ هیچ تغییری انجام نشد.', 'error');
+        return;
+      }
+      const reason = getWarehouseMovementCorrectionBlockReason(product, movement);
+      showToast('بررسی اصلاح گردش انبار: ' + reason, 'warning');
+    }
+
     function openKardexModal(id) {
       selectedKardexProductId = id;
       const p = state.products.find(x => String(x.id) === String(id));
@@ -4088,6 +4130,7 @@
             <div class="text-[11px] text-slate-700">${transactionPrice}${invoiceTotal}</div>
             ${partyLabel ? `<div class="text-[11px] text-slate-700">${partyLabel}</div>` : ''}
             ${invoice?.salesperson ? `<div class="text-[10px] text-slate-500">بازاریاب: ${escapeKardexText(invoice.salesperson)}</div>` : ''}
+            ${(/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || '')) || /اصلاحیه انبارگردانی/.test(String(k.doc || ''))) ? `<button onclick="requestWarehouseMovementCorrection('${String(p.id).replace(/'/g, '')}', ${movements.indexOf(k)})" class="mt-1 bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-lg font-bold">✏️ بررسی اصلاح گردش انبار</button>` : ''}
           </div>
         `;
       }).join('');
