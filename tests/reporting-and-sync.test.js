@@ -136,7 +136,7 @@ async function test(name, fn) { await fn(); passed.push(name); }
 
   await test('supported empty journal returns before legacy snapshot fallback and blocks orphaned outbox', () => {
     const pushStart = html.indexOf('async function pushToSupabase(');
-    const pushEnd = html.indexOf('\\n    function downloadCloudBackup', pushStart);
+    const pushEnd = html.indexOf('function downloadCloudBackup(', pushStart);
     assert.ok(pushStart >= 0 && pushEnd > pushStart, 'pushToSupabase must exist');
     const body = html.slice(pushStart, pushEnd);
     const supportedBranch = body.indexOf('if (journalResult.supported)');
