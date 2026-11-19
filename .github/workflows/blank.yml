@@ -66,6 +66,7 @@ jobs:
           node tests/voucher-correction-review.test.js
           node tests/manual-voucher-correction-atomicity.test.js
           node tests/invoice-posting-atomicity.test.js
+          node tests/fx-operations-atomicity.test.js
           node tests/invoice-return-correction-review.test.js
           node tests/warehouse-movement-correction-review.test.js
           node tests/import-receipt-correction-review.test.js
