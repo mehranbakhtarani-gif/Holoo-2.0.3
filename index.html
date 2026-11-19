@@ -3374,12 +3374,166 @@
       return net;
     }
 
+
+    // Inclusive Jalali accounting-period controls. Every posted voucher is checked here.
+    function normalizeAccountingDate(value) {
+      return String(value || '').trim().replace(/-/g, '/').replace(/[۰-۹٠-٩]/g, function(ch) {
+        const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        const fi = fa.indexOf(ch);
+        return String(fi >= 0 ? fi : ar.indexOf(ch));
+      });
+    }
+
+    function getAccountingPeriodBounds(type, yearValue, periodValue) {
+      const year = Number(yearValue), period = Number(periodValue);
+      if (!Number.isInteger(year) || year < 1300 || year > 1600) throw new Error('سال شمسی معتبر نیست.');
+      let startMonth, endMonth;
+      if (type === 'month') {
+        if (!Number.isInteger(period) || period < 1 || period > 12) throw new Error('ماه انتخاب‌شده معتبر نیست.');
+        startMonth = period; endMonth = period;
+      } else if (type === 'quarter') {
+        if (!Number.isInteger(period) || period < 1 || period > 4) throw new Error('فصل انتخاب‌شده معتبر نیست.');
+        startMonth = (period - 1) * 3 + 1; endMonth = startMonth + 2;
+      } else throw new Error('نوع دوره حسابداری معتبر نیست.');
+      const from = String(year) + '/' + String(startMonth).padStart(2, '0') + '/01';
+      const nextMonth = endMonth === 12 ? 1 : endMonth + 1;
+      const nextYear = endMonth === 12 ? year + 1 : year;
+      const nextStart = String(nextYear) + '/' + String(nextMonth).padStart(2, '0') + '/01';
+      const fromOrdinal = jalaliDateOrdinal(from), nextOrdinal = jalaliDateOrdinal(nextStart);
+      if (fromOrdinal === null || nextOrdinal === null || nextOrdinal <= fromOrdinal) throw new Error('بازه تاریخ دوره قابل محاسبه نیست.');
+      const toOrdinal = nextOrdinal - 1;
+      const monthStart = jalaliDateOrdinal(String(year) + '/' + String(endMonth).padStart(2, '0') + '/01');
+      const to = String(year) + '/' + String(endMonth).padStart(2, '0') + '/' + String(toOrdinal - monthStart + 1).padStart(2, '0');
+      return { from: from, to: to, fromOrdinal: fromOrdinal, toOrdinal: toOrdinal };
+    }
+
+    function getActiveAccountingPeriodLocks() {
+      return (Array.isArray(state.accountingPeriodLocks) ? state.accountingPeriodLocks : [])
+        .filter(function(item) { return item && item.status === 'locked' && jalaliDateOrdinal(item.from) !== null && jalaliDateOrdinal(item.to) !== null; });
+    }
+
+    function getAccountingPeriodLockForDate(dateValue) {
+      const ordinal = jalaliDateOrdinal(dateValue);
+      if (ordinal === null) return null;
+      return getActiveAccountingPeriodLocks().find(function(item) {
+        const from = jalaliDateOrdinal(item.from), to = jalaliDateOrdinal(item.to);
+        return from !== null && to !== null && ordinal >= from && ordinal <= to;
+      }) || null;
+    }
+
+    function renderPeriodLockOptions() {
+      const type = document.getElementById('period-lock-type')?.value || 'month';
+      const select = document.getElementById('period-lock-value');
+      const label = document.getElementById('period-lock-value-label');
+      if (!select) return;
+      const count = type === 'quarter' ? 4 : 12;
+      const prefix = type === 'quarter' ? 'فصل ' : 'ماه ';
+      select.innerHTML = Array.from({ length: count }, function(_, index) {
+        return '<option value="' + (index + 1) + '">' + prefix + faNum(index + 1) + '</option>';
+      }).join('');
+      if (label) label.firstChild.textContent = type === 'quarter' ? 'فصل مالی' : 'ماه مالی';
+    }
+
+    function lockAccountingPeriod() {
+      if (state.activeRole !== 'mehran') { showToast('فقط کاربر مهران مجاز به بستن یا بازکردن دوره مالی است.', 'error'); return; }
+      const type = document.getElementById('period-lock-type')?.value || 'month';
+      const year = String(document.getElementById('period-lock-year')?.value || '').trim();
+      const value = String(document.getElementById('period-lock-value')?.value || '').trim();
+      let bounds;
+      try { bounds = getAccountingPeriodBounds(type, year, value); }
+      catch (error) { showToast(error.message, 'error'); return; }
+      const todayOrdinal = jalaliDateOrdinal(getTodayJalaliDate());
+      if (todayOrdinal === null || bounds.toOrdinal >= todayOrdinal) {
+        showToast('فقط ماه یا فصل کاملاً پایان‌یافته را می‌توان قفل کرد؛ دوره جاری و آینده باز می‌مانند.', 'error'); return;
+      }
+      const key = type + ':' + year + ':' + value;
+      const locks = state.accountingPeriodLocks || (state.accountingPeriodLocks = []);
+      const existing = locks.find(function(item) { return item.periodKey === key; });
+      if (existing && existing.status === 'locked') { showToast('این دوره قبلاً قفل شده است.', 'error'); return; }
+      const overlap = getActiveAccountingPeriodLocks().find(function(item) {
+        const a = jalaliDateOrdinal(item.from), b = jalaliDateOrdinal(item.to);
+        return a !== null && b !== null && bounds.fromOrdinal <= b && bounds.toOrdinal >= a;
+      });
+      if (overlap) { showToast('این بازه با دوره قفل‌شده ' + overlap.label + ' هم‌پوشانی دارد.', 'error'); return; }
+      const label = (type === 'month' ? 'ماه ' : 'فصل ') + value + ' سال ' + year;
+      if (!confirm('قفل ' + label + ' از ' + bounds.from + ' تا ' + bounds.to + ' انجام شود؟ ثبت و اصلاح اسناد در این بازه مسدود خواهد شد.')) return;
+      const actor = state.activeRole || 'mehran';
+      const at = new Date().toISOString();
+      const event = { action: 'locked', at: at, actor: actor, reason: 'بستن دوره مالی' };
+      if (existing) {
+        existing.status = 'locked'; existing.from = bounds.from; existing.to = bounds.to;
+        existing.fromOrdinal = bounds.fromOrdinal; existing.toOrdinal = bounds.toOrdinal;
+        existing.label = label; existing.lockedAt = at; existing.lockedBy = actor;
+        existing.history = Array.isArray(existing.history) ? existing.history : [];
+        existing.history.push(event);
+      } else {
+        locks.push({ id: createStableId('period_lock'), periodKey: key, periodType: type, year: year, periodValue: value,
+          label: label, from: bounds.from, to: bounds.to, fromOrdinal: bounds.fromOrdinal, toOrdinal: bounds.toOrdinal,
+          status: 'locked', lockedAt: at, lockedBy: actor, history: [event] });
+      }
+      addAudit('قفل ' + label, { mode: 'manual', sourceType: 'accounting_period_lock', sourceId: key,
+        details: { periodType: type, from: bounds.from, to: bounds.to, actor: actor } });
+      if (!saveState()) { showToast('ذخیره قفل دوره ناموفق بود.', 'error'); return; }
+      renderAccountingModule(); showToast(label + ' با موفقیت قفل شد.', 'success');
+    }
+
+    function reopenAccountingPeriod(periodKey) {
+      if (state.activeRole !== 'mehran') { showToast('فقط کاربر مهران مجاز به بازکردن دوره مالی است.', 'error'); return; }
+      const item = (state.accountingPeriodLocks || []).find(function(lock) { return lock.periodKey === String(periodKey) && lock.status === 'locked'; });
+      if (!item) { showToast('دوره قفل‌شده برای بازگشایی پیدا نشد.', 'error'); return; }
+      const reason = String(prompt('علت بازگشایی دوره را ثبت کنید؛ این توضیح در سابقه حسابرسی ذخیره می‌شود:') || '').trim();
+      if (reason.length < 8) { showToast('برای بازگشایی، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return; }
+      if (!confirm('بازگشایی ' + item.label + ' انجام شود؟ این اقدام در سابقه حسابرسی باقی می‌ماند.')) return;
+      const before = JSON.parse(JSON.stringify(item));
+      item.status = 'reopened'; item.reopenedAt = new Date().toISOString(); item.reopenedBy = state.activeRole || 'mehran';
+      item.reopenReason = reason;
+      item.history = Array.isArray(item.history) ? item.history : [];
+      item.history.push({ action: 'reopened', at: item.reopenedAt, actor: item.reopenedBy, reason: reason });
+      addAudit('بازگشایی ' + item.label, { mode: 'manual', sourceType: 'accounting_period_reopen', sourceId: item.periodKey,
+        previous: { status: before.status, from: before.from, to: before.to }, details: { reason: reason, actor: item.reopenedBy } });
+      if (!saveState()) { Object.assign(item, before); showToast('ذخیره بازگشایی ناموفق بود؛ قفل قبلی حفظ شد.', 'error'); return; }
+      renderAccountingModule(); showToast(item.label + ' باز شد؛ علت و کاربر بازگشایی ثبت شد.', 'success');
+    }
+
+    function renderPeriodLockModule() {
+      const box = document.getElementById('accounting-panel-body');
+      const locks = (state.accountingPeriodLocks || []).slice().sort(function(a, b) {
+        return (jalaliDateOrdinal(b.from) || 0) - (jalaliDateOrdinal(a.from) || 0);
+      });
+      const rows = locks.map(function(item) {
+        const active = item.status === 'locked';
+        const history = Array.isArray(item.history) ? item.history : [];
+        const reopenButton = '<button type="button" onclick="reopenAccountingPeriod(' + "'" + escapeLedgerText(item.periodKey) + "'" + ')" class="touch-btn rounded-lg bg-amber-100 text-amber-900 px-3 py-2 font-bold">بازگشایی کنترل‌شده با درج علت</button>';
+        return '<div class="rounded-xl border p-3 space-y-2 ' + (active ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200') + '">' +
+          '<div class="flex flex-wrap justify-between gap-2"><strong>' + escapeLedgerText(item.label || 'دوره مالی') + '</strong><span class="font-bold ' + (active ? 'text-rose-800' : 'text-emerald-800') + '">' + (active ? '🔒 قفل فعال' : 'بازشده با سابقه') + '</span></div>' +
+          '<div>بازه: ' + escapeLedgerText(item.from) + ' تا ' + escapeLedgerText(item.to) + ' | ثبت‌کننده: ' + escapeLedgerText(item.lockedBy || '—') + '</div>' +
+          '<div class="text-[10px] text-slate-500">تاریخ قفل: ' + escapeLedgerText(item.lockedAt || '—') + ' | رویدادهای سابقه: ' + faNum(history.length) + '</div>' +
+          (active ? reopenButton : '<div class="text-[10px] text-slate-600">علت آخرین بازگشایی: ' + escapeLedgerText(item.reopenReason || '—') + '</div>') +
+          '</div>';
+      }).join('');
+      box.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
+        '<div><h3 class="font-black text-sm">قفل دوره‌های ماهانه و فصلی</h3><p class="text-[11px] text-slate-500">قفل فقط برای دوره‌های پایان‌یافته فعال می‌شود. تمام اسناد و اصلاحات با تاریخ سند در این بازه مسدود خواهند شد.</p></div>' +
+        '<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">' +
+        '<label class="font-bold">نوع دوره<select id="period-lock-type" onchange="renderPeriodLockOptions()" class="touch-btn mt-1 w-full border rounded-lg px-2"><option value="month">ماهانه</option><option value="quarter">فصلی</option></select></label>' +
+        '<label class="font-bold">سال شمسی<input id="period-lock-year" inputmode="numeric" maxlength="4" value="' + escapeLedgerText(String(state.fiscalYear || '1405')) + '" class="touch-btn mt-1 w-full border rounded-lg px-2"/></label>' +
+        '<label class="font-bold" id="period-lock-value-label">ماه مالی<select id="period-lock-value" class="touch-btn mt-1 w-full border rounded-lg px-2"></select></label>' +
+        '</div><button type="button" onclick="lockAccountingPeriod()" class="touch-btn w-full rounded-xl bg-rose-700 text-white px-4 py-3 font-black">🔒 قفل دوره انتخاب‌شده</button>' +
+        '<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[11px] text-amber-900">بازگشایی فقط با کاربر مهران و ثبت علت انجام می‌شود. هر قفل و بازگشایی در سابقه حسابرسی ثبت خواهد شد. دوره‌های قفل‌شده هم‌پوشانی ندارند.</div>' +
+        '<div class="border-t pt-3 space-y-2"><strong>سوابق قفل و بازگشایی</strong>' + (rows || '<p class="text-slate-400">هنوز دوره‌ای قفل نشده است.</p>') + '</div></div>';
+      renderPeriodLockOptions();
+    }
+
     function postVoucher(desc, lines, date = getTodayJalaliDate(), source = null) {
       const postingDateText = String(date || '').trim().replace(/-/g, '/').replace(/[۰-۹٠-٩]/g, ch => {
         const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
         const faIndex = fa.indexOf(ch); return String(faIndex >= 0 ? faIndex : ar.indexOf(ch));
       });
       const postingYear = (/^(\d{4})\/\d{1,2}\/\d{1,2}$/.exec(postingDateText) || [])[1] || '';
+      if (jalaliDateOrdinal(postingDateText) === null) throw new Error('تاریخ سند معتبر نیست؛ تاریخ شمسی را به شکل 1405/08/29 وارد کنید.');
+      const periodLock = getAccountingPeriodLockForDate(postingDateText);
+      if (periodLock && source?.type !== 'fiscal_year_close') {
+        throw new Error('ثبت سند در ' + periodLock.label + ' ممنوع است؛ این دوره از ' + periodLock.from + ' تا ' + periodLock.to + ' قفل شده است. برای اصلاح، بازگشایی کنترل‌شده با ثبت علت لازم است.');
+      }
       const isFiscalYearClose = source?.type === 'fiscal_year_close' && postingYear &&
         String(source.id || '') === postingYear && (source.event || 'default') === 'closing' &&
         postingDateText === getFiscalYearEndDate(postingYear);
