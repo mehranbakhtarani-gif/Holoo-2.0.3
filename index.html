@@ -1950,6 +1950,21 @@
             if (notify) showToast('عملیات و سوابق حسابرسی به‌صورت اتمیک ثبت شد.');
             return true;
           }
+          if (journalResult.outboxPending) {
+            setCloudBadge('⚠️ صف محلی بدون عملیات متناظر؛ ارسال متوقف شد', 'text-amber-300');
+            showToast('صف ارسال محلی وجود دارد اما عملیات قابل ارسال پیدا نشد؛ برای جلوگیری از بازنویسی، نسخه ابر تغییر نکرد.', 'error');
+            return false;
+          }
+          // A supported, empty journal means there is nothing to upload.
+          // Do not issue a legacy snapshot PATCH/POST in this state.
+          succeeded = true;
+          await renderCloudSyncStatus();
+          const nowStr = new Date().toLocaleTimeString('fa-IR');
+          setCloudBadge('☁️ دفتر عملیات به‌روز است (' + nowStr + ')', 'text-emerald-300');
+          const lbl = document.getElementById('sb-last-sync-label');
+          if (lbl) lbl.textContent = 'آخرین بررسی دفتر عملیات: ساعت ' + nowStr;
+          if (notify) showToast('عملیات جدیدی در صف نیست؛ اطلاعات ابری به‌روز است.');
+          return true;
         }
         // پیش از ارسال نسخه قدیمی، نسخه ابری با آخرین baseline مقایسه می‌شود.
 
@@ -2356,7 +2371,16 @@
 
     async function pushOperationJournalToSupabase() {
       const operations = await listPendingOperations(100);
-      if (!operations.length) return { supported: false, applied: 0, pendingOperationIds: [] };
+      if (!operations.length) {
+        // The deployed operation RPC is authoritative even when the queue is empty.
+        // Never fall through to a legacy full-snapshot write just because there is no work.
+        return {
+          supported: true,
+          applied: 0,
+          pendingOperationIds: [],
+          outboxPending: !!localStorage.getItem(CLOUD_OUTBOX_KEY)
+        };
+      }
       const queuedAtStart = localStorage.getItem(CLOUD_OUTBOX_KEY) || '';
       const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY) || '';
       const rpcUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/rpc/holoo_apply_state_operation';
