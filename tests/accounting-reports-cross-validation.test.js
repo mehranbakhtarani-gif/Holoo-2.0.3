@@ -223,7 +223,7 @@ const closeState = {
 };
 const closeSandbox = {
   state:closeState, CHART_ACCOUNTS,
-  addAudit(){}, saveState(){}, renderAccountingModule(){}, showToast(){},
+  addAudit(){}, saveState(){return true;}, renderAccountingModule(){}, showToast(){},
   getTodayJalaliDate:()=>closeSandbox.testToday,
   testToday:'1404/12/29'
 };
