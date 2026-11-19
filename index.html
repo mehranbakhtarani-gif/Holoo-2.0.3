@@ -5451,6 +5451,12 @@
           const current = Number(product.stock);
           const diff = count.real - current;
           if (Math.abs(diff) < 0.0000001) return;
+          if (draft.costingMethod === 'FIFO') {
+            const batchCheck = inspectProductBatchReconciliation(product);
+            if (batchCheck.difference < -0.000001 || batchCheck.issue === 'مقدار یا بهای یکی از سری‌های ساخت نامعتبر است.') {
+              throw new Error('مغایرت یا داده نامعتبر سری‌های ساخت کالای «' + String(product.name || product.id) + '» باید پیش از انبارگردانی اصلاح شود.');
+            }
+          }
 
           let fifoPlan = null;
           if (draft.costingMethod === 'FIFO' && diff > 0) {
