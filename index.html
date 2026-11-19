@@ -7443,7 +7443,7 @@
       const name = document.getElementById('new-acc-name')?.value.trim();
       const parent = (state.accountCatalog || []).find(a => a.id === parentId && a.level === 'general');
       if (!parent || !/^\d{4,8}$/.test(code || '') || !code.startsWith(parent.code) || !name) { showToast('کد باید عددی، یکتا و زیرمجموعه حساب کل انتخاب‌شده باشد.', 'error'); return; }
-      if (editingCustomAccountCode !== null) {
+      if (typeof editingCustomAccountCode !== 'undefined' && editingCustomAccountCode !== null) {
         const account = (state.accountCatalog || []).find(a => String(a.code) === editingCustomAccountCode && a.level === 'subsidiary' && !a.system);
         if (!account || String(account.code) !== String(code)) { showToast('حساب برای ویرایش پیدا نشد یا کد آن تغییر کرده است.', 'error'); return; }
         const previous = { name: account.name }; account.name = name.slice(0, 120);
