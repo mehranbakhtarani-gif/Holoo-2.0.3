@@ -6563,7 +6563,7 @@
     }
     function autoMatchBankTx() {
       let unique = 0, ambiguous = 0, missing = 0;
-      (state.bankReconcileItems || []).filter(x => !(x.matched && x.linkedVoucherId)).forEach(item => {
+      (state.bankReconcileItems || []).filter(x => !(x.matched && (x.linkedVoucherId || x.linkedTreasuryTxId))).forEach(item => {
         const candidates = getBankReconciliationCandidates(item);
         if (candidates.length === 1) unique++;
         else if (candidates.length > 1) ambiguous++;
