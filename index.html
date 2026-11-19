@@ -9342,7 +9342,7 @@
 
 
     function buildBankTransferAuditSummary() {
-      const txs = (state.treasuryTxs || []).filter(tx => tx.kind === 'bank_transfer' || tx.transferId);
+      const txs = (state.treasuryTxs || []).filter(tx => tx.kind === 'bank_transfer' || tx.method === 'حواله بانکی');
       const vouchers = state.vouchers || [];
       const groups = new Map();
       txs.forEach(tx => {
