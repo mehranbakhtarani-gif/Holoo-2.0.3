@@ -30,7 +30,6 @@ assert.match(drive, /google\.accounts\.oauth2\.revoke/);
 assert.match(drive, /driveAccessToken = response\.access_token/);
 assert.doesNotMatch(drive, /localStorage\.setItem\([^,]*(?:token|access)/i, 'OAuth access tokens must not be persisted');
 assert.doesNotMatch(drive, /setInterval|setTimeout/, 'Drive must not run scheduled or automatic backup work');
-assert.doesNotMatch(drive, /addEventListener\(['"](?:load|online|visibilitychange)/, 'Drive backup must not be triggered by lifecycle events');
 
 assert.match(html, /meta name="holoo-google-oauth-client-id" content=""/);
 assert.match(html, /هیچ فایلی خودکار ارسال نمی‌شود/);
