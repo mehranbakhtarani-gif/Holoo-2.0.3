@@ -2084,6 +2084,12 @@
     }
 
     async function pullFromSupabase(notify = false) {
+      // navigator.onLine is a browser connectivity hint; never turn an expected
+      // offline launch into a cloud error or disturb the local accounting state.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setCloudBadge('📴 آفلاین؛ نسخه محلی فعال است', 'text-amber-300');
+        return false;
+      }
       if (!isDeviceActorLocked()) {
         setCloudBadge('🔒 ابتدا کاربر ثابت این دستگاه را تعیین کنید', 'text-amber-300');
         return false;
@@ -2148,8 +2154,9 @@
         return await pushToSupabase(notify);
       } catch (err) {
         console.warn('Supabase Pull Error:', err);
-        setCloudBadge('⚠️ دریافت ناموفق؛ نسخه محلی حفظ شد', 'text-amber-300');
-        if (notify) showToast('دریافت از ابر ناموفق بود؛ اطلاعات محلی دست‌نخورده ماند.', 'error');
+        const diagnostic = String(err?.message || err || 'خطای نامشخص').slice(0, 180);
+        setCloudBadge('⚠️ دریافت ناموفق (' + diagnostic + ')؛ نسخه محلی حفظ شد', 'text-amber-300');
+        if (notify) showToast('دریافت از ابر ناموفق بود؛ اطلاعات محلی دست‌نخورده ماند. علت: ' + diagnostic, 'error');
         return false;
       } finally {
         isSyncing = false;
@@ -10348,6 +10355,13 @@
         return;
       }
 
+      // An installed PWA must start from its local snapshot while offline.
+      // Cloud sync is retried by the online event after connectivity returns.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setCloudBadge('📴 آفلاین؛ نسخه محلی فعال است', 'text-amber-300');
+        return;
+      }
+
       setCloudBadge('🔄 در حال اتصال و بررسی Supabase...', 'text-sky-300');
       try {
         if (localStorage.getItem(CLOUD_OUTBOX_KEY)) await pushToSupabase(false);
@@ -10360,10 +10374,9 @@
     
     // با برگشت اینترنت، صف محلی دوباره ارسال می‌شود؛ شکست ارسال، نشانگر صف را پاک نمی‌کند.
     window.addEventListener('online', () => {
-      if (localStorage.getItem(CLOUD_OUTBOX_KEY)) {
-        setCloudBadge('🔄 اینترنت وصل شد؛ ارسال اطلاعات در صف...', 'text-sky-300');
-        pushToSupabase(false);
-      }
+      setCloudBadge('🔄 اینترنت وصل شد؛ بررسی همگام‌سازی...', 'text-sky-300');
+      if (localStorage.getItem(CLOUD_OUTBOX_KEY)) pushToSupabase(false);
+      else pullFromSupabase(false);
     });
 
     // اگر برنامه هنگام قطع اینترنت در پس‌زمینه بوده، با بازگشت به صفحه نیز صف بررسی می‌شود.
