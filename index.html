@@ -717,6 +717,7 @@
             <div class="flex items-center justify-between border-b pb-2">
               <div class="flex items-center gap-2">
                 <span id="inv-type-badge" class="px-2.5 py-1 rounded-lg bg-holoo-100 text-holoo-900 font-black">فاکتور فروش</span>
+              <span id="invoice-correction-banner" class="hidden text-[10px] font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xl px-2 py-1"></span>
                 <span class="font-extrabold text-slate-700 tabular-nums">شماره: #<span id="inv-next-no">1002</span></span>
               </div>
               <button onclick="document.getElementById('invoice-form-card').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button>
@@ -4563,6 +4564,7 @@
 
     function openInvoiceForm(type) {
       invDraft = { type, lines: [] };
+      const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
       document.getElementById('invoice-form-card').classList.remove('hidden');
       document.getElementById('inv-type-badge').textContent = type === 'sale' ? 'فاکتور فروش رسمی' : 'فاکتور خرید کالا';
       const nextNo = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
@@ -4749,9 +4751,19 @@
         salesperson: salespersonName, salespersonPartyId: salespersonParty?.id || null, commRate, commAmount,
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
         paidAmount: payMethod === 'credit' ? 0 : grandTotal,
-        status: 'active', items: invoiceLines
+        status: 'active', items: invoiceLines,
+        ...(invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null ? { correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId) } : {})
       };
 
+      let correctionOriginalState = null;
+      if (invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null) {
+        correctionOriginalState = state;
+        state = JSON.parse(JSON.stringify(state));
+        let cancelled = false;
+        try { cancelled = cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true }); }
+        catch (error) { state = correctionOriginalState; showToast('ابطال آزمایشی فاکتور برای اصلاح ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error'); return; }
+        if (!cancelled) { state = correctionOriginalState; showToast('اصلاح متوقف شد؛ فاکتور قبلی قابل ابطال امن نیست و هیچ تغییری ثبت نشد.', 'error'); return; }
+      }
       // Prepare all stock/batch changes on clones first. A failed preflight leaves live state untouched.
       const productPlans = [];
       const simulatedProducts = new Map();
@@ -4791,6 +4803,7 @@
           }
         }
       } catch (error) {
+        if (correctionOriginalState) state = correctionOriginalState;
         showToast('کنترل موجودی یا بچ‌های فاکتور ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return;
       }
@@ -4829,8 +4842,19 @@
         state.vouchers = (state.vouchers || []).filter(voucher =>
           !(voucher.sourceType === 'invoice' && String(voucher.sourceId) === String(id))
         );
+        if (correctionOriginalState) state = correctionOriginalState;
         showToast('صدور سند فاکتور ناموفق بود؛ فاکتور، موجودی و مانده صندوق/بانک تغییر نکردند. ' + (error?.message || ''), 'error');
         return;
+      }
+
+      if (invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null) {
+        const originalInvoice = state.invoices.find(item => Number(item.id) === Number(invDraft.correctionOfInvoiceId));
+        if (originalInvoice) { originalInvoice.correctedByInvoiceId = Number(id); originalInvoice.correctionCompletedAt = new Date().toISOString(); }
+        addAudit('اصلاح فاکتور #' + invDraft.correctionOfInvoiceId + ' با صدور نسخه #' + id, {
+          mode: 'manual', sourceType: 'invoice_correction', sourceId: String(id),
+          previous: { invoiceId: Number(invDraft.correctionOfInvoiceId), status: 'active' },
+          note: 'فاکتور اولیه حفظ شد؛ سند معکوس و فاکتور جایگزین در همین عملیات ثبت شدند.'
+        });
       }
 
       // Journal posting succeeded; apply the prevalidated stock/batch plan to live products.
@@ -4861,11 +4885,43 @@
         settlementAccount.balance = Number(settlementAccount.balance || 0) + (type === 'sale' ? grandTotal : -grandTotal);
       }
 
+      const wasCorrection = invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null;
       saveState(); document.getElementById('invoice-form-card').classList.add('hidden'); renderAll();
-      showToast(`فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
+      invDraft = { type, lines: [] };
+      const correctionBanner = document.getElementById('invoice-correction-banner'); if (correctionBanner) { correctionBanner.classList.add('hidden'); correctionBanner.textContent = ''; }
+      showToast(wasCorrection ? `نسخه اصلاحی فاکتور #${faNum(id)} ثبت شد ✔` : `فاکتور #${faNum(id)} ثبت، سند حسابداری صادر و در Supabase همگام شد ✔`);
     }
 
-        function renderInvoicesModule() {
+        function canCorrectInvoice(inv) {
+      if (!inv || inv.status !== 'active' || inv.type !== 'sale' || inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
+      if (Number(inv.commAmount || 0) > 0 && !inv.salespersonPartyId) return false;
+      if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
+      if ((inv.items || []).some(item => Number(item.returnedKg || 0) > 0)) return false;
+      const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => tx.kind !== 'party_credit' && (((tx.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0)) || Number(tx.allocInvId) === Number(inv.id)));
+      const hasActiveChequeAllocation = (state.checks || []).some(check => !check.allocationsReleasedAt && !['bounced','voided'].includes(check.status) && (check.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0));
+      return !hasTreasuryAllocation && !hasActiveChequeAllocation;
+    }
+
+    function openInvoiceCorrection(invId) {
+      const inv = (state.invoices || []).find(item => Number(item.id) === Number(invId));
+      if (!canCorrectInvoice(inv)) { showToast('فعلاً فقط فاکتور فروش نسیه، بدون تسویه یا برگشت و با اطلاعات کامل پورسانت قابل اصلاح است؛ فاکتور خرید و اسناد تسویه‌شده نیازمند مسیر تخصصی جداگانه‌اند.', 'error'); return; }
+      openInvoiceForm(inv.type);
+      document.getElementById('inv-party').value = String(inv.partyId);
+      document.getElementById('inv-warehouse').value = String(inv.warehouseId);
+      document.getElementById('inv-pay-method').value = 'credit';
+      renderInvoiceSettlementAccounts();
+      document.getElementById('inv-due-date').value = inv.dueDate || getTodayJalaliDate();
+      document.getElementById('inv-salesperson').value = inv.salesperson || '';
+      document.getElementById('inv-commission-rate').value = String(Number(inv.commRate || 0));
+      document.getElementById('inv-vat-rate').value = String(Number(inv.vatRate || 0));
+      invDraft = { type: inv.type, correctionOfInvoiceId: Number(inv.id), lines: (inv.items || []).map(item => JSON.parse(JSON.stringify(item))) };
+      const banner = document.getElementById('invoice-correction-banner');
+      if (banner) { banner.classList.remove('hidden'); banner.textContent = 'در حال اصلاح فاکتور #' + faNum(inv.id) + '؛ با ثبت نسخه جدید، سند معکوس صادر و فاکتور قبلی به‌صورت تاریخی حفظ می‌شود.'; }
+      checkPartyCredit(); renderInvDraftLines();
+      document.getElementById('invoice-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showToast('پیش‌نویس اصلاح آماده است؛ تا زمان ثبت نهایی هیچ سندی تغییر نمی‌کند.', 'info');
+    }
+    function renderInvoicesModule() {
       document.getElementById('invoices-list-container').innerHTML = state.invoices.map(inv => `
         <div class="bg-white rounded-2xl p-4 border ${inv.status === 'cancelled' ? 'border-rose-300 opacity-65' : 'border-slate-200'} space-y-2 text-xs">
           <div class="flex flex-wrap justify-between items-center gap-2">
@@ -4877,6 +4933,8 @@
             <span class="text-[11px] text-slate-400 tabular-nums">صدور: ${faNum(inv.date)} | سررسید: ${faNum(inv.dueDate)}</span>
           </div>
           <div class="font-bold text-slate-800">${getPartyName(inv.partyId)} <span class="text-[10px] text-slate-400">(بازاریاب: ${inv.salesperson})</span></div>
+          ${inv.correctionOfInvoiceId ? `<div class="text-[10px] text-indigo-800 bg-indigo-50 rounded-lg px-2 py-1">نسخه اصلاحی فاکتور #${faNum(inv.correctionOfInvoiceId)}</div>` : ''}
+          ${inv.correctedByInvoiceId ? `<div class="text-[10px] text-slate-600 bg-slate-100 rounded-lg px-2 py-1">این فاکتور با نسخه #${faNum(inv.correctedByInvoiceId)} جایگزین شده است</div>` : ''}
           ${Number(inv.commAmount || 0) > 0 ? `<div class="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">پورسانت بازاریاب (${faNum(inv.commRate || 0)}٪): ${money(inv.commAmount)}</div>` : ''}
           <div class="space-y-1 bg-slate-50 p-2 rounded-xl border">
             ${inv.items.map(it => `<div class="flex justify-between text-[11px]"><span>${it.name} (${faNum(it.kg)} KG${it.returnedKg ? ` | برگشتی: ${faNum(it.returnedKg)} KG` : ''})</span><strong class="tabular-nums">${money(it.total)}</strong></div>`).join('')}
@@ -4885,6 +4943,7 @@
             <span class="font-black text-sm tabular-nums">${money(inv.grandTotal)}</span>
             <div class="flex flex-wrap gap-1.5">
               ${inv.status !== 'cancelled' ? `<button onclick="openPartialReturnModal(${inv.id})" class="bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-1.5 rounded-xl font-bold">↩️ برگشت جزئی</button>` : ''}
+              ${canCorrectInvoice(inv) ? `<button onclick="openInvoiceCorrection(${inv.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-xl font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}
               ${inv.status !== 'cancelled' ? `<button onclick="cancelInvoice(${inv.id})" class="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1.5 rounded-xl font-bold">✕ ابطال</button>` : ''}
               <button onclick="openShareInvoice(${inv.id})" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1.5 rounded-xl font-bold">📤 ارسال</button>
               <button onclick="printOfficialInvoice(${inv.id})" class="bg-slate-800 text-amber-300 px-2.5 py-1.5 rounded-xl font-bold">🖨️ چاپ رسمی</button>
@@ -5080,9 +5139,9 @@
       showToast('برگشت جزئی ردیف‌ها ثبت، انبار اصلاح و سند حسابداری صادر شد ✔');
     }
 
-    function cancelInvoice(invId) {
+    function cancelInvoice(invId, options = {}) {
       const inv = state.invoices.find(i => i.id === invId);
-      if (!inv || inv.status === 'cancelled') return;
+      if (!inv || inv.status === 'cancelled') return false;
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
         if (tx.kind === 'party_credit') return false;
         if ((tx.allocations || []).some(allocation =>
@@ -5096,7 +5155,7 @@
       });
       if (Number(inv.paidAmount || 0) > 0 || hasTreasuryAllocation || hasActiveChequeAllocation) {
         showToast('این فاکتور سابقه دریافت، پرداخت یا تخصیص چک دارد؛ ابتدا تسویه مرتبط را تعیین‌تکلیف کنید.', 'error');
-        return;
+        return false;
       }
 
       const getInvoiceLineNetTotal = line => {
@@ -5113,7 +5172,7 @@
           : Math.round(invoiceNetSubtotal * Number(inv.vatRate || 0) / 100));
       if (!Number.isFinite(invoiceNetSubtotal) || invoiceNetSubtotal < 0 ||
           !Number.isFinite(invoiceVatAmount) || invoiceVatAmount < 0) {
-        showToast('مبلغ خالص یا مالیات فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        showToast('مبلغ خالص یا مالیات فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
       const invoiceVatRatio = invoiceNetSubtotal > 0 ? invoiceVatAmount / invoiceNetSubtotal : 0;
       const cancelPlan = [];
@@ -5127,14 +5186,14 @@
         if (!Number.isFinite(lineQty) || lineQty < 0 || !Number.isFinite(returnedQty) ||
             returnedQty < 0 || returnedQty > lineQty + 0.000001 ||
             !Number.isFinite(lineNetTotal) || lineNetTotal < 0) {
-          showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+          showToast('مقدار یا مبلغ یکی از ردیف‌های فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
         }
         const returnedBase = lineQty > 0 ? Math.round(lineNetTotal * returnedQty / lineQty) : 0;
         const remainingBase = Math.max(0, lineNetTotal - returnedBase);
         returnedVatAmount += Math.round(returnedBase * invoiceVatRatio);
         if (remainingQty > 0) {
           const product = state.products.find(entry => entry.id === item.productId);
-          if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return; }
+          if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return false; }
           cancelPlan.push({ item, product, quantity: remainingQty });
         }
         cancelBaseAmount += remainingBase;
@@ -5155,13 +5214,13 @@
         cancelAmount = cancelBaseAmount;
       }
       if (!Number.isFinite(cancelAmount) || !Number.isFinite(cancelBaseAmount) || !Number.isFinite(cancelVatAmount)) {
-        showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
 
       const cancelCogs = inv.type === 'sale' ? cancelPlan.reduce((sum, entry) =>
         sum + getReturnCostOfGoods(entry.item, entry.quantity, entry.product.buyPrice || 0), 0) : 0;
       if (!Number.isFinite(cancelCogs) || cancelCogs < 0) {
-        showToast('بهای تمام‌شده مانده فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return;
+        showToast('بهای تمام‌شده مانده فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
 
       // Validate every FIFO restoration/consumption on cloned products before posting or mutating state.
@@ -5182,7 +5241,7 @@
         }
       } catch (error) {
         showToast('کنترل موجودی یا بچ‌های FIFO برای ابطال ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
-        return;
+        return false;
       }
 
       const cancellationLines = inv.type === 'sale'
@@ -5213,13 +5272,22 @@
             ] : [])
           ];
 
+      if (inv.type === 'sale' && Number(inv.commAmount || 0) > 0) {
+        const commissionAmount = Number(inv.commAmount);
+        if (!Number.isFinite(commissionAmount) || commissionAmount < 0 || !inv.salespersonPartyId) { showToast('اطلاعات پورسانت فاکتور برای اصلاح کامل نیست؛ هیچ تغییری ثبت نشد.', 'error'); return false; }
+        cancellationLines.push(
+          { code: '2101', partyId: inv.salespersonPartyId, desc: `ابطال پورسانت پرداختنی فاکتور #${invId}`, debit: commissionAmount, credit: 0 },
+          { code: '6101', partyId: inv.salespersonPartyId, desc: `برگشت هزینه پورسانت فاکتور #${invId}`, debit: 0, credit: commissionAmount }
+        );
+      }
+
       if (cancellationLines.length) {
         try {
           postVoucher(`ابطال فاکتور #${invId}`, cancellationLines, undefined,
             { type: 'invoice_cancel', id: invId, event: 'cancel', deferSave: true });
         } catch (error) {
           showToast('صدور سند ابطال ناموفق بود؛ فاکتور و موجودی تغییر نکردند. ' + (error?.message || ''), 'error');
-          return;
+          return false;
         }
       }
 
@@ -5244,7 +5312,9 @@
       inv.status = 'cancelled';
       inv.cancelledCostOfGoodsSold = cancelCogs;
       inv.cancellationAmounts = { baseAmount: cancelBaseAmount, vatAmount: cancelVatAmount, totalAmount: cancelAmount };
-      saveState(); renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info');
+      if (!options.deferSave) saveState();
+      if (!options.silent) { renderAll(); showToast(`فاکتور #${faNum(invId)} ابطال شد.`, 'info'); }
+      return true;
     }
 
         function printOfficialInvoice(invId) {
@@ -7807,6 +7877,8 @@
               <div class="flex items-center gap-2"><span class="bg-holoo-900 text-white px-2 py-0.5 rounded font-black tabular-nums">سند #${faNum(v.id)}</span><strong>${v.desc}</strong></div>
               <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${v.locked ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}">${v.locked ? '🔒 قفل سخت‌گیرانه' : 'باز'}</span><span class="text-slate-400 tabular-nums">${faNum(v.date)}</span></div>
             </div>
+            ${v.sourceType === 'manual_voucher' && !v.locked && !v.correctedByVoucherId ? `<button type="button" onclick="openManualVoucherCorrection(${v.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-lg text-[10px] font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}
+            ${v.correctedByVoucherId ? `<div class="text-[10px] text-slate-600 bg-slate-100 rounded-lg p-2">این سند با سند #${faNum(v.correctedByVoucherId)} اصلاح شده است؛ سند اولیه حفظ شده</div>` : ''}
             ${v.lines.map(l => `<div class="p-1.5 rounded bg-slate-50 flex justify-between"><span>${faNum(l.code)} - ${l.desc}</span><strong class="tabular-nums">${l.debit ? `${money(l.debit)} بد` : `${money(l.credit)} بس`}</strong></div>`).join('')}
           </div>
         `).join('');
@@ -7868,6 +7940,75 @@
       }
     }
 
+    function addManualVoucherCorrectionLine(line = {}) {
+      const host = document.getElementById('manual-voucher-correction-lines');
+      if (!host) return;
+      const options = (CHART_ACCOUNTS || []).map(account => `<option value="${escapeLedgerText(account.code)}" ${String(account.code) === String(line.code || '') ? 'selected' : ''}>${escapeLedgerText(account.code)} - ${escapeLedgerText(account.name)}</option>`).join('');
+      const row = document.createElement('div'); row.className = 'vc-line-row grid grid-cols-1 md:grid-cols-4 gap-2 border rounded-xl p-2 bg-slate-50';
+      row.innerHTML = `<select data-vc-code class="touch-btn border rounded-lg px-2 bg-white">${options}</select><input data-vc-desc class="touch-btn border rounded-lg px-2" placeholder="شرح ردیف" value="${escapeLedgerText(line.desc || '')}"><input data-vc-debit type="number" min="0" step="any" class="touch-btn border rounded-lg px-2" placeholder="بدهکار" value="${Number(line.debit || 0)}"><div class="flex gap-1"><input data-vc-credit type="number" min="0" step="any" class="touch-btn min-w-0 flex-1 border rounded-lg px-2" placeholder="بستانکار" value="${Number(line.credit || 0)}"><button type="button" class="px-3 rounded-lg bg-rose-100 text-rose-700 font-bold" onclick="this.closest('.vc-line-row').remove()">حذف</button></div>`;
+      host.appendChild(row);
+    }
+
+    function openManualVoucherCorrection(voucherId) {
+      const original = (state.vouchers || []).find(item => Number(item.id) === Number(voucherId));
+      if (!original || original.sourceType !== 'manual_voucher' || original.locked || original.correctedByVoucherId) { showToast('فقط اسناد دستیِ باز و اصلاح‌نشده از این مسیر قابل اصلاح‌اند.', 'error'); return; }
+      let modal = document.getElementById('modal-manual-voucher-correction');
+      if (!modal) {
+        modal = document.createElement('div'); modal.id = 'modal-manual-voucher-correction';
+        modal.className = 'fixed inset-0 z-[10060] bg-slate-950/60 p-3 flex items-center justify-center';
+        modal.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-4 space-y-3"><div class="flex justify-between items-center gap-2"><h3 id="mvc-title" class="font-black">اصلاح سند دستی</h3><button type="button" onclick="closeModal('modal-manual-voucher-correction')" class="px-3 py-2 rounded-lg bg-slate-100 font-bold">بستن</button></div><p class="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3">با ثبت اصلاح، سند قبلی حذف نمی‌شود؛ یک سند معکوس و سپس نسخه اصلاح‌شده صادر می‌شود. هر دو در دفتر روزنامه باقی می‌مانند.</p><label class="block text-xs font-bold">شرح سند جایگزین</label><input id="mvc-desc" class="touch-btn w-full border rounded-xl px-3"/><label class="block text-xs font-bold">تاریخ سند جایگزین (شمسی)</label><input id="mvc-date" class="touch-btn w-full border rounded-xl px-3"/><div class="flex justify-between items-center"><strong class="text-sm">ردیف‌های سند</strong><button type="button" onclick="addManualVoucherCorrectionLine()" class="px-3 py-2 rounded-lg bg-sky-100 text-sky-900 font-bold">افزودن ردیف</button></div><div id="manual-voucher-correction-lines" class="space-y-2"></div><div class="flex flex-wrap justify-end gap-2"><button type="button" onclick="closeModal('modal-manual-voucher-correction')" class="px-4 py-2 rounded-xl bg-slate-100 font-bold">انصراف</button><button type="button" onclick="saveManualVoucherCorrection()" class="px-4 py-2 rounded-xl bg-holoo-700 text-white font-bold">ثبت سند معکوس و نسخه اصلاحی</button></div></div>`;
+        document.body.appendChild(modal);
+      }
+      modal.dataset.voucherId = String(original.id);
+      document.getElementById('mvc-title').textContent = 'اصلاح سند دستی #' + faNum(original.id);
+      document.getElementById('mvc-desc').value = original.desc || '';
+      document.getElementById('mvc-date').value = getTodayJalaliDate();
+      const host = document.getElementById('manual-voucher-correction-lines'); host.innerHTML = '';
+      (original.lines || []).forEach(line => addManualVoucherCorrectionLine(line));
+      openModal('modal-manual-voucher-correction');
+    }
+
+    function saveManualVoucherCorrection() {
+      const modal = document.getElementById('modal-manual-voucher-correction');
+      const originalId = Number(modal?.dataset.voucherId);
+      const originalLive = (state.vouchers || []).find(item => Number(item.id) === originalId);
+      if (!originalLive || originalLive.sourceType !== 'manual_voucher' || originalLive.locked || originalLive.correctedByVoucherId) { showToast('سند برای اصلاح پیدا نشد یا وضعیت آن تغییر کرده است.', 'error'); return; }
+      const desc = document.getElementById('mvc-desc').value.trim();
+      const operationDate = document.getElementById('mvc-date').value.trim() || getTodayJalaliDate();
+      if (!desc || jalaliDateOrdinal(operationDate) === null) { showToast('شرح و تاریخ شمسی معتبر برای سند جایگزین الزامی است.', 'error'); return; }
+      const rows = Array.from(document.querySelectorAll('#manual-voucher-correction-lines .vc-line-row'));
+      const lines = rows.map(row => ({
+        code: row.querySelector('[data-vc-code]')?.value || '',
+        desc: row.querySelector('[data-vc-desc]')?.value.trim() || desc,
+        debit: Number(row.querySelector('[data-vc-debit]')?.value || 0),
+        credit: Number(row.querySelector('[data-vc-credit]')?.value || 0),
+        partyId: (originalLive.lines || []).find(line => String(line.code) === String(row.querySelector('[data-vc-code]')?.value))?.partyId ?? null
+      }));
+      if (lines.length < 2 || lines.some(line => !CHART_ACCOUNTS.some(account => String(account.code) === String(line.code)) || !Number.isFinite(line.debit) || !Number.isFinite(line.credit) || line.debit < 0 || line.credit < 0 || (line.debit > 0 && line.credit > 0) || (line.debit === 0 && line.credit === 0))) { showToast('حداقل دو ردیف معتبر با حساب موجود و فقط یک سمت مبلغ لازم است.', 'error'); return; }
+      const debitTotal = lines.reduce((sum, line) => sum + line.debit, 0);
+      const creditTotal = lines.reduce((sum, line) => sum + line.credit, 0);
+      if (debitTotal <= 0 || Math.abs(debitTotal - creditTotal) > 0.000001) { showToast('جمع بدهکار و بستانکار سند جایگزین باید برابر و بیشتر از صفر باشد.', 'error'); return; }
+      const before = state;
+      state = JSON.parse(JSON.stringify(state));
+      try {
+        const original = state.vouchers.find(item => Number(item.id) === originalId);
+        const correctionId = createStableId('voucher-correction');
+        const reversalLines = (original.lines || []).map(line => ({ ...line, desc: 'معکوس: ' + (line.desc || original.desc || ''), debit: Number(line.credit || 0), credit: Number(line.debit || 0) }));
+        const reversalId = postVoucher('سند معکوس اصلاح سند دستی #' + originalId, reversalLines, getTodayJalaliDate(), { type: 'manual_voucher_correction', id: correctionId, event: 'reversal', mode: 'manual', deferSave: true });
+        const replacementId = postVoucher(desc, lines, operationDate, { type: 'manual_voucher_correction', id: correctionId, event: 'replacement', mode: 'manual', deferSave: true });
+        original.correctedByVoucherId = replacementId; original.reversalVoucherId = reversalId; original.correctionCompletedAt = new Date().toISOString();
+        const replacement = state.vouchers.find(item => Number(item.id) === Number(replacementId));
+        if (replacement) replacement.correctsVoucherId = originalId;
+        const reversal = state.vouchers.find(item => Number(item.id) === Number(reversalId));
+        if (reversal) reversal.reversesVoucherId = originalId;
+        addAudit('اصلاح سند دستی #' + originalId + ' با سند جایگزین #' + replacementId, { mode: 'manual', sourceType: 'manual_voucher_correction', sourceId: correctionId, previous: { voucherId: originalId, description: originalLive.desc }, note: 'سند اولیه حفظ شد؛ سند معکوس و نسخه جایگزین در یک عملیات ثبت شدند.' });
+        saveState(); closeModal('modal-manual-voucher-correction'); renderAll(); setAccTab('journal');
+        showToast('سند معکوس و نسخه اصلاح‌شده با موفقیت ثبت شدند.', 'success');
+      } catch (error) {
+        state = before;
+        showToast('اصلاح سند انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error');
+      }
+    }
     function saveManualVoucher() {
       const desc = document.getElementById('mv-desc').value.trim();
       const amt = Number(document.getElementById('mv-amount').value || 0);

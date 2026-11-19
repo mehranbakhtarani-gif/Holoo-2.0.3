@@ -39,4 +39,32 @@ assert.ok(html.includes('کد حساب و تمام اسناد و گردش‌ها
 assert.ok(html.includes("a.level === 'subsidiary' && !a.system ?"));
 assert.ok(html.includes('شناسه تفصیلی و گردش‌های ثبت‌شده طرف حساب تغییر نکردند'));
 
+// Posted invoices use a reversal-and-replacement correction flow; settled/returned invoices are blocked.
+assert.ok(html.includes('function canCorrectInvoice(inv)'));
+assert.ok(html.includes('function openInvoiceCorrection(invId)'));
+assert.ok(html.includes('cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true })'));
+assert.ok(html.includes('correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId)'));
+assert.ok(html.includes('correctedByInvoiceId = Number(id)'));
+assert.ok(html.includes('sourceType: \'invoice_correction\''));
+assert.ok(html.includes('if (!options.deferSave) saveState()'));
+assert.ok(html.includes('return true;'));
+assert.ok(html.includes('✏️ اصلاح حسابرسی‌شده'));
+
+// Manual vouchers are corrected by a balanced reversal and a new balanced voucher; originals remain immutable.
+assert.ok(html.includes('function openManualVoucherCorrection(voucherId)'));
+assert.ok(html.includes('function saveManualVoucherCorrection()'));
+assert.ok(html.includes("original.sourceType !== 'manual_voucher' || original.locked || original.correctedByVoucherId"));
+assert.ok(html.includes("debit: Number(line.credit || 0), credit: Number(line.debit || 0)"));
+assert.ok(html.includes("event: 'reversal'"));
+assert.ok(html.includes("event: 'replacement'"));
+assert.ok(html.includes('original.correctedByVoucherId = replacementId'));
+assert.ok(html.includes('reversalVoucherId = reversalId'));
+assert.ok(html.includes("sourceType: 'manual_voucher_correction'"));
+assert.ok(html.includes('state = before;'));
+assert.ok(html.includes("inv.type !== 'sale'"));
+assert.ok(html.includes("sourceType: 'invoice_correction'"));
+assert.ok(html.includes('ابطال پورسانت پرداختنی فاکتور'));
+assert.ok(html.includes('برگشت هزینه پورسانت فاکتور'));
+assert.ok(html.includes('if (correctionOriginalState) state = correctionOriginalState;'));
+assert.ok(html.includes("function canCorrectInvoice(inv)"));
 console.log('PASS: edit controls preserve posted accounting, inventory, payroll, and depreciation history');
