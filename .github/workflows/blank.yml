@@ -71,3 +71,4 @@ jobs:
           node tests/import-receipt-dependency-preflight.test.js
           node tests/import-receipt-snapshot.test.js
           node tests/full-fiscal-period.integration.test.js
+          node tests/google-drive-manual-backup.test.js

@@ -13,6 +13,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <meta name="holoo-google-oauth-client-id" content="" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -1170,13 +1171,21 @@
                   <div class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white border border-slate-200 text-xl" aria-hidden="true">◉</div>
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-extrabold text-slate-900">Google Drive</div>
-                    <p id="drive-backup-status" class="mt-0.5 text-[11px] leading-5 text-slate-500">اتصال حساب گوگل هنوز راه‌اندازی نشده است.</p>
+                    <p id="drive-backup-status" role="status" aria-live="polite" class="mt-0.5 text-[11px] leading-5 text-slate-500">برای انتخاب حساب گوگل، اتصال را بزنید.</p>
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <button type="button" disabled aria-disabled="true" class="touch-btn rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-400 cursor-not-allowed">اتصال حساب گوگل</button>
-                  <span class="text-[10px] text-slate-400">پس از تنظیم شناسه OAuth رسمی، انتخاب حساب فعال می‌شود.</span>
+                  <button id="drive-connect-button" type="button" onclick="connectGoogleDrive(true)" class="touch-btn rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">انتخاب حساب گوگل</button>
+                  <button id="drive-disconnect-button" type="button" onclick="disconnectGoogleDrive()" class="hidden touch-btn rounded-xl px-3 py-2 text-xs font-bold text-slate-500">قطع اتصال</button>
                 </div>
+                <div id="drive-actions" class="hidden border-t border-slate-200 pt-3 space-y-2">
+                  <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="uploadBackupToGoogleDrive()" class="touch-btn rounded-xl bg-holoo-700 px-3 py-2 text-xs font-extrabold text-white">ذخیره نسخه پشتیبان در Drive</button>
+                    <button type="button" onclick="listGoogleDriveBackups()" class="touch-btn rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">نمایش نسخه‌های موجود</button>
+                  </div>
+                  <div id="drive-backup-list" class="hidden space-y-2" aria-live="polite"></div>
+                </div>
+                <p class="text-[10px] text-slate-400">هیچ فایلی خودکار ارسال نمی‌شود؛ هر بار فقط با انتخاب شما.</p>
               </div>
               <div class="space-y-2">
                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -10263,6 +10272,7 @@
 
       runCustomReportBuilder();
       renderSnapshots();
+      renderGoogleDriveStatus();
     }
     let editingCustomUnitId = null;
     function editCustomUnit(unitId) {
@@ -10440,6 +10450,258 @@
       };
       r.onerror = () => showToast('خواندن فایل پشتیبان ناموفق بود.', 'error');
       r.readAsText(f);
+    }
+
+    // =========================================================================
+    // Google Drive: explicit, user-triggered backup and restore only
+    // =========================================================================
+    const GOOGLE_DRIVE_CLIENT_ID = document.querySelector('meta[name="holoo-google-oauth-client-id"]')?.content?.trim() || '';
+    const DRIVE_ACCOUNT_EMAIL_KEY = 'holoo_google_drive_account_email_v1';
+    const DRIVE_BACKUP_SCOPE = 'openid email https://www.googleapis.com/auth/drive.file';
+    let driveAccessToken = null;
+    let driveAccessTokenExpiresAt = 0;
+    let driveTokenClient = null;
+    let drivePendingRequest = null;
+    let driveGisLoadPromise = null;
+
+    function getSavedDriveAccountEmail() {
+      try { return localStorage.getItem(DRIVE_ACCOUNT_EMAIL_KEY) || ''; }
+      catch (_) { return ''; }
+    }
+    function renderGoogleDriveStatus() {
+      const status = document.getElementById('drive-backup-status');
+      const connect = document.getElementById('drive-connect-button');
+      const disconnect = document.getElementById('drive-disconnect-button');
+      const actions = document.getElementById('drive-actions');
+      if (!status || !connect || !actions) return;
+      const email = getSavedDriveAccountEmail();
+      const tokenActive = Boolean(driveAccessToken && Date.now() < driveAccessTokenExpiresAt - 60000);
+      if (email) {
+        status.textContent = tokenActive ? 'متصل به ' + email : 'حساب انتخاب‌شده: ' + email + '؛ برای ادامه، در صورت نیاز دوباره اجازه بگیرید.';
+        connect.textContent = 'تغییر حساب گوگل';
+        disconnect?.classList.remove('hidden');
+        actions.classList.remove('hidden');
+      } else {
+        status.textContent = GOOGLE_DRIVE_CLIENT_ID ? 'برای انتخاب حساب گوگل، اتصال را بزنید.' : 'اتصال گوگل پس از ثبت OAuth Client ID فعال می‌شود.';
+        connect.textContent = 'انتخاب حساب گوگل';
+        disconnect?.classList.add('hidden');
+        actions.classList.add('hidden');
+      }
+    }
+    async function ensureGoogleIdentityServices() {
+      if (window.google?.accounts?.oauth2) return;
+      if (!driveGisLoadPromise) {
+        driveGisLoadPromise = new Promise((resolve, reject) => {
+          const existing = document.getElementById('holoo-google-identity-script');
+          const script = existing || document.createElement('script');
+          const loaded = () => window.google?.accounts?.oauth2 ? resolve() : reject(new Error('کتابخانه رسمی ورود گوگل بارگذاری نشد.'));
+          script.id = 'holoo-google-identity-script';
+          script.src = 'https://accounts.google.com/gsi/client';
+          script.async = true;
+          script.defer = true;
+          script.addEventListener('load', loaded, { once: true });
+          script.addEventListener('error', () => reject(new Error('ارتباط با سرویس ورود گوگل برقرار نشد.')), { once: true });
+          if (!existing) document.head.appendChild(script);
+          else if (window.google?.accounts?.oauth2) resolve();
+        }).catch(error => { driveGisLoadPromise = null; throw error; });
+      }
+      return driveGisLoadPromise;
+    }
+    async function requestGoogleDriveAccess(selectAccount = false) {
+      if (!GOOGLE_DRIVE_CLIENT_ID) throw new Error('برای فعال‌سازی اتصال، OAuth Client ID برنامه باید در تنظیمات انتشار ثبت شود.');
+      if (!selectAccount && driveAccessToken && Date.now() < driveAccessTokenExpiresAt - 60000) return driveAccessToken;
+      await ensureGoogleIdentityServices();
+      if (drivePendingRequest) throw new Error('درخواست ورود گوگل دیگری در حال انجام است.');
+      return new Promise((resolve, reject) => {
+        drivePendingRequest = { resolve, reject };
+        try {
+          if (!driveTokenClient) {
+            driveTokenClient = window.google.accounts.oauth2.initTokenClient({
+              client_id: GOOGLE_DRIVE_CLIENT_ID,
+              scope: DRIVE_BACKUP_SCOPE,
+              include_granted_scopes: true,
+              callback: async response => {
+                const pending = drivePendingRequest;
+                drivePendingRequest = null;
+                if (!pending) return;
+                if (response?.error || !response?.access_token) {
+                  pending.reject(new Error(response?.error_description || response?.error || 'دریافت مجوز Google Drive ناموفق بود.'));
+                  return;
+                }
+                driveAccessToken = response.access_token;
+                driveAccessTokenExpiresAt = Date.now() + Math.max(60, Number(response.expires_in || 3600)) * 1000;
+                try {
+                  const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: 'Bearer ' + driveAccessToken }
+                  });
+                  if (profileResponse.ok) {
+                    const profile = await profileResponse.json();
+                    if (profile.email) localStorage.setItem(DRIVE_ACCOUNT_EMAIL_KEY, profile.email);
+                  }
+                } catch (profileError) {
+                  console.warn('Google account label could not be loaded:', profileError);
+                }
+                renderGoogleDriveStatus();
+                pending.resolve(driveAccessToken);
+              },
+              error_callback: error => {
+                const pending = drivePendingRequest;
+                drivePendingRequest = null;
+                if (pending) pending.reject(new Error(error?.message || 'پنجره انتخاب حساب گوگل بسته شد یا در دسترس نیست.'));
+              }
+            });
+          }
+          driveTokenClient.requestAccessToken({ prompt: selectAccount ? 'select_account' : '' });
+        } catch (error) {
+          drivePendingRequest = null;
+          reject(error);
+        }
+      });
+    }
+    async function googleDriveRequest(path, options = {}) {
+      const token = await requestGoogleDriveAccess(false);
+      const response = await fetch('https://www.googleapis.com/drive/v3/' + path, {
+        ...options,
+        headers: { ...(options.headers || {}), Authorization: 'Bearer ' + token }
+      });
+      if (!response.ok) {
+        let message = 'درخواست Google Drive ناموفق بود (' + response.status + ').';
+        try { const body = await response.json(); message = body.error?.message || message; } catch (_) {}
+        throw new Error(message);
+      }
+      return response;
+    }
+    async function connectGoogleDrive(selectAccount = true) {
+      try {
+        await requestGoogleDriveAccess(Boolean(selectAccount));
+        renderGoogleDriveStatus();
+        showToast('حساب گوگل با موفقیت متصل شد.');
+      } catch (error) {
+        console.error('Google Drive connection failed:', error);
+        showToast(error.message || 'اتصال به Google Drive ناموفق بود.', 'error');
+      }
+    }
+    async function uploadBackupToGoogleDrive() {
+      try {
+        const token = await requestGoogleDriveAccess(false);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = 'Holoo_Backup_' + String(state.fiscalYear || 'data') + '_' + timestamp + '.json';
+        const metadata = {
+          name: filename,
+          mimeType: 'application/json',
+          description: 'Manual Holoo accounting backup. Created only by explicit user action.',
+          appProperties: { holooBackup: 'true' }
+        };
+        const boundary = 'holoo_drive_' + Date.now();
+        const backupJson = JSON.stringify(state);
+        const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) + '\r\n--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
+          backupJson + '\r\n--' + boundary + '--';
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'multipart/related; boundary=' + boundary
+          },
+          body
+        });
+        if (!response.ok) {
+          let message = 'ذخیره نسخه پشتیبان در Drive ناموفق بود.';
+          try { const result = await response.json(); message = result.error?.message || message; } catch (_) {}
+          throw new Error(message);
+        }
+        const result = await response.json();
+        showToast('نسخه پشتیبان با موفقیت در Google Drive ذخیره شد.');
+        await listGoogleDriveBackups();
+        return result;
+      } catch (error) {
+        console.error('Google Drive backup failed:', error);
+        showToast(error.message || 'ذخیره نسخه پشتیبان در Drive ناموفق بود.', 'error');
+        return null;
+      }
+    }
+    function renderGoogleDriveBackups(files) {
+      const box = document.getElementById('drive-backup-list');
+      if (!box) return;
+      box.replaceChildren();
+      box.classList.remove('hidden');
+      if (!files.length) {
+        const empty = document.createElement('p');
+        empty.className = 'rounded-lg bg-white px-3 py-3 text-[11px] text-slate-500';
+        empty.textContent = 'هنوز نسخه پشتیبانی از این برنامه در Drive پیدا نشد.';
+        box.appendChild(empty);
+        return;
+      }
+      files.forEach(file => {
+        const row = document.createElement('div');
+        row.className = 'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2.5';
+        const details = document.createElement('div');
+        details.className = 'min-w-0 flex-1';
+        const name = document.createElement('strong');
+        name.className = 'block break-all text-[11px] text-slate-700';
+        name.textContent = file.name || 'Holoo backup';
+        const date = document.createElement('span');
+        date.className = 'text-[10px] text-slate-400';
+        date.textContent = file.modifiedTime ? new Date(file.modifiedTime).toLocaleString('fa-IR') : '';
+        details.append(name, date);
+        const restore = document.createElement('button');
+        restore.type = 'button';
+        restore.className = 'touch-btn rounded-lg bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-700';
+        restore.textContent = 'بازیابی';
+        restore.addEventListener('click', () => restoreGoogleDriveBackup(file.id, file.name));
+        row.append(details, restore);
+        box.appendChild(row);
+      });
+    }
+    async function listGoogleDriveBackups() {
+      try {
+        const query = encodeURIComponent("name contains 'Holoo_Backup_' and trashed = false");
+        const response = await googleDriveRequest('files?q=' + query + '&spaces=drive&pageSize=100&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,modifiedTime,size)');
+        const result = await response.json();
+        const files = (result.files || []).filter(file => /^Holoo_Backup_.*\.json$/i.test(file.name || ''));
+        renderGoogleDriveBackups(files);
+        if (!files.length) showToast('نسخه‌ای از پشتیبان‌های این برنامه در Drive پیدا نشد.');
+      } catch (error) {
+        console.error('Google Drive backup listing failed:', error);
+        showToast(error.message || 'دریافت فهرست نسخه‌های Drive ناموفق بود.', 'error');
+      }
+    }
+    async function restoreGoogleDriveBackup(fileId, filename) {
+      if (!fileId || !confirm('اطلاعات فعلی با نسخه «' + String(filename || 'پشتیبان Drive') + '» جایگزین می‌شود. ابتدا یک نقطه بازیابی محلی ساخته خواهد شد. ادامه می‌دهید؟')) return;
+      try {
+        const response = await googleDriveRequest('files/' + encodeURIComponent(fileId) + '?alt=media');
+        const parsed = await response.json();
+        if (!isValidBackupData(parsed)) throw new Error('ساختار فایل انتخاب‌شده معتبر نیست.');
+        if (!createSnapshot('پیش از بازیابی Google Drive', false)) throw new Error('ساخت نقطه بازیابی از اطلاعات فعلی ناموفق بود؛ بازیابی متوقف شد.');
+        const previous = state;
+        state = parsed;
+        if (!saveState()) {
+          state = previous;
+          throw new Error('ذخیره اطلاعات بازیابی‌شده ناموفق بود؛ وضعیت قبلی در حافظه بازگردانده شد.');
+        }
+        renderAll();
+        showToast('اطلاعات از نسخه Google Drive بازیابی شد؛ همگام‌سازی ابری در صف قرار گرفت.');
+      } catch (error) {
+        console.error('Google Drive restore failed:', error);
+        showToast(error.message || 'بازیابی از Google Drive ناموفق بود.', 'error');
+      }
+    }
+    function disconnectGoogleDrive() {
+      const token = driveAccessToken;
+      const finish = () => {
+        driveAccessToken = null;
+        driveAccessTokenExpiresAt = 0;
+        driveTokenClient = null;
+        try { localStorage.removeItem(DRIVE_ACCOUNT_EMAIL_KEY); } catch (_) {}
+        const list = document.getElementById('drive-backup-list');
+        if (list) { list.replaceChildren(); list.classList.add('hidden'); }
+        renderGoogleDriveStatus();
+        showToast('اتصال Google Drive از این دستگاه قطع شد.');
+      };
+      if (token && window.google?.accounts?.oauth2?.revoke) {
+        try { window.google.accounts.oauth2.revoke(token, finish); }
+        catch (_) { finish(); }
+      } else finish();
     }
 
     // =========================================================================
