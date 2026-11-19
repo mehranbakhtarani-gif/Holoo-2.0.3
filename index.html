@@ -10054,6 +10054,7 @@
       if (report.unbalancedVoucherCount) warnings.push(faNum(report.unbalancedVoucherCount) + ' سند در این بازه توازن بدهکار/بستانکار ندارد.');
       if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر از گزارش کنار گذاشته شد.');
       if (report.invalidAmountVouchers) warnings.push(faNum(report.invalidAmountVouchers) + ' سند با مبلغ نامعتبر از گزارش کنار گذاشته شد.');
+      if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند ساختار ناقص یا نامعتبر دارد.');
       document.getElementById('cashflow-actual-report').innerHTML =
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">' +
         '<div class="p-3 rounded-xl bg-slate-50"><span class="text-xs">مانده نقد اول دوره</span><strong class="block">' + money(report.openingCash) + '</strong></div>' +
@@ -10266,6 +10267,8 @@
       if (report.trialBalanceDifference !== 0) warnings.push('جمع بدهکار و بستانکار اسناد تا تاریخ انتخابی برابر نیست: ' + money(report.trialBalanceDifference));
       if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند با تاریخ نامعتبر وجود دارد و در محاسبه تاریخ‌دار وارد نشده است.');
       if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف سند با مبلغ نامعتبر از محاسبه کنار گذاشته شد.');
+      if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند ساختار ناقص یا نامعتبر دارد.');
+      if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن در دفترکل وجود دارد.');
       document.getElementById('accounting-panel-body').innerHTML =
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between gap-2"><strong>ترازنامه بر مبنای دفتر کل</strong><span class="text-xs text-slate-500">مانده تا تاریخ انتخابی</span></div>' +
@@ -10404,6 +10407,8 @@
       if (report.trialBalanceDifference !== 0) warnings.push('جمع بدهکار و بستانکار اسناد این دوره برابر نیست: ' + money(report.trialBalanceDifference));
       if (report.invalidDateVouchers) warnings.push(faNum(report.invalidDateVouchers) + ' سند دارای تاریخ نامعتبر است و قابل تعیین در این دوره نیست.');
       if (report.invalidAmountLines) warnings.push(faNum(report.invalidAmountLines) + ' ردیف سند با مبلغ نامعتبر از محاسبه کنار گذاشته شد.');
+      if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند ساختار ناقص یا نامعتبر دارد.');
+      if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن در بازه گزارش وجود دارد.');
       document.getElementById('accounting-panel-body').innerHTML =
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><div class="font-black text-sm">صورت سود و زیان بر مبنای دفتر روزنامه</div>' +
