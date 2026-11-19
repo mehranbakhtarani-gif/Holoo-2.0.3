@@ -1,4 +1,4 @@
-const CACHE_NAME = 'holoo-pwa-shell-v18';
+const CACHE_NAME = 'holoo-pwa-shell-v19';
 const APP_SHELL = ['./', './index.html', './import-domain.js', './manifest.json', './icons/icon.svg', './icons/icon-192.svg', './icons/icon-512.svg'];
 const CDN_HOSTS = new Set([
   'cdn.tailwindcss.com',
@@ -69,6 +69,23 @@ self.addEventListener('fetch', (event) => {
         return (await caches.match(request)) ||
           (await caches.match('./index.html')) ||
           Response.error();
+      })
+    );
+    return;
+  }
+
+  // JavaScript modules must stay in sync with the freshly loaded HTML.
+  // Prefer the network for scripts, while retaining an offline cache fallback.
+  if (url.pathname.endsWith('.js')) {
+    event.respondWith(
+      fetch(request).then(async (response) => {
+        if (response.ok && response.type === 'basic') {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, response.clone());
+        }
+        return response;
+      }).catch(async () => {
+        return (await caches.match(request)) || Response.error();
       })
     );
     return;
