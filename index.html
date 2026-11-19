@@ -8237,6 +8237,15 @@
       }
       const linked = imports.find(x => x && String(x.id) === desiredId && x.status !== 'cancelled');
       const outstandingFx = linked ? Math.max(0, Number(linked.fxTotal || 0) - Number(linked.fxPaid || 0)) : 0;
+      const linkedFxCommitments = linked ? fx.filter(item => {
+        if (!item || String(item.currency || '') !== String(linked.currency || '')) return false;
+        if (linked.supplierPartyId && item.supplierPartyId) return String(linked.supplierPartyId) === String(item.supplierPartyId);
+        const a=String(linked.supplier||'').trim().toLocaleLowerCase();
+        const b=String(item.counterparty||'').trim().toLocaleLowerCase();
+        return !!a && !!b && a===b;
+      }) : [];
+      const linkedFxOutstanding = linkedFxCommitments.reduce((sum,item)=>sum+Math.max(0,Number(item.amount||0)-Number(item.paidAmount||0)),0);
+      const linkedFxCurrency = linkedFxCommitments[0]?.currency || linked?.currency || '';
       const tile = (label,value,note) => '<div class="rounded-xl bg-slate-50 border p-3"><div class="text-slate-500">' + label + '</div><div class="font-black text-lg tabular-nums">' + faNum(value) + '</div><div class="text-[10px] text-slate-500">' + note + '</div></div>';
       const moneyTile = (label,value,note) => '<div class="rounded-xl bg-slate-50 border p-3"><div class="text-slate-500">' + label + '</div><div class="font-black text-sm tabular-nums">' + money(value) + '</div><div class="text-[10px] text-slate-500">' + note + '</div></div>';
       let comparison = '';
@@ -8254,7 +8263,8 @@
         const scopeNote=calculation?'<div class="rounded-lg bg-amber-50 text-amber-900 p-2 text-[10px]">مقدار برنامه ('+faNum(plannedUnits)+' واحد عمومی) با وزن واقعی پرونده ('+faNum(actualKg)+' کیلوگرم) هم‌واحد نیست؛ اختلاف بهای کل فقط پس از یکسان‌سازی تعداد، واحد و اقلام قابل اتکاست.</div>':'';
         comparison = moneyTile('بهای ثبت‌شده پرونده منتخب',actualCost,linked.id+' · '+(linked.supplier||'فروشنده نامشخص'))+
           moneyTile('اختلاف واقعی با برآورد فعلی',variance,calculation?'مثبت = هزینه واقعی بیشتر؛ این اختلاف خودکار تطبیق حسابداری نیست':'برای مقایسه، ابتدا ورودی‌های برنامه را معتبر کنید')+
-          tile('مانده ارزی پرونده منتخب',outstandingFx,(linked.currency||'')+' · از '+faNum(linked.fxTotal||0)+' ثبت‌شده')+
+          tile('مانده ارزی ثبت‌شده در پرونده واردات',outstandingFx,(linked.currency||'')+' · از مبلغ '+faNum(linked.fxTotal||0))+
+          tile('مانده تعهدات ارزی مستقلِ هم‌ذی‌نفع/هم‌ارز',linkedFxOutstanding,faNum(linkedFxCommitments.length)+' تعهد تطبیق‌شده · '+linkedFxCurrency+' · تطبیق بر اساس ذی‌نفع و ارز')+
           '<div class="col-span-full rounded-xl border p-3 text-[10px] space-y-1"><strong>اقلام واقعی پرونده ('+faNum(actualItems.length)+')</strong>'+(itemRows||'<div>جزئیات قلم کالا موجود نیست.</div>')+'</div>'+
           '<div class="col-span-full rounded-xl border p-3 text-[10px] space-y-1"><strong>تفکیک هزینه‌های ثبت‌شده</strong>'+(expenseRows||'<div>جزئیات هزینه‌ای ثبت نشده است.</div>')+'</div>'+scopeNote;
       } else {
