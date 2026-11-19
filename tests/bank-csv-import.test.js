@@ -18,21 +18,21 @@ function load(context) {
 
 const sandbox = load({});
 const rows = sandbox.parseBankCSVRecords(
-  '1405/09/02,"واریز, بابت فروش",1000,REF-1\\r\\n' +
-  '1405/09/03,"شرح دارای ""نقل قول""",2\\n' +
-  '1405/09/04,"شرح چند\\nخطی",3,REF-3'
+  '1405/09/02,"واریز, بابت فروش",1000,REF-1\r\n' +
+  '1405/09/03,"شرح دارای ""نقل قول""",2\n' +
+  '1405/09/04,"شرح چند\nخطی",3,REF-3'
 );
 assert.equal(rows.length, 3);
 assert.deepEqual(Array.from(rows[0]), ['1405/09/02', 'واریز, بابت فروش', '1000', 'REF-1']);
 assert.deepEqual(Array.from(rows[1]), ['1405/09/03', 'شرح دارای "نقل قول"', '2']);
-assert.deepEqual(Array.from(rows[2]), ['1405/09/04', 'شرح چند\\nخطی', '3', 'REF-3']);
+assert.deepEqual(Array.from(rows[2]), ['1405/09/04', 'شرح چند\nخطی', '3', 'REF-3']);
 assert.throws(() => sandbox.parseBankCSVRecords('1405/09/02,"نقل قول ناقص,100,REF'), /نقل‌قول/);
 
 const state = { bankReconcileItems: [{ id:'OLD', ref:'DUP-1', date:'1405/09/01', desc:'قبلی', amount:10, matched:false }] };
 const values = { 'bank-csv-text':
-  '\\uFEFF1405/09/02,"واریز, بابت فروش",1000,REF-1\\n' +
-  '1405/09/03,"شرح ""ویژه""",200,DUP-1\\n' +
-  '1405/09/04,"شرح چند\\nخطی",-300,REF-3\\n' +
+  '\uFEFF1405/09/02,"واریز, بابت فروش",1000,REF-1\n' +
+  '1405/09/03,"شرح ""ویژه""",200,DUP-1\n' +
+  '1405/09/04,"شرح چند\nخطی",-300,REF-3\n' +
   'ردیف نامعتبر'
 };
 let saves=0, renders=0, closes=0, id=0;
@@ -48,7 +48,7 @@ const integration = load({
 integration.parseBankCSV();
 assert.equal(state.bankReconcileItems.length, 3);
 assert.equal(state.bankReconcileItems[0].ref,'REF-3');
-assert.equal(state.bankReconcileItems[0].desc,'شرح چند\\nخطی');
+assert.equal(state.bankReconcileItems[0].desc,'شرح چند\nخطی');
 assert.equal(state.bankReconcileItems[1].desc,'واریز, بابت فروش');
 assert.equal(state.bankReconcileItems[2].ref,'DUP-1');
 assert.equal(saves,1);
