@@ -4160,6 +4160,12 @@
         return;
       }
 
+      const sourceProduct = (state.products || []).find(item => String(item.id) === String(plan.sourceProductId));
+      const sourceCurrentStock = Number(sourceProduct?.stock);
+      if (!Number.isFinite(sourceCurrentStock)) {
+        showToast('موجودی فعلی کالای مبدأ معتبر نیست؛ اصلاح متوقف شد.', 'error');
+        return;
+      }
       const sourceWarehouse = (state.warehouses || []).find(item => String(item.id) === String(plan.sourceWarehouseId));
       const originalDestination = (state.warehouses || []).find(item => String(item.id) === String(plan.destinationWarehouseId));
       const destinationSelect = document.getElementById('wh-correction-destination');
@@ -4175,7 +4181,7 @@
       document.getElementById('wh-correction-transfer-id').value = plan.transferId;
       document.getElementById('wh-correction-reason').value = '';
       document.getElementById('wh-correction-quantity').value = String(plan.quantity);
-      document.getElementById('wh-correction-quantity').max = String(Number(plan.sourceCurrentStock) + Number(plan.quantity));
+      document.getElementById('wh-correction-quantity').max = String(sourceCurrentStock + Number(plan.quantity));
       document.getElementById('wh-correction-confirm').checked = false;
       document.getElementById('wh-correction-summary').innerHTML =
         '<div><strong>شناسه حواله اصلی:</strong> ' + escapeKardexText(plan.transferId) + '</div>' +
