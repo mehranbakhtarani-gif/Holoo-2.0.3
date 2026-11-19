@@ -9380,7 +9380,7 @@
         const voucherAmount = debit > 0 ? debit : credit;
         const amountMatch = Math.abs(voucherAmount - amount) < 0.01;
         const dateMatch = Boolean(voucherDate && voucherDate === dateKey);
-        if (!amountMatch || !dateMatch) return [];
+        if (!amountMatch && !dateMatch) return [];
         return [{
           id: v.id, desc: v.desc || v.description || v.memo || 'سند بانکی',
           date: v.date || v.operationDate || '', debit, credit, bankAccountId: voucherBankId,
