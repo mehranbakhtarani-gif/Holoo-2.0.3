@@ -4507,7 +4507,7 @@
       }).join('');
 
       const transferCorrectionRows = movements.map((movement, index) => {
-        const transferMatch = String(movement?.doc || '').match(/TR-\\d+-[a-z0-9]+/i);
+        const transferMatch = String(movement?.doc || '').match(/TR-\d+-[a-z0-9]+/i);
         if (!transferMatch) return '';
         const plan = HolooWarehouseAudit.buildWarehouseTransferReversalPlan(state, transferMatch[0]);
         return `
