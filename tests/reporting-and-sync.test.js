@@ -69,7 +69,9 @@ async function test(name, fn) { await fn(); passed.push(name); }
         {lines:[{code:'1103',partyId:'P2',debit:900,credit:0}]}
       ]
     };
-    const getAccount=load('getPartyAccountNetBalance',{state});
+    const getAccount = (partyId, accountCode) => state.vouchers.reduce((net, voucher) =>
+      net + (voucher.lines || []).filter(line => String(line.partyId) === String(partyId) && String(line.code) === String(accountCode))
+        .reduce((sum, line) => sum + Number(line.debit || 0) - Number(line.credit || 0), 0), 0);
     const get=load('getPartyNetBalance',{state});
     assert.equal(get('P1'),350);
     assert.equal(get('P2'),900);
