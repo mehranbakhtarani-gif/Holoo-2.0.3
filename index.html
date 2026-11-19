@@ -1056,7 +1056,7 @@
                 <div><label class="block font-bold mb-1">فروش پیش‌بینی هر کانتینر (ریال)</label><input id="plan-sell" type="number" min="0" step="any" value="39500000000" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
                 <div><label class="block font-bold mb-1">هزینه تأمین مالی کل پروژه (ریال)</label><input id="plan-finance" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
                 <div><label class="block font-bold mb-1">هزینه فروش و توزیع کل پروژه (ریال)</label><input id="plan-selling" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
-                <div><label class="block font-bold mb-1">نرخ مالیات برآوردی سود (%)</label><input id="plan-tax-rate" type="number" min="0" max="100" step="0.01" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
+                <div><label class="block font-bold mb-1">نرخ مالیات برآوردی سود (%)</label><input id="plan-tax-rate" type="number" min="0" max="100" step="0.01" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>\n                <div><label class="block font-bold mb-1">ارزش خالص فروش هر واحد کالا (NRV، ریال)</label><input id="plan-nrv" type="number" min="0" step="any" value="0" oninput="renderCapitalPlanner()" class="touch-btn w-full border rounded-xl px-2 bg-white tabular-nums" /></div>
               </div>
               <p class="text-[10px] text-slate-500">هزینه تأمین مالی و فروش در بهای موجودی منظور نشده‌اند. مالیات سود صرفاً برآوردی است و جایگزین محاسبه مالیاتی یا اظهارنامه نیست.</p>
             </div>
@@ -7813,7 +7813,7 @@
     }
 
     function capitalPlanReadInputs() {
-      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate'];
+      const ids = ['plan-name','plan-supplier','plan-count','plan-units','plan-days','plan-date','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv'];
       const data = {};
       ids.forEach(id => { const el = document.getElementById(id); data[id] = el ? (el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value.trim()) : ''; });
       return data;
@@ -7828,7 +7828,7 @@
       const safeCount = Math.max(0, count);
       const grossForeignPurchase = safeCount * fob * fx;
       const purchase = grossForeignPurchase * (1 - discount / 100);
-      const perContainerDirect = ['plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer']
+      const perContainerDirect = ['plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection']
         .reduce((sum, id) => sum + Number(v[id] || 0), 0);
       const directCost = safeCount * perContainerDirect + Number(v['plan-other'] || 0);
       const landedCost = purchase + directCost;
@@ -7841,7 +7841,7 @@
       const taxRate = Number(v['plan-tax-rate'] || 0);
       const estimatedTax = Math.max(0, profitBeforeTax) * taxRate / 100;
       const estimatedAfterTax = profitBeforeTax - estimatedTax;
-      const deployedCapital = landedCost + finance;
+      const deployedCapital = landedCost + finance + bankFees;
       const totalUnits = safeCount * units;
       return {
         count:safeCount, grossForeignPurchase, purchase, directCost, landedCost, recoverableTax,
@@ -7855,7 +7855,7 @@
     }
     function capitalPlanValidation(v) {
       const errors = [];
-      const numeric = ['plan-count','plan-units','plan-days','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate'];
+      const numeric = ['plan-count','plan-units','plan-days','plan-fob','plan-fx','plan-discount','plan-freight','plan-insurance','plan-duty','plan-clearance','plan-port','plan-storage','plan-inland','plan-inspection','plan-transfer','plan-other','plan-recoverable-tax','plan-sell','plan-finance','plan-selling','plan-tax-rate','plan-nrv'];
       numeric.forEach(id => { if (!Number.isFinite(Number(v[id])) || Number(v[id]) < 0) errors.push('مقدار نامعتبر یا منفی در ' + id); });
       if (!(Number(v['plan-count']) >= 1 && Number.isInteger(Number(v['plan-count'])) && Number(v['plan-count']) <= 1000)) errors.push('تعداد کانتینر باید عدد صحیح بین ۱ تا ۱۰۰۰ باشد.');
       if (!(Number(v['plan-fx']) > 0)) errors.push('نرخ ارز باید بزرگ‌تر از صفر باشد.');
@@ -7899,7 +7899,7 @@
           '<div class="flex justify-between gap-2 border-t pt-1 font-black"><span>بهای تمام‌شده واردات</span><b>' + money(r.landedCost) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>فروش پیش‌بینی‌شده</span><b>' + money(r.revenue) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>سود ناخالص برآوردی</span><b>' + money(r.grossProfit) + '</b></div>' +
-          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش</span><b>' + money(r.finance + r.selling) + '</b></div>' +
+          '<div class="flex justify-between gap-2"><span>تأمین مالی + فروش + کارمزد حواله</span><b>' + money(r.finance + r.selling + r.bankFees) + '</b></div>' +\n          '<div class="flex justify-between gap-2"><span>کاهش ارزش احتمالی موجودی طبق NRV</span><b>' + money(r.inventoryWriteDown) + '</b></div>' +\n          '<div class="flex justify-between gap-2"><span>مبلغ دفتری برآوردی پس از آزمون NRV</span><b>' + money(r.carryingValueAfterNrv) + '</b></div>' +
           '<div class="flex justify-between gap-2 ' + profitClass + ' font-black text-xs border-t pt-1"><span>سود پیش‌بینی‌شده قبل از مالیات</span><b>' + money(r.profitBeforeTax) + '</b></div>' +
           '<div class="flex justify-between gap-2"><span>مالیات برآوردی</span><b>' + money(r.estimatedTax) + '</b></div>' +
           '<div class="flex justify-between gap-2 font-black"><span>سود پس از مالیات برآوردی</span><b>' + money(r.estimatedAfterTax) + '</b></div>' +
