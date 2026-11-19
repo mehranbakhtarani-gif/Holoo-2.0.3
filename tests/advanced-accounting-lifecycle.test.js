@@ -652,7 +652,7 @@ test('fully paid supplier purchase return books excess as supplier prepayment in
   const state = {
     fiscalYear:'1405', costingMethod:'AVG', treasuryTxs:[],
     invoices:[{id:3401,type:'purchase',partyId:'SUP-1',grandTotal:100,paidAmount:100,items:[{productId:'Y1',kg:10,returnedKg:0,price:10}]}],
-    products:[{id:'Y1',stock:10,kardex:[]}]
+    products:[{id:'Y1',stock:10,buyPrice:10,batches:[{id:'PUR-Y1',lot:'PUR-3401-Y1',sourceType:'purchase',sourceRef:3401,quantity:10,remainingQty:10,unitCost:10}],kardex:[]}]
   };
   const posted=[];
   const submit=load(section('function submitPartialReturn()', 'function cancelInvoice('), 'submitPartialReturn', {
