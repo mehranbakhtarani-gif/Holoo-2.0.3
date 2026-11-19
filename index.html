@@ -856,7 +856,7 @@
             <div class="flex flex-wrap gap-2 text-xs">
               <button onclick="openTreasuryForm('receive')" class="touch-btn bg-emerald-600 text-white px-3 rounded-xl font-bold">+ ثبت دریافت / چک دریافتی</button>
               <button onclick="openTreasuryForm('pay')" class="touch-btn bg-rose-600 text-white px-3 rounded-xl font-bold">- ثبت پرداخت / چک پرداختی</button>
-              <button onclick="computeCheckRas()" class="touch-btn bg-amber-500 text-slate-950 px-3 rounded-xl font-extrabold">🧮 راس‌گیری چک‌ها</button>
+              <button onclick="computeCheckRas(); renderTreasuryModule()" class="touch-btn bg-amber-500 text-slate-950 px-3 rounded-xl font-extrabold">🧮 راس‌گیری چک‌ها</button>
             </div>
           </div>
 
@@ -8026,6 +8026,14 @@
       return Number.isFinite(legacyDays) && legacyDays > 0 ? Math.floor(legacyDays) : null;
     }
 
+    function normalizeSayadId(value) {
+      return String(value == null ? '' : value).replace(/[۰-۹٠-٩]/g, ch => {
+        const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch));
+      }).replace(/[\s-]/g, '');
+    }
+    function isValidSayadId(value) { return /^\d{16}$/.test(normalizeSayadId(value)); }
+
     function jalaliDateOrdinal(value) {
       const digits = String(value || '').trim().replace(/[۰-۹٠-٩]/g, ch => {
         const fa = '۰۱۲۳۴۵۶۷۸۹'; const ar = '٠١٢٣٤٥٦٧٨٩';
@@ -8483,11 +8491,11 @@
         const checkBankAccount = state.bankAccounts.find(account =>
           String(account.id) === String(checkBankId) && account.type === 'bank');
         if (!checkBankAccount) { showToast('برای چک، حساب بانکی مقصد یا مبدأ معتبر انتخاب کنید.', 'error'); return; }
-        const normalizedSayad = sayad.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\s-]/g, '');
-        const duplicateSayad = state.checks.some(c => String(c.sayad || '').replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\s-]/g, '') === normalizedSayad);
+        const normalizedSayad = normalizeSayadId(sayad);
+        const duplicateSayad = state.checks.some(c => normalizeSayadId(c.sayad) === normalizedSayad);
         const dueDate = document.getElementById('tr-chk-due').value.trim();
         const checkBankName = document.getElementById('tr-chk-bank').value.trim();
-        if (!/^\d{16}$/.test(normalizedSayad) || duplicateSayad) { showToast('شناسه صیادی باید دقیقاً ۱۶ رقم معتبر و غیرتکراری باشد.', 'error'); return; }
+        if (!isValidSayadId(normalizedSayad) || duplicateSayad) { showToast('شناسه صیادی باید دقیقاً ۱۶ رقم معتبر و غیرتکراری باشد.', 'error'); return; }
         if (jalaliDateOrdinal(dueDate) === null) { showToast('تاریخ سررسید معتبر شمسی وارد کنید.', 'error'); return; }
         if (!checkBankName) { showToast('نام بانک و شعبه چک را وارد کنید.', 'error'); return; }
       } else {
@@ -8503,7 +8511,7 @@
       const txId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       if (method === 'check') {
         const sayadRaw = document.getElementById('tr-sayad').value.trim();
-        const sayad = sayadRaw.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\s-]/g, '');
+        const sayad = normalizeSayadId(sayadRaw);
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         const check = { id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value.trim().replace(/-/g, '/'), amount, bank: document.getElementById('tr-chk-bank').value.trim(), bankAccountId: document.getElementById('tr-check-account').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) };
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
@@ -8806,7 +8814,9 @@
       const dueDate = document.getElementById('cc-due-date').value.trim();
       const party = (state.parties || []).find(item => String(item.id) === String(partyId));
       const bankAccount = (state.bankAccounts || []).find(item => String(item.id) === String(bankAccountId) && item.type === 'bank');
-      if (!['receive','pay'].includes(dir) || !party || !sayad || (state.checks || []).some(item => String(item.id) !== String(checkId) && String(item.sayad) === sayad) || !Number.isFinite(amount) || amount <= 0 || !bank || !bankAccount || jalaliDateOrdinal(dueDate) === null) { showToast('شناسه صیادی یکتا، طرف حساب، مبلغ، بانک، حساب بانکی و تاریخ معتبر الزامی است.', 'error'); return; }
+      const normalizedSayad = normalizeSayadId(sayad);
+      if (!['receive','pay'].includes(dir) || !party || !isValidSayadId(normalizedSayad) || (state.checks || []).some(item => String(item.id) !== String(checkId) && normalizeSayadId(item.sayad) === normalizedSayad) || !Number.isFinite(amount) || amount <= 0 || !bank || !bankAccount || jalaliDateOrdinal(dueDate) === null) { showToast('شناسه صیادی باید دقیقاً ۱۶ رقم معتبر و یکتا باشد؛ سایر اطلاعات چک نیز باید معتبر باشند.', 'error'); return; }
+      const sayadForSave = normalizedSayad;
       const before = state; state = JSON.parse(JSON.stringify(state));
       try {
         const original = state.checks.find(item => String(item.id) === String(checkId));
@@ -8824,7 +8834,7 @@
         const replacementVoucherId = postVoucher('ثبت چک اصلاحی صیادی ' + sayad, replacementLines, getTodayJalaliDate(), { type: 'check_correction', id: correctionId, event: 'replacement', mode: 'manual', deferSave: true });
         original.status = 'voided'; original.correctedByCheckId = newCheckId; original.reversalVoucherId = reversalVoucherId; original.correctionCompletedAt = new Date().toISOString();
         originalTx.correctedByTxId = newTxId; originalTx.correctionCompletedAt = new Date().toISOString();
-        const newCheck = { id: newCheckId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate, amount, bank, bankAccountId, partyId, status: 'in_progress', sourceTxId: newTxId, allocations: [], voucherRefs: { issued: replacementVoucherId }, correctsCheckId: String(checkId), reversalVoucherId };
+        const newCheck = { id: newCheckId, dir, sayad: sayadForSave, checkNo: sayadForSave.slice(-6), issueDate: getTodayJalaliDate(), dueDate, amount, bank, bankAccountId, partyId, status: 'in_progress', sourceTxId: newTxId, allocations: [], voucherRefs: { issued: replacementVoucherId }, correctsCheckId: String(checkId), reversalVoucherId };
         state.checks.unshift(newCheck);
         const replacementVoucher = state.vouchers.find(item => Number(item.id) === Number(replacementVoucherId)); if (replacementVoucher) replacementVoucher.correctsCheckId = String(checkId);
         const reversalVoucher = state.vouchers.find(item => Number(item.id) === Number(reversalVoucherId)); if (reversalVoucher) reversalVoucher.reversesCheckId = String(checkId);
@@ -8835,7 +8845,8 @@
       } catch (error) { state = before; showToast('اصلاح چک انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error'); }
     }
     function renderTreasuryModule() {
-      document.getElementById('bank-accounts-grid').innerHTML = state.bankAccounts.map(b => `
+       computeCheckRas();
+       document.getElementById('bank-accounts-grid').innerHTML = state.bankAccounts.map(b => `
         <div class="bg-white rounded-2xl p-3.5 border border-slate-200 flex justify-between items-center text-xs">
           <div><strong class="block">${b.name}</strong><span class="text-[10px] text-slate-400 tabular-nums">${faNum(b.accNo)}</span></div>
           <span class="font-black text-holoo-900 tabular-nums">${money(b.balance)}</span>
@@ -8868,7 +8879,6 @@
               ${['in_progress', 'overdue'].includes(c.status) ? `
                 <button type="button" onclick="updateCheckStatus('${c.id}','cleared')" class="min-h-10 min-w-[4.5rem] bg-emerald-600 text-white px-3 py-2 rounded-lg font-bold text-xs touch-manipulation">وصول</button>
                 <button type="button" onclick="updateCheckStatus('${c.id}','bounced')" class="min-h-10 min-w-[4.5rem] bg-rose-600 text-white px-3 py-2 rounded-lg font-bold text-xs touch-manipulation">برگشت</button>
-                <button type="button" onclick="updateCheckStatus('${c.id}','endorsed')" class="min-h-10 min-w-[4.5rem] bg-indigo-600 text-white px-3 py-2 rounded-lg font-bold text-xs touch-manipulation">واگذاری</button>
                 <button type="button" onclick="updateCheckStatus('${c.id}','voided')" class="min-h-10 min-w-[4.5rem] bg-slate-600 text-white px-3 py-2 rounded-lg font-bold text-xs touch-manipulation">ابطال</button>
               ` : ''}
             </div>
@@ -9075,7 +9085,7 @@
       let changed = false;
       groups.forEach(group => {
         const checks = (state.checks || []).filter(c => c.dir === group.key && ['in_progress', 'overdue'].includes(c.status));
-        let total = 0, weighted = 0, invalidDates = 0;
+        let total = 0, weighted = 0, validCount = 0, invalidDates = 0;
         checks.forEach(check => {
           const due = jalaliDateOrdinal(check.dueDate);
           const amount = Number(check.amount || 0);
@@ -9083,15 +9093,16 @@
           const days = due - today;
           weighted += amount * days;
           total += amount;
+          validCount++;
           if (days < 0 && check.status !== 'overdue') { check.status = 'overdue'; check.statusUpdatedAt = new Date().toISOString(); changed = true; }
           if (days >= 0 && check.status === 'overdue') { check.status = 'in_progress'; check.statusUpdatedAt = new Date().toISOString(); changed = true; }
         });
         const average = total > 0 ? Math.round(weighted / total) : null;
-        reports.push(group.label + ': ' + faNum(checks.length) + ' فقره، ' + money(checks.reduce((sum, c) => sum + (Number(c.amount) || 0), 0)) +
+        reports.push(group.label + ': ' + faNum(validCount) + ' فقره معتبر، ' + money(total) +
           (average === null ? '؛ راس قابل محاسبه نیست' : '؛ راس وزنی ' + (average < 0 ? faNum(Math.abs(average)) + ' روز گذشته' : faNum(average) + ' روز آینده')) +
           (invalidDates ? '؛ ' + faNum(invalidDates) + ' چک با تاریخ/مبلغ نامعتبر' : ''));
       });
-      if (changed) { addAudit('به‌روزرسانی خودکار وضعیت سررسید چک‌ها بر اساس تاریخ شمسی'); saveState(); renderAll(); }
+      if (changed) { addAudit('به‌روزرسانی وضعیت سررسید چک‌ها هنگام راس‌گیری یا بازکردن خزانه'); saveState(); }
       b.classList.remove('hidden');
       b.textContent = '🧮 راس‌گیری بر اساس تاریخ واقعی سررسید: ' + reports.join(' | ');
     }
@@ -9143,9 +9154,13 @@
       const usedTreasuryIds = new Set((state.bankReconcileItems || [])
         .filter(x => x.id !== item.id && x.matched && x.linkedTreasuryTxId)
         .map(x => String(x.linkedTreasuryTxId)));
+      const selectedBankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
+      if (selectedBankId && !(state.bankAccounts || []).some(account => account.type === 'bank' && String(account.id) === selectedBankId)) return [];
       return (state.treasuryTxs || []).filter(tx => {
         if (usedTreasuryIds.has(String(tx.id)) || tx.kind === 'party_credit' || tx.kind === 'party_credit_refund') return false;
-        if (String(tx.dir || '') !== expectedDirection) return false;
+        if (tx.method !== 'حواله بانکی' || String(tx.dir || '') !== expectedDirection) return false;
+        const bankAccount = getTreasuryTxAccount(tx);
+        if (!bankAccount || (selectedBankId && String(bankAccount.id) !== selectedBankId)) return false;
         const txDate = bankTxDateKey(tx.date || tx.operationDate);
         const txAmount = Number(tx.amount);
         return txDate === dateKey && Number.isFinite(txAmount) && Math.abs(txAmount - amount) < 0.01;
@@ -9161,6 +9176,9 @@
       const amount = Math.abs(signedAmount);
       if (!dateKey || !Number.isFinite(signedAmount) || amount <= 0) return [];
       const selectedBankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
+      const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+      const allowLegacyUnassigned = bankAccounts.length === 1 && (!selectedBankId || String(bankAccounts[0].id) === selectedBankId);
+      if (selectedBankId && !bankAccounts.some(account => String(account.id) === selectedBankId)) return [];
       const usedVoucherIds = new Set((state.bankReconcileItems || [])
         .filter(x => x.id !== item.id && x.matched && x.linkedVoucherId)
         .map(x => String(x.linkedVoucherId)));
@@ -9174,14 +9192,14 @@
         if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) return [];
         if (signedAmount > 0 ? !(debit > 0 && credit === 0) : !(credit > 0 && debit === 0)) return [];
         const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
-        if (selectedBankId && voucherBankId && selectedBankId !== voucherBankId) return [];
+        if (selectedBankId ? (voucherBankId ? voucherBankId !== selectedBankId : !allowLegacyUnassigned) : (!voucherBankId && !allowLegacyUnassigned)) return [];
         const description = [v.desc, v.description, v.memo, line.desc, line.description, line.memo].filter(Boolean).join(' ');
         const normalizedDescription = description.replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
         if (normalizedDescription.includes('افتتاحیه') && normalizedDescription.includes('بانک')) return [];
         const voucherAmount = debit > 0 ? debit : credit;
         const amountMatch = Math.abs(voucherAmount - amount) < 0.01;
         const dateMatch = Boolean(voucherDate && voucherDate === dateKey);
-        if (!amountMatch && !dateMatch) return [];
+        if (!amountMatch || !dateMatch) return [];
         return [{
           id: v.id, desc: v.desc || v.description || v.memo || 'سند بانکی',
           date: v.date || v.operationDate || '', debit, credit, bankAccountId: voucherBankId,
