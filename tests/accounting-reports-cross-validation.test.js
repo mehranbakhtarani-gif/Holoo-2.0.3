@@ -44,7 +44,7 @@ const state = {
 };
 const CHART_ACCOUNTS = [
   {code:'1101',name:'صندوق'},{code:'1102',name:'بانک'},{code:'1201',name:'دارایی ثابت'},
-  {code:'2201',name:'تسهیلات'},{code:'3101',name:'سرمایه'},{code:'4101',name:'فروش'},
+  {code:'2201',name:'تسهیلات'},{code:'3101',name:'سرمایه'},{code:'3102',name:'سود انباشته'},{code:'4101',name:'فروش'},
   {code:'6101',name:'هزینه اداری'}
 ];
 const sandbox = {
