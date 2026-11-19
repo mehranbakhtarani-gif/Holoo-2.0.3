@@ -234,6 +234,7 @@ vm.runInContext(sliceBetween('    function jalaliDateOrdinal(', '    function cu
 vm.runInContext(sliceBetween('    function normalizeLedgerDate(', '    function countInvalidReportVoucherLines('), closeSandbox);
 vm.runInContext(sliceBetween('    function inspectTrialBalanceVoucher(', '    function buildTrialBalanceReport('), closeSandbox);
 vm.runInContext(sliceBetween('    function getFiscalYearCloseRecord(', '    function getFiscalYearEndDate('), closeSandbox);
+vm.runInContext(sliceBetween('    function isOpeningKardexDocument(', '    function inspectBatchMetadata('), closeSandbox);
 vm.runInContext(sliceBetween('    function getFiscalYearEndDate(', '    function renderFiscalYearCloseModule('), closeSandbox);
 vm.runInContext(sliceBetween('    function postVoucher(', '    // ========================================================================='), closeSandbox);
 closeSandbox.testToday = closeSandbox.getFiscalYearEndDate('1404');
