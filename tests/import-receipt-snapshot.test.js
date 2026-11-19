@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
-  createReceiptSnapshot
+  createReceiptSnapshot,
+  getReceiptReversalBlockReason
 } = require('../import-domain.js');
 
 const shipment = {
@@ -27,7 +28,8 @@ const snapshot = createReceiptSnapshot(shipment, products, {
   receivedDate: '1405/08/28',
   actor: 'mehran',
   deviceId: 'device-test',
-  costingMethod: 'FIFO'
+  costingMethod: 'FIFO',
+  previousStatus: 'cleared'
 });
 
 assert.equal(snapshot.schemaVersion, 1);
@@ -36,6 +38,7 @@ assert.equal(snapshot.shipmentId, 'IMP-SNAPSHOT-1');
 assert.equal(snapshot.actor, 'mehran');
 assert.equal(snapshot.deviceId, 'device-test');
 assert.equal(snapshot.costingMethod, 'FIFO');
+assert.equal(snapshot.previousStatus, 'cleared');
 assert.equal(snapshot.items.length, 3);
 assert.equal(snapshot.products.length, 2, 'one pre-receipt product state per unique product');
 assert.equal(snapshot.products.find(x => x.productId === 'P-1').state.stock, 40);
@@ -57,7 +60,7 @@ assert.throws(() => createReceiptSnapshot({ id: 'IMP-EMPTY', items: [] }, produc
 assert.throws(() => createReceiptSnapshot(shipment, products, { schemaVersion: 2 }), /نسخه/);
 
 const html = fs.readFileSync('index.html', 'utf8');
-const receiptStart = html.indexOf('function receiveImportShipment(shipment)');
+const receiptStart = html.indexOf('function receiveImportShipment(shipment, receiptContext');
 const receiptEnd = html.indexOf('function getImportReceiptCorrectionBlockReason(shipment)', receiptStart);
 assert.ok(receiptStart >= 0 && receiptEnd > receiptStart, 'receipt handler is present');
 const receiptHandler = html.slice(receiptStart, receiptEnd);
@@ -73,3 +76,99 @@ assert.ok(html.includes('function saveState()'), 'snapshot persists through the 
 assert.ok(html.includes('writeLocalMirror(JSON.parse(snapshot), operation)'), 'state and snapshot enter the same local operation journal');
 
 console.log('PASS: versioned import receipt snapshots capture immutable pre-receipt product state before stock mutations');
+
+const reversalShipment = {
+  id: 'IMP-REV-1',
+  postedToWh: true,
+  items: [{ id: 'REV-ITEM-1', productId: 'REV-P1', quantityKg: 10, landedCostRial: 1200 }]
+};
+const beforeProduct = {
+  id: 'REV-P1',
+  stock: 20,
+  buyPrice: 100,
+  lastMoveDays: 5,
+  kardex: [{ doc: 'OPENING', inQty: 20, outQty: 0, bal: 20 }],
+  batches: [{ id: 'BASE-BATCH', quantity: 20, remainingQty: 20, unitCost: 100 }]
+};
+const receiptSnapshot = createReceiptSnapshot(reversalShipment, [beforeProduct], {
+  schemaVersion: 1,
+  snapshotId: 'REV-SNAPSHOT-1',
+  capturedAt: '2026-11-19T08:10:00.000Z',
+  receivedDate: '1405/08/28',
+  previousStatus: 'cleared',
+  actor: 'mehran',
+  deviceId: 'device-reversal-test',
+  costingMethod: 'AVG'
+});
+reversalShipment.receiptSnapshot = receiptSnapshot;
+const postedProduct = {
+  ...JSON.parse(JSON.stringify(beforeProduct)),
+  stock: 30,
+  buyPrice: 107,
+  lastMoveDays: 0,
+  kardex: [
+    ...JSON.parse(JSON.stringify(beforeProduct.kardex)),
+    { date: '1405/08/28', doc: 'تحویل محموله IMP-REV-1 به انبار', inQty: 10, outQty: 0, bal: 30, price: 120, batchRef: 'IMP-REV-1', sourceItemId: 'REV-ITEM-1' }
+  ],
+  batches: [
+    ...JSON.parse(JSON.stringify(beforeProduct.batches)),
+    { id: 'REV-BATCH-1', quantity: 10, remainingQty: 10, unitCost: 120, sourceType: 'import', sourceRef: 'IMP-REV-1', sourceItemId: 'REV-ITEM-1' }
+  ]
+};
+const registrationVoucher = {
+  id: 'V-IMP-REV-1', sourceType: 'import', sourceId: 'IMP-REV-1', sourceEvent: 'registration'
+};
+assert.equal(getReceiptReversalBlockReason(
+  reversalShipment, [postedProduct], [], [registrationVoucher]
+), null, 'a pristine, snapshot-backed receipt is eligible for physical reversal');
+
+const changedStock = JSON.parse(JSON.stringify(postedProduct));
+changedStock.stock += 1;
+assert.match(getReceiptReversalBlockReason(
+  reversalShipment, [changedStock], [], [registrationVoucher]
+), /موجودی یا بهای کالا/);
+
+const laterMovement = JSON.parse(JSON.stringify(postedProduct));
+laterMovement.stock += 1;
+laterMovement.kardex.push({ doc: 'LATER-MOVE', inQty: 1, outQty: 0, bal: 31 });
+assert.match(getReceiptReversalBlockReason(
+  reversalShipment, [laterMovement], [], [registrationVoucher]
+), /پس از رسید/);
+
+const transferredProduct = JSON.parse(JSON.stringify(postedProduct));
+const transferDestination = {
+  id: 'REV-P2', stock: 10, buyPrice: 0, lastMoveDays: 0, kardex: [],
+  batches: [{ id: 'REV-TRANSFER-BATCH', quantity: 2, remainingQty: 2, sourceBatchId: 'REV-BATCH-1' }]
+};
+assert.match(getReceiptReversalBlockReason(
+  reversalShipment, [transferredProduct, transferDestination], [], [registrationVoucher]
+), /بچ انتقالی/);
+
+const invoice = { id: 'INV-REV-1', items: [{ fifoAllocations: [{ batchId: 'REV-BATCH-1', quantity: 1 }] }] };
+assert.match(getReceiptReversalBlockReason(
+  reversalShipment, [postedProduct], [invoice], [registrationVoucher]
+), /فاکتور/);
+
+assert.match(getReceiptReversalBlockReason(
+  reversalShipment, [postedProduct], [], []
+), /سند ثبت مالی/);
+
+const extraSnapshotProduct = JSON.parse(JSON.stringify(reversalShipment));
+extraSnapshotProduct.receiptSnapshot.products.push({ productId: 'UNRELATED', state: { id: 'UNRELATED' } });
+assert.match(getReceiptReversalBlockReason(
+  extraSnapshotProduct, [postedProduct], [], [registrationVoucher]
+), /فهرست کالاهای snapshot/);
+
+const legacyReceipt = { id: 'IMP-LEGACY', postedToWh: true, items: reversalShipment.items };
+assert.match(getReceiptReversalBlockReason(
+  legacyReceipt, [postedProduct], [], [registrationVoucher]
+), /snapshot معتبر/);
+
+assert.ok(html.includes('function getImportReceiptReversalBlockReason(shipment)'), 'UI uses the domain preflight guard');
+assert.ok(html.includes('function requestImportReceiptReversal(importId)'), 'UI exposes the guarded reversal action');
+assert.ok(html.includes('برگشت امن رسید'), 'snapshot-backed receipts expose a distinct reversal action');
+assert.ok(html.includes('delete shipment.receiptSnapshot'), 'successful reversal archives then clears the active snapshot');
+assert.ok(html.includes('preservedRegistrationVoucherId'), 'reversal audit records the preserved financial voucher');
+assert.ok(html.includes('سند مالی ثبت محموله') && html.includes('بدون تغییر حفظ شد'), 'the financial registration voucher is explicitly preserved');
+
+console.log('PASS: import receipt reversal only allows pristine snapshot-backed receipts and blocks downstream dependencies');
