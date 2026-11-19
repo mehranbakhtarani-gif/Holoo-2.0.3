@@ -3259,22 +3259,50 @@
 
     let currentMod = 'dashboard';
     function navigateTo(mod) {
-      currentMod = mod;
-      document.querySelectorAll('.mod-section').forEach(s => s.classList.add('hidden'));
       const target = document.getElementById(`mod-${mod}`);
-      if (target) target.classList.remove('hidden');
+      const workspace = document.getElementById('main-workspace');
+      // Never hide the current module when a stale or invalid navigation target is supplied.
+      if (!target || !workspace) {
+        console.warn('Holoo navigation target not found:', mod);
+        if (typeof showToast === 'function') showToast('بخش انتخاب‌شده پیدا نشد؛ صفحه فعلی حفظ شد.', 'error');
+        return false;
+      }
 
-      document.querySelectorAll('.side-nav-btn').forEach(b => {
-        if (b.dataset.nav === mod) { b.classList.add('bg-holoo-700', 'text-white', 'shadow'); b.classList.remove('text-slate-700', 'hover:bg-slate-100'); }
-        else { b.classList.remove('bg-holoo-700', 'text-white', 'shadow'); b.classList.add('text-slate-700', 'hover:bg-slate-100'); }
+      currentMod = mod;
+      document.querySelectorAll('.mod-section').forEach(section => section.classList.add('hidden'));
+      target.classList.remove('hidden');
+      document.querySelectorAll('.side-nav-btn').forEach(button => {
+        if (button.dataset.nav === mod) {
+          button.classList.add('bg-holoo-700', 'text-white', 'shadow');
+          button.classList.remove('text-slate-700', 'hover:bg-slate-100');
+        } else {
+          button.classList.remove('bg-holoo-700', 'text-white', 'shadow');
+          button.classList.add('text-slate-700', 'hover:bg-slate-100');
+        }
       });
-      document.querySelectorAll('.m-nav-btn').forEach(b => {
-        if (b.dataset.mnav === mod) b.classList.add('bg-holoo-700', 'text-white');
-        else b.classList.remove('bg-holoo-700', 'text-white');
+      document.querySelectorAll('.m-nav-btn').forEach(button => {
+        const active = button.dataset.mnav === mod;
+        button.classList.toggle('bg-holoo-700', active);
+        button.classList.toggle('text-white', active);
+        if (active) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
       });
-      document.getElementById('main-workspace').scrollTop = 0;
+      workspace.scrollTop = 0;
       renderAll();
+      return true;
     }
+
+    // Stable global entry point for inline controls and installed-PWA webviews.
+    window.navigateTo = navigateTo;
+    // Capture mobile dock taps before inline handlers for consistent touch navigation.
+    document.addEventListener('click', event => {
+      const origin = event.target instanceof Element ? event.target : null;
+      const button = origin && origin.closest('.mobile-bottom-nav button[data-mnav]');
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      navigateTo(button.dataset.mnav);
+    }, true);
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') document.querySelectorAll('[id^="modal-"]').forEach(m => m.classList.add('hidden'));
