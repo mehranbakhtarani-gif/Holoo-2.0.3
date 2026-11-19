@@ -5967,6 +5967,70 @@
       showToast(nextStatus === 'received' ? 'محموله تحویل انبار شد و موجودی ثبت شد.' : 'مرحله محموله وارداتی به‌روزرسانی شد.');
     }
 
+
+    function renderImportReceiptAuditPanel(shipment) {
+      const audit = HolooImportDomain.getReceiptAuditView(shipment, state.vouchers);
+      const esc = HolooImportDomain.escapeReceiptAuditText;
+      if (!audit.activeSnapshot && !audit.history.length && !(audit.isPosted && !audit.activeSnapshot)) return '';
+      const statusLabel = value => esc(IMPORT_STATUS_LABELS[value] || value || 'ثبت نشده');
+      const voucherLabel = voucher => voucher
+        ? 'شناسه سند مالی ' + esc(voucher.id || 'ثبت واردات') + '؛ در عملیات برگشت حذف یا معکوس نشده است.'
+        : 'شناسه/وضعیت سند مالی از اطلاعات تاریخچه قابل تأیید نیست؛ این گزارش هیچ تغییری در سند ایجاد نمی‌کند.';
+      const snapshotPanel = (snapshot, heading, reversal, preservedVoucher) => {
+        if (!snapshot) return '<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">اطلاعات snapshot این رویداد ناقص یا در دسترس نیست.</div>';
+        const productRows = (Array.isArray(snapshot.products) ? snapshot.products : []).filter(Boolean).map(entry => {
+          const stateBefore = entry && entry.state && typeof entry.state === 'object' ? entry.state : {};
+          const product = (state.products || []).find(item => String(item.id) === String(entry.productId));
+          const name = product && product.name ? product.name : (entry && entry.productId ? entry.productId : 'کالای نامشخص');
+          const stock = Number(stateBefore.stock || 0);
+          const price = Number(stateBefore.buyPrice || 0);
+          const batches = Array.isArray(stateBefore.batches) ? stateBefore.batches.length : 0;
+          const kardex = Array.isArray(stateBefore.kardex) ? stateBefore.kardex.length : 0;
+          return '<tr class="border-t"><td class="p-2">' + esc(name || '—') + '<div class="text-[10px] text-slate-500">' + esc(entry && entry.productId ? entry.productId : '') + '</div></td><td class="p-2 tabular-nums">' + faNum(stock) + ' KG</td><td class="p-2 tabular-nums">' + money(price) + '</td><td class="p-2 tabular-nums">' + faNum(batches) + '</td><td class="p-2 tabular-nums">' + faNum(kardex) + '</td></tr>';
+        }).join('');
+        const itemRows = (Array.isArray(snapshot.items) ? snapshot.items : []).filter(Boolean).map(item =>
+          '<span class="inline-block rounded-md bg-slate-100 px-2 py-1 m-0.5">' + esc(item.productId || 'کالا') + ' • ' + faNum(Number(item.quantityKg || 0)) + ' KG</span>'
+        ).join('');
+        const reversalDetails = reversal ? (
+          '<div class="mt-2 rounded-lg bg-emerald-50 border border-emerald-100 p-2 text-emerald-900">' +
+          '<strong>نتیجه برگشت ثبت‌شده:</strong> بازیابی snapshot قبل از رسید؛ وضعیت قبلی محموله: ' + statusLabel(reversal.previousStatus || snapshot.previousStatus) +
+          '<div>زمان: ' + esc(reversal.reversedAt || 'ثبت نشده') + ' • کاربر: ' + esc(reversal.actor || 'ثبت نشده') +
+          ' • دستگاه: ' + esc(reversal.deviceId || 'ثبت نشده') + '</div>' +
+          '<div>علت برگشت: ' + esc(reversal.reason || 'در نسخه فعلی ثبت نشده') +
+          ' • شناسه snapshot: ' + esc(reversal.snapshotId || snapshot.snapshotId || 'ثبت نشده') + '</div>' +
+          '<div>' + voucherLabel(preservedVoucher || (reversal.preservedRegistrationVoucherId ? { id: reversal.preservedRegistrationVoucherId } : null)) + '</div>' +
+          '</div>'
+        ) : '';
+        return '<section class="rounded-xl border border-slate-200 p-3 space-y-2">' +
+          '<div class="font-black">' + esc(heading) + '</div>' +
+          '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-slate-50 rounded-lg p-2">' +
+          '<div>نسخه: <strong>' + esc(snapshot.schemaVersion || 'نامشخص') + '</strong></div>' +
+          '<div>شناسه: <strong>' + esc(snapshot.snapshotId || 'ثبت نشده') + '</strong></div>' +
+          '<div>زمان ثبت: <strong>' + esc(snapshot.capturedAt || 'ثبت نشده') + '</strong></div>' +
+          '<div>تاریخ رسید: <strong>' + esc(snapshot.receivedDate || 'ثبت نشده') + '</strong></div>' +
+          '<div>کاربر: <strong>' + esc(snapshot.actor || 'ثبت نشده') + '</strong></div>' +
+          '<div>دستگاه: <strong>' + esc(snapshot.deviceId || 'ثبت نشده') + '</strong></div>' +
+          '<div>روش قیمت‌گذاری: <strong>' + esc(snapshot.costingMethod || 'ثبت نشده') + '</strong></div>' +
+          '<div>وضعیت قبل از رسید: <strong>' + statusLabel(snapshot.previousStatus) + '</strong></div>' +
+          '</div>' +
+          '<div><strong>اقلام ثبت‌شده در snapshot:</strong><div class="mt-1">' + (itemRows || 'اقلام snapshot موجود نیست') + '</div></div>' +
+          '<div class="overflow-x-auto"><table class="w-full text-[11px] text-right"><thead><tr class="bg-slate-100"><th class="p-2">کالا</th><th class="p-2">موجودی قبل از رسید</th><th class="p-2">بهای واحد</th><th class="p-2">تعداد بچ</th><th class="p-2">تعداد کاردکس</th></tr></thead><tbody>' + (productRows || '<tr><td colspan="5" class="p-2">جزئیات کالا در snapshot موجود نیست.</td></tr>') + '</tbody></table></div>' +
+          reversalDetails + '</section>';
+      };
+      let content = '';
+      if (audit.activeSnapshot) {
+        content += snapshotPanel(audit.activeSnapshot, 'تصویر وضعیت انبار پیش از رسید', null, null);
+        content += '<div class="text-[10px] text-slate-600">' + voucherLabel(audit.registrationVoucher) + '</div>';
+      } else if (audit.isPosted) {
+        content += '<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">این رسید قبل از ایجاد snapshot ثبت شده و جزئیات قبل از رسید در دسترس نیست؛ برگشت خودکار مسدود است.</div>';
+      }
+      if (audit.history.length) {
+        content += '<div class="font-black pt-2">تاریخچه برگشت رسید (' + faNum(audit.history.length) + ')</div>' +
+          audit.history.map((entry, index) => snapshotPanel(entry.snapshot, 'رویداد ' + faNum(index + 1) + ' — snapshot بایگانی‌شده', entry.reversal, entry.preservedVoucher)).join('');
+      }
+      return '<div class="rounded-xl bg-white border border-indigo-100 p-3 space-y-3"><div class="font-black text-indigo-900">سوابق و حسابرسی رسید انبار</div>' + content + '</div>';
+    }
+
     function renderImportsModule() {
       const imports = state.imports || [];
       const openFx = imports.reduce((sum, m) => sum + Math.max(0, Number(m.fxTotal || 0) - Number(m.fxPaid || 0)), 0);
@@ -6014,6 +6078,7 @@
               ${m.postedToWh ? '<button type="button" onclick="requestImportReceiptCorrection(\'' + String(m.id).replace(/'/g, '') + '\')" class="touch-btn border border-amber-300 text-amber-800 rounded-lg px-3 py-2 font-bold">بررسی اصلاح رسید انبار</button>' : ''}
               ${m.postedToWh && m.receiptSnapshot ? '<button type="button" onclick="requestImportReceiptReversal(\'' + String(m.id).replace(/'/g, '') + '\')" class="touch-btn border border-rose-300 text-rose-800 rounded-lg px-3 py-2 font-bold">برگشت امن رسید</button>' : ''}
             </div>
+            ${renderImportReceiptAuditPanel(m)}
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
             <div class="rounded-lg border px-2 py-1"><strong>بهای تمام‌شده و هزینه تخصیصی هر قلم</strong>${costRows}</div>
             <div class="text-[10px] text-slate-500">مبنای بهای فروش: ${state.costingMethod === 'FIFO' ? 'FIFO بر اساس بهای هر بچ' : 'میانگین موزون؛ تخصیص فروش به بچ‌ها بر اساس مقدار'}</div>
