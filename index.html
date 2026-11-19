@@ -6455,6 +6455,12 @@
       if (jalaliDateOrdinal(dueDate) === null || jalaliDateOrdinal(dueDate) < jalaliDateOrdinal(date)) { showToast('تاریخ سررسید باید معتبر و مساوی یا بعد از تاریخ فاکتور باشد.', 'error'); return; }
       const blockedPeriod = getAccountingPeriodLockForDate(date);
       if (blockedPeriod) { showToast('ثبت فاکتور در ' + blockedPeriod.label + ' ممنوع است؛ دوره قفل شده است.', 'error'); return; }
+      const isInvoiceCorrection = invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null;
+      let correctionReason = '';
+      if (isInvoiceCorrection) {
+        correctionReason = String(prompt('علت اصلاح فاکتور #' + invDraft.correctionOfInvoiceId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || '').trim();
+        if (correctionReason.length < 8) { showToast('برای اصلاح فاکتور، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return; }
+      }
       const invoice = {
         id, type, date, dueDate: dueDate, partyId, warehouseId,
         payMethod, ...(settlementAccount ? { bankAccountId: settlementAccount.id } : {}),
@@ -6463,7 +6469,7 @@
         paidAmount: payMethod === 'credit' ? 0 : grandTotal,
         status: 'active', items: invoiceLines,
         ...(invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? { sourceOrderId: String(invDraft.sourceOrderId) } : {}),
-        ...(invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null ? { correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId) } : {})
+        ...(isInvoiceCorrection ? { correctionOfInvoiceId: Number(invDraft.correctionOfInvoiceId), correctionReason: correctionReason } : {})
       };
 
       let correctionOriginalState = null;
@@ -6471,7 +6477,7 @@
         correctionOriginalState = state;
         state = JSON.parse(JSON.stringify(state));
         let cancelled = false;
-        try { cancelled = cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true }); }
+        try { cancelled = cancelInvoice(Number(invDraft.correctionOfInvoiceId), { deferSave: true, silent: true, reason: correctionReason }); }
         catch (error) { state = correctionOriginalState; showToast('ابطال آزمایشی فاکتور برای اصلاح ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error'); return; }
         if (!cancelled) { state = correctionOriginalState; showToast('اصلاح متوقف شد؛ فاکتور قبلی قابل ابطال امن نیست و هیچ تغییری ثبت نشد.', 'error'); return; }
       }
@@ -6579,7 +6585,8 @@
         addAudit('اصلاح فاکتور #' + invDraft.correctionOfInvoiceId + ' با صدور نسخه #' + id, {
           mode: 'manual', sourceType: 'invoice_correction', sourceId: String(id),
           previous: { invoiceId: Number(invDraft.correctionOfInvoiceId), status: 'active' },
-          note: 'فاکتور اولیه حفظ شد؛ سند معکوس و فاکتور جایگزین در همین عملیات ثبت شدند.'
+          note: correctionReason,
+          details: { originalInvoiceId: Number(invDraft.correctionOfInvoiceId), replacementInvoiceId: Number(id), reason: correctionReason }
         });
       }
 
@@ -6645,6 +6652,9 @@
           inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
       if (inv.type === 'sale' && Number(inv.commAmount || 0) > 0 && !inv.salespersonPartyId) return false;
       if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
+      if (getAccountingPeriodLockForDate(inv.date)) return false;
+      const invoiceYear = String(normalizeLedgerDate(inv.date) || '').slice(0, 4);
+      if (invoiceYear && (state.vouchers || []).some(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === invoiceYear && (item.sourceEvent || 'default') === 'closing')) return false;
       if ((inv.items || []).some(item => Number(item.returnedKg || 0) > 0)) return false;
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => tx.kind !== 'party_credit' && (((tx.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0)) || Number(tx.allocInvId) === Number(inv.id)));
       const hasActiveChequeAllocation = (state.checks || []).some(check => !check.allocationsReleasedAt && !['bounced','voided'].includes(check.status) && (check.allocations || []).some(a => String(a.invoiceId) === String(inv.id) && Number(a.amount || 0) > 0));
@@ -10849,6 +10859,8 @@
       if (voucher.locked) return 'سند قفل سخت‌گیرانه دارد؛ اصلاح مستقیم آن مجاز نیست.';
       const voucherDate = voucher.date || voucher.operationDate;
       const voucherDateKey = normalizeLedgerDate(voucherDate);
+      const periodLock = getAccountingPeriodLockForDate(voucherDate);
+      if (periodLock) return 'این سند متعلق به ' + periodLock.label + ' قفل‌شده است؛ ابتدا باید همان دوره با مجوز و ثبت علت بازگشایی شود.';
       const voucherYear = voucherDateKey ? voucherDateKey.slice(0, 4) : '';
       if (voucherYear && (state.vouchers || []).some(item =>
         item.sourceType === 'fiscal_year_close' &&
