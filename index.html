@@ -7429,12 +7429,14 @@
       document.getElementById('new-acc-code').value = account.code; document.getElementById('new-acc-code').disabled = true;
       document.getElementById('new-acc-name').value = account.name || '';
       const button = document.querySelector('[onclick="saveCustomAccount()"]'); if (button) button.textContent = 'ذخیره ویرایش نام حساب';
+      document.getElementById('custom-account-cancel-button')?.classList.remove('hidden');
       document.getElementById('new-acc-name').focus();
     }
     function cancelCustomAccountEdit() {
       editingCustomAccountCode = null;
       ['new-acc-parent','new-acc-code','new-acc-name'].forEach(id => { const input = document.getElementById(id); if (input) { input.disabled = false; input.value = ''; } });
       const button = document.querySelector('[onclick="saveCustomAccount()"]'); if (button) button.textContent = 'ثبت حساب جدید';
+      document.getElementById('custom-account-cancel-button')?.classList.add('hidden');
       renderAccountingModule();
     }
     function saveCustomAccount() {
@@ -7796,7 +7798,7 @@
           return `<div class="flex items-center justify-between gap-2 p-2 rounded-lg border ${a.level === 'group' ? 'bg-slate-100 font-black' : (a.level === 'general' ? 'bg-sky-50 font-bold' : 'bg-white')}" style="margin-right:${a.level === 'group' ? 0 : (a.level === 'general' ? 12 : 24)}px"><span>${indent}${faNum(a.code)} - ${a.name}</span><span class="flex items-center gap-2"><span class="text-[10px] text-slate-400">${levelName}</span>${a.level === 'subsidiary' && !a.system ? '<button type="button" onclick="editCustomAccount(&quot;' + a.id + '&quot;)" class="bg-amber-100 text-amber-900 rounded-lg px-2 py-1 text-[10px] font-bold">✏️ ویرایش نام</button>' : ''}</span></div>`;
         }).join('');
         const parents = (state.accountCatalog || []).filter(a => a.level === 'general' && a.active);
-        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3"><div class="font-black text-sm">درخت حساب‌ها: گروه ← کل ← معین</div><div class="space-y-1">${rows}</div><div class="border-t pt-3 space-y-2"><strong>افزودن حساب معین جدید</strong><div class="grid grid-cols-1 md:grid-cols-3 gap-2"><select id="new-acc-parent" class="touch-btn border rounded-xl px-2">${parents.map(p => `<option value="${p.id}">${faNum(p.code)} - ${p.name}</option>`).join('')}</select><input id="new-acc-code" class="touch-btn border rounded-xl px-2" inputmode="numeric" placeholder="کد حساب (۴ رقم یا بیشتر)" /><input id="new-acc-name" class="touch-btn border rounded-xl px-2" placeholder="نام حساب" /></div><button onclick="saveCustomAccount()" class="touch-btn bg-holoo-700 text-white rounded-xl px-4 font-bold">ثبت حساب جدید</button><p class="text-[10px] text-slate-500">حساب دارای گردش حذف نمی‌شود؛ کدهای فعلی و اسناد قبلی حفظ شده‌اند.</p></div></div>`;
+        box.innerHTML = `<div class="bg-white rounded-2xl p-4 border space-y-3"><div class="font-black text-sm">درخت حساب‌ها: گروه ← کل ← معین</div><div class="space-y-1">${rows}</div><div class="border-t pt-3 space-y-2"><strong>افزودن حساب معین جدید</strong><div class="grid grid-cols-1 md:grid-cols-3 gap-2"><select id="new-acc-parent" class="touch-btn border rounded-xl px-2">${parents.map(p => `<option value="${p.id}">${faNum(p.code)} - ${p.name}</option>`).join('')}</select><input id="new-acc-code" class="touch-btn border rounded-xl px-2" inputmode="numeric" placeholder="کد حساب (۴ رقم یا بیشتر)" /><input id="new-acc-name" class="touch-btn border rounded-xl px-2" placeholder="نام حساب" /></div><button onclick="saveCustomAccount()" class="touch-btn bg-holoo-700 text-white rounded-xl px-4 font-bold">ثبت حساب جدید</button><button id="custom-account-cancel-button" type="button" onclick="cancelCustomAccountEdit()" class="hidden touch-btn bg-slate-200 text-slate-800 rounded-xl px-4 font-bold">انصراف</button><p class="text-[10px] text-slate-500">حساب دارای گردش حذف نمی‌شود؛ کدهای فعلی و اسناد قبلی حفظ شده‌اند.</p></div></div>`;
       } else if (activeAccTab === 'journal') {
         const journalRows = (state.vouchers || []).filter(v => !journalVoucherFilter || String(v.id) === journalVoucherFilter);
         box.innerHTML = `<div class="flex items-center justify-between gap-2 bg-white border rounded-xl p-3"><strong>دفتر روزنامه ${journalVoucherFilter ? `— نمایش سند #${faNum(journalVoucherFilter)}` : '— همه اسناد'}</strong>${journalVoucherFilter ? '<button onclick="clearJournalVoucherFilter()" class="px-3 py-1 rounded-lg bg-slate-200 font-bold">نمایش همه اسناد</button>' : ''}</div>` + journalRows.map(v => `
