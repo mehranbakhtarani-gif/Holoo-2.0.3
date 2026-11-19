@@ -3724,6 +3724,7 @@
       const transferGroups = new Map();
       let checkedBatches = 0;
       let checkedMovements = 0;
+      const globalBatchIds = new Map();
       items.forEach(product => {
         const productId = String(product?.id ?? 'بدون شناسه');
         const productName = String(product?.name ?? 'کالای بدون نام');
@@ -3735,8 +3736,13 @@
           checkedBatches++;
           const batchId = String(batch?.id ?? '').trim();
           if (!batchId) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه سری ساخت ثبت نشده است.', detail: `ردیف سری ساخت: ${index + 1}` });
-          else if (seenBatchIds.has(batchId)) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه سری ساخت تکراری است.', detail: batchId });
-          else seenBatchIds.add(batchId);
+          else {
+            if (seenBatchIds.has(batchId)) issues.push({ type: 'batch-id', productId, productName, message: 'شناسه سری ساخت در همین کالا تکراری است.', detail: batchId });
+            else seenBatchIds.add(batchId);
+            const firstOwner = globalBatchIds.get(batchId);
+            if (firstOwner && firstOwner.productId !== productId) issues.push({ type: 'batch-id-global', productId, productName, message: 'شناسه سری ساخت بین دو کالای متفاوت تکرار شده است.', detail: `${batchId} | کالای اول: ${firstOwner.productName} (${firstOwner.productId}) | کالای دوم: ${productName} (${productId})` });
+            else if (!firstOwner) globalBatchIds.set(batchId, { productId, productName });
+          }
         });
         const rawMovements = Array.isArray(product?.kardex) ? product.kardex : [];
         checkedMovements += rawMovements.length;
@@ -3809,7 +3815,7 @@
           const transferId = match[0];
           if (!transferGroups.has(transferId)) transferGroups.set(transferId, []);
           const type = doc.includes('خروج انتقال') ? 'source' : doc.includes('ورود انتقال') ? 'destination' : 'unknown';
-          transferGroups.get(transferId).push({ type, qty: type === 'source' ? Number(movement?.outQty) : type === 'destination' ? Number(movement?.inQty) : NaN });
+          transferGroups.get(transferId).push({ type, qty: type === 'source' ? Number(movement?.outQty) : type === 'destination' ? Number(movement?.inQty) : NaN, productId: String(product?.id ?? ''), baseProductId: String(product?.baseProductId || product?.id || ''), warehouseId: String(product?.warehouseId ?? '') });
         });
       });
       transferGroups.forEach((events, transferId) => {
@@ -3817,8 +3823,12 @@
         const destinations = events.filter(event => event.type === 'destination');
         const sourceQty = sources.reduce((sum, event) => sum + event.qty, 0);
         const destinationQty = destinations.reduce((sum, event) => sum + event.qty, 0);
-        if (sources.length !== 1 || destinations.length !== 1 || !Number.isFinite(sourceQty) || !Number.isFinite(destinationQty) || Math.abs(sourceQty - destinationQty) > 0.000001) {
-          issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}` });
+        const source = sources.length === 1 ? sources[0] : null;
+        const destination = destinations.length === 1 ? destinations[0] : null;
+        const invalidIdentity = !!source && !!destination && (source.baseProductId !== destination.baseProductId || !source.warehouseId || !destination.warehouseId || source.warehouseId === destination.warehouseId);
+        if (sources.length !== 1 || destinations.length !== 1 || !Number.isFinite(sourceQty) || !Number.isFinite(destinationQty) || Math.abs(sourceQty - destinationQty) > 0.000001 || invalidIdentity) {
+          const identityDetail = source && destination ? ` | کالای پایه مبدأ/مقصد: ${source.baseProductId}/${destination.baseProductId} | انبار مبدأ/مقصد: ${source.warehouseId || 'ثبت‌نشده'}/${destination.warehouseId || 'ثبت‌نشده'}` : '';
+          issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: invalidIdentity ? 'هویت کالای مبدأ و مقصد یا انبارهای متفاوت انتقال معتبر نیست.' : 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}${identityDetail}` });
         }
       });
       return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
