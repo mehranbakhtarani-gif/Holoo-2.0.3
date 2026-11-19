@@ -21,7 +21,11 @@ function load(source, name, context) {
   const purchaseReturnEnd = html.indexOf('// =========================================================================', purchaseReturnStart);
   const purchaseReturnSource = purchaseReturnStart >= 0 && purchaseReturnEnd > purchaseReturnStart
     ? html.slice(purchaseReturnStart, purchaseReturnEnd) : '';
+  const sayadStart = html.indexOf('function normalizeSayadId(');
+  const sayadEnd = html.indexOf('function jalaliDateOrdinal(', sayadStart);
+  const sayadSource = sayadStart >= 0 && sayadEnd > sayadStart ? html.slice(sayadStart, sayadEnd) : '';
   const sandbox = {
+    jalaliDateOrdinal: () => 1,
     restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
       product.batches = product.batches || [];
       const restored = [];
@@ -67,6 +71,7 @@ function load(source, name, context) {
   vm.createContext(sandbox);
   if (helperSource) vm.runInContext(helperSource, sandbox);
   if (purchaseReturnSource) vm.runInContext(purchaseReturnSource, sandbox);
+  if (sayadSource) vm.runInContext(sayadSource, sandbox);
   const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
   const warehouseResolverEnd = html.indexOf('function renderInvoiceProductOptions(', warehouseResolverStart);
   if (warehouseResolverStart >= 0 && warehouseResolverEnd > warehouseResolverStart) {
@@ -959,7 +964,7 @@ test('new cheque stores the selected bank and clearing updates only that bank', 
     ],treasuryTxs:[]
   };
   const values={'tr-dir':'receive','tr-party':'P1','tr-method':'check','tr-amount':'75','tr-alloc-inv':'0',
-    'tr-desc':'چک آزمایشی','tr-sayad':'123456789012345678901234','tr-chk-due':'1405/09/01',
+    'tr-desc':'چک آزمایشی','tr-sayad':'1234567890123456','tr-chk-due':'1405/09/01',
     'tr-chk-bank':'بانک صادرکننده','tr-bank-acc':'BANK-A','tr-check-account':'BANK-B'};
   const posted=[];let saves=0;
   const save=load(section('function saveTreasuryEntry()','function renderTreasuryModule()'),'saveTreasuryEntry',{
