@@ -3841,11 +3841,81 @@
       return expiryOrdinal >= todayOrdinal;
     }
 
-    function inspectInventoryReconciliation(products) {
+    function inspectWarehouseProductTopology(products, warehouses) {
+      const items = Array.isArray(products) ? products : [];
+      const hasWarehouseCatalog = Array.isArray(warehouses);
+      const knownWarehouseIds = new Set((hasWarehouseCatalog ? warehouses : []).map(item => String(item?.id ?? '')).filter(Boolean));
+      const groups = new Map();
+      const productIds = new Map();
+      const issues = [];
+      items.forEach(product => {
+        const productId = String(product?.id ?? '').trim();
+        const rootId = String(product?.baseProductId || product?.id || '').trim();
+        const warehouseId = String(product?.warehouseId ?? '').trim();
+        const productName = String(product?.name || productId || 'کالای بدون نام');
+        if (!productId || !rootId) {
+          issues.push({ type: 'warehouse-product-identity', productId: productId || '—', productName, message: 'شناسه کالا یا شناسه کالای پایه ثبت نشده است.', detail: 'شناسه کالا و شناسه پایه برای تطبیق چندانباره الزامی است.' });
+        }
+        if (hasWarehouseCatalog && (!warehouseId || !knownWarehouseIds.has(warehouseId))) {
+          issues.push({ type: 'warehouse-product-reference', productId: productId || '—', productName, message: 'کالا به انبار معتبر متصل نیست.', detail: 'شناسه انبار: ' + (warehouseId || 'ثبت‌نشده') });
+        }
+        const previousProductId = productId ? productIds.get(productId) : null;
+        if (productId) {
+          if (previousProductId) {
+            issues.push({ type: 'warehouse-product-id-duplicate', productId, productName, message: 'شناسه رکورد کالا در چند رکورد تکرار شده است.', detail: 'انبارهای ثبت‌شده: ' + previousProductId.warehouseId + ' / ' + warehouseId });
+            const previousGroup = groups.get(previousProductId.rootId);
+            if (previousGroup) previousGroup.valid = false;
+          } else productIds.set(productId, { warehouseId, productName, rootId });
+        }
+        if (!rootId) return;
+        if (!groups.has(rootId)) groups.set(rootId, { rootId, productName, rows: [], warehouseRows: new Map(), valid: true });
+        const group = groups.get(rootId);
+        if (previousProductId) group.valid = false;
+        const stock = Number(product?.stock);
+        const row = { productId, productName, warehouseId, stock };
+        group.rows.push(row);
+        if (!Number.isFinite(stock) || stock < 0) {
+          group.valid = false;
+          issues.push({ type: 'warehouse-product-stock', productId, productName, message: 'موجودی کالا برای جمع‌بندی چندانباره نامعتبر است.', detail: 'موجودی ثبت‌شده: ' + String(product?.stock ?? 'ثبت‌نشده') });
+        }
+        if (hasWarehouseCatalog && (!warehouseId || !knownWarehouseIds.has(warehouseId))) group.valid = false;
+        if (group.warehouseRows.has(warehouseId)) {
+          group.valid = false;
+          const first = group.warehouseRows.get(warehouseId);
+          issues.push({ type: 'warehouse-product-duplicate', productId, productName, message: 'یک کالای پایه در یک انبار بیش از یک رکورد دارد؛ جمع شرکت قابل اتکا نیست.', detail: 'کالای پایه: ' + rootId + ' | انبار: ' + warehouseId + ' | رکوردها: ' + first.productId + ' / ' + productId });
+        } else {
+          group.warehouseRows.set(warehouseId, row);
+        }
+      });
+      const summaries = Array.from(groups.values()).map(group => {
+        const valid = group.valid && group.rows.length === group.warehouseRows.size;
+        return {
+          rootId: group.rootId,
+          productName: group.productName,
+          warehouseCount: group.warehouseRows.size,
+          rowCount: group.rows.length,
+          totalStock: valid ? group.rows.reduce((sum, row) => sum + row.stock, 0) : null,
+          valid,
+          warehouses: group.rows.map(row => ({ productId: row.productId, warehouseId: row.warehouseId, stock: row.stock }))
+        };
+      });
+      return {
+        checkedProducts: items.length,
+        checkedBaseProducts: summaries.length,
+        issueCount: issues.length,
+        issues,
+        summaries,
+        companyTotalStock: summaries.every(item => item.valid) ? summaries.reduce((sum, item) => sum + item.totalStock, 0) : null
+      };
+    }
+
+    function inspectInventoryReconciliation(products, warehouses) {
       const items = Array.isArray(products) ? products : [];
       const issues = [];
       const unverified = [];
       const transferGroups = new Map();
+      const warehouseTopology = inspectWarehouseProductTopology(items, warehouses);
+      issues.push(...warehouseTopology.issues);
       let checkedBatches = 0;
       let checkedMovements = 0;
       const globalBatchIds = new Map();
@@ -3964,7 +4034,7 @@
           issues.push({ type: 'transfer', productId: '—', productName: 'انتقال بین انبارها', message: invalidIdentity ? 'هویت کالای مبدأ و مقصد یا انبارهای متفاوت انتقال معتبر نیست.' : 'رخدادهای خروج و ورود انتقال با شناسه مشترک کامل یا هم‌مقدار نیستند.', detail: `${transferId} | خروج: ${sources.length} ردیف / ${sourceQty} | ورود: ${destinations.length} ردیف / ${destinationQty}${identityDetail}` });
         }
       });
-      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
+      return { checkedProducts: items.length, checkedBatches, checkedMovements, checkedTransfers: transferGroups.size, checkedBaseProducts: warehouseTopology.checkedBaseProducts, companyTotalStock: warehouseTopology.companyTotalStock, warehouseSummaries: warehouseTopology.summaries, issueCount: issues.length, issues, unverifiedCount: unverified.length, unverified };
     }
 
     function ensureProductBatches(product) {
@@ -4237,7 +4307,7 @@
 
     let latestInventoryReconciliation = null;
     function openInventoryReconciliation() {
-      latestInventoryReconciliation = inspectInventoryReconciliation(state.products);
+      latestInventoryReconciliation = inspectInventoryReconciliation(state.products, state.warehouses);
       const report = latestInventoryReconciliation;
       document.getElementById('inventory-reconciliation-summary').innerHTML = [
         ['تعداد مغایرت‌ها', report.issueCount, report.issueCount ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-300 bg-emerald-50 text-emerald-900'],
@@ -4245,7 +4315,8 @@
         ['سری‌های ساخت بررسی‌شده', report.checkedBatches, 'border-slate-200 bg-slate-50'],
         ['ردیف‌های کاردکس', report.checkedMovements, 'border-slate-200 bg-slate-50'],
         ['موارد با اطلاعات ناکافی', report.unverifiedCount || 0, 'border-orange-200 bg-orange-50 text-orange-900'],
-        ['انتقال‌های بررسی‌شده', report.checkedTransfers, 'border-slate-200 bg-slate-50']
+        ['انتقال‌های بررسی‌شده', report.checkedTransfers, 'border-slate-200 bg-slate-50'],
+        ['کالاهای پایهٔ چندانباره', report.checkedBaseProducts || 0, 'border-slate-200 bg-slate-50']
       ].map(([label, value, style]) => `<div class="rounded-xl border p-3 ${style}"><div class="text-[10px] font-bold">${label}</div><strong class="text-xl tabular-nums">${faNum(value)}</strong></div>`).join('');
       const list = document.getElementById('inventory-reconciliation-list');
       const issueNames = {
@@ -4255,23 +4326,35 @@
         'kardex-balance': 'مغایرت مانده کاردکس با موجودی',
         'kardex-row': 'ردیف نامعتبر کاردکس',
         'kardex-sequence': 'مغایرت توالی مانده کاردکس',
-        'transfer': 'مغایرت حواله انتقال بین انبارها'
+        'transfer': 'مغایرت حواله انتقال بین انبارها',
+        'warehouse-product-identity': 'شناسه کالای پایه نامعتبر',
+        'warehouse-product-reference': 'ارجاع به انبار نامعتبر',
+        'warehouse-product-id-duplicate': 'شناسه رکورد کالا تکراری',
+        'warehouse-product-stock': 'موجودی نامعتبر در جمع‌بندی شرکت',
+        'warehouse-product-duplicate': 'تکرار کالای پایه در یک انبار'
       };
       const unverifiedNames = { 'kardex-baseline': 'مانده پایه نامشخص', 'kardex-gap': 'بخش بررسی‌نشده کاردکس' };
       const issueCards = report.issues.map((issue, index) => `<div class="rounded-xl border border-amber-200 bg-white p-3 space-y-2"><div class="flex items-start justify-between gap-2"><div class="font-black text-sm text-slate-900">${escapeKardexText(issueNames[issue.type] || 'مغایرت ثبت‌شده')}</div><span class="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-900">مغایرت ${faNum(index + 1)}</span></div><div class="font-bold text-slate-700">${escapeKardexText(issue.message)}</div><div class="text-[10px] text-slate-600">${escapeKardexText(issue.productName)} | کد: ${escapeKardexText(issue.productId)}</div><div class="rounded-lg bg-slate-50 p-2 text-[10px] text-slate-600 break-words">${escapeKardexText(issue.detail)}</div></div>`).join('');
       const unverifiedCards = (report.unverified || []).map((item, index) => `<div class="rounded-xl border border-orange-200 bg-orange-50 p-3 space-y-2"><div class="font-black text-sm text-orange-900">${escapeKardexText(unverifiedNames[item.type] || 'اطلاعات ناکافی برای بررسی')}</div><div class="font-bold text-slate-700">${escapeKardexText(item.message)}</div><div class="text-[10px] text-slate-600">${escapeKardexText(item.productName)} | کد: ${escapeKardexText(item.productId)}</div><div class="rounded-lg bg-white p-2 text-[10px] text-slate-600 break-words">${escapeKardexText(item.detail)}</div></div>`).join('');
-      if (!report.issues.length && !(report.unverified || []).length) list.innerHTML = '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800"><div class="font-black text-sm">مغایرتی پیدا نشد</div><p class="mt-1">در مواردی که این گزارش بررسی کرده، موردی برای پیگیری ثبت نشده است.</p></div>';
-      else list.innerHTML = (report.issues.length ? `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 font-bold text-amber-900">مغایرت‌ها — ${faNum(report.issueCount)} مورد نیازمند بررسی</div>` : '') + issueCards + ((report.unverified || []).length ? `<div class="rounded-xl border border-orange-200 bg-orange-50 p-3 font-bold text-orange-900">اطلاعات ناکافی — ${faNum(report.unverifiedCount || report.unverified.length)} مورد که نتیجه قطعی درباره آن‌ها ممکن نیست</div>` + unverifiedCards : '');
+      const aggregateRows = (report.warehouseSummaries || []).map(item => {
+        const warehouseDetails = item.warehouses.map(row => escapeKardexText(getWhName(row.warehouseId)) + ': ' + faNum(row.stock) + ' KG').join(' | ');
+        return '<tr><td class="p-2 border-b">' + escapeKardexText(item.productName) + '<span class="block text-[10px] text-slate-400">' + escapeKardexText(item.rootId) + '</span></td><td class="p-2 border-b">' + warehouseDetails + '</td><td class="p-2 border-b font-bold">' + (item.valid ? faNum(item.totalStock) + ' KG' : 'نیازمند تطبیق') + '</td></tr>';
+      }).join('');
+      const aggregateSection = (report.warehouseSummaries || []).length
+        ? '<section class="rounded-xl border bg-white p-3 space-y-2"><div class="font-black text-sm">جمع موجودی کالاهای پایه در سطح شرکت</div><p class="text-[10px] text-slate-500">هر کالای پایه فقط یک‌بار در هر انبار شمرده می‌شود؛ در صورت تکرار رکورد یا انبار نامعتبر، جمع آن کالا قطعی نمایش داده نمی‌شود.</p><div class="overflow-x-auto"><table class="w-full text-right text-xs"><thead><tr><th class="p-2">کالای پایه</th><th class="p-2">تفکیک انبار</th><th class="p-2">جمع شرکت</th></tr></thead><tbody>' + aggregateRows + '</tbody></table></div><div class="font-bold text-sm">جمع کل شرکت: ' + (report.companyTotalStock === null ? 'نیازمند رفع مغایرت' : faNum(report.companyTotalStock) + ' KG') + '</div></section>'
+        : '';
+      list.innerHTML = aggregateSection + (!report.issues.length && !(report.unverified || []).length ? '<div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800"><div class="font-black text-sm">مغایرتی پیدا نشد</div><p class="mt-1">در مواردی که این گزارش بررسی کرده، موردی برای پیگیری ثبت نشده است.</p></div>' : '') + (report.issues.length ? `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 font-bold text-amber-900">مغایرت‌ها — ${faNum(report.issueCount)} مورد نیازمند بررسی</div>` + issueCards : '') + ((report.unverified || []).length ? `<div class="rounded-xl border border-orange-200 bg-orange-50 p-3 font-bold text-orange-900">اطلاعات ناکافی — ${faNum(report.unverifiedCount || report.unverified.length)} مورد که نتیجه قطعی درباره آن‌ها ممکن نیست</div>` + unverifiedCards : '');
       openModal('modal-inventory-reconciliation');
     }
 
     function printInventoryReconciliation() {
-      const report = latestInventoryReconciliation || inspectInventoryReconciliation(state.products);
+      const report = latestInventoryReconciliation || inspectInventoryReconciliation(state.products, state.warehouses);
       const issueRows = report.issues.map((issue, index) => `<tr><td>${faNum(index + 1)}</td><td>${escapeKardexText(issue.productName)}</td><td>${escapeKardexText(issue.productId)}</td><td>مغایرت: ${escapeKardexText(issue.message)}</td><td>${escapeKardexText(issue.detail)}</td></tr>`);
       const unverifiedRows = (report.unverified || []).map((item, index) => `<tr><td>${faNum(report.issues.length + index + 1)}</td><td>${escapeKardexText(item.productName)}</td><td>${escapeKardexText(item.productId)}</td><td>اطلاعات ناکافی: ${escapeKardexText(item.message)}</td><td>${escapeKardexText(item.detail)}</td></tr>`);
       const rows = [...issueRows, ...unverifiedRows].join('') || '<tr><td colspan="5">مغایرتی در موارد بررسی‌شده پیدا نشد.</td></tr>';
+      const aggregatePrintRows = (report.warehouseSummaries || []).map(item => '<tr><td>' + escapeKardexText(item.productName) + ' (' + escapeKardexText(item.rootId) + ')</td><td>' + item.warehouses.map(row => escapeKardexText(getWhName(row.warehouseId)) + ': ' + faNum(row.stock) + ' KG').join(' | ') + '</td><td>' + (item.valid ? faNum(item.totalStock) + ' KG' : 'نیازمند تطبیق') + '</td></tr>').join('');
       document.getElementById('print-title').textContent = 'گزارش تطبیق موجودی، سری‌های ساخت و کاردکس';
-      document.getElementById('print-area').innerHTML = `<div dir="rtl" class="space-y-3"><h2 class="font-black text-lg">گزارش تطبیق موجودی، سری‌های ساخت و کاردکس</h2><p>گزارش فقط‌خواندنی؛ هیچ داده‌ای اصلاح یا ذخیره نشده است.</p><p>کالاها: ${faNum(report.checkedProducts)} | سری‌های ساخت: ${faNum(report.checkedBatches)} | ردیف‌های کاردکس: ${faNum(report.checkedMovements)} | انتقال‌ها: ${faNum(report.checkedTransfers)} | مغایرت‌ها: ${faNum(report.issueCount)} | اطلاعات ناکافی: ${faNum(report.unverifiedCount || 0)}</p><table class="w-full border-collapse text-xs"><thead><tr><th>ردیف</th><th>کالا</th><th>کد</th><th>شرح</th><th>جزئیات</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      document.getElementById('print-area').innerHTML = `<div dir="rtl" class="space-y-3"><h2 class="font-black text-lg">گزارش تطبیق موجودی، سری‌های ساخت و کاردکس</h2><h3 class="font-bold">جمع‌بندی کالاهای پایه در سطح شرکت</h3><table class="w-full border-collapse text-xs"><thead><tr><th>کالای پایه</th><th>تفکیک انبار</th><th>جمع شرکت</th></tr></thead><tbody>${aggregatePrintRows || '<tr><td colspan="3">داده‌ای برای جمع‌بندی وجود ندارد.</td></tr>'}</tbody></table><p>جمع کل شرکت: ${report.companyTotalStock === null ? 'نیازمند رفع مغایرت' : faNum(report.companyTotalStock) + ' KG'}</p><p>گزارش فقط‌خواندنی؛ هیچ داده‌ای اصلاح یا ذخیره نشده است.</p><p>کالاها: ${faNum(report.checkedProducts)} | سری‌های ساخت: ${faNum(report.checkedBatches)} | ردیف‌های کاردکس: ${faNum(report.checkedMovements)} | انتقال‌ها: ${faNum(report.checkedTransfers)} | مغایرت‌ها: ${faNum(report.issueCount)} | اطلاعات ناکافی: ${faNum(report.unverifiedCount || 0)}</p><table class="w-full border-collapse text-xs"><thead><tr><th>ردیف</th><th>کالا</th><th>کد</th><th>شرح</th><th>جزئیات</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       closeModal('modal-inventory-reconciliation');
       openModal('modal-print-preview');
     }
