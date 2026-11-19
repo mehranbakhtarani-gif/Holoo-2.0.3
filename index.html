@@ -664,7 +664,7 @@
               <span class="text-[11px] text-slate-500">کالاهای بدون گردش بیش از ۶۰ روز با برچسب «راکد» مشخص می‌شوند</span>
             </div>
             <div class="overflow-x-auto">
-              <table class="w-full text-right border-collapse">
+              <table class="w-full min-w-[860px] text-right border-collapse">
                 <thead>
                   <tr class="bg-slate-100 text-slate-700 border-b">
                     <th class="p-2.5">کد / کالا</th>
@@ -1295,7 +1295,7 @@
         <div id="p-ten-prices-grid" class="grid grid-cols-2 sm:grid-cols-5 gap-1.5"></div>
       </div>
 
-      <p id="product-edit-preserve-note" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-2 text-[10px] leading-5 text-amber-900">در حالت ویرایش، شناسه کالا، موجودی، انبار، سری ساخت، بهای خرید، سری‌های ساخت و کاردکس حفظ می‌شوند. هیچ سند مالی یا گردش موجودی جدیدی ثبت نمی‌شود.</p>
+      <p id="product-edit-preserve-note" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-2 text-[10px] leading-5 text-amber-900">در حالت ویرایش، شناسه کالا، موجودی، انبار، شماره سری ساخت، بهای خرید و اطلاعات سری ساخت و کاردکس حفظ می‌شوند. هیچ سند مالی یا گردش موجودی جدیدی ثبت نمی‌شود.</p>
       <button id="product-save-button" onclick="saveProduct()" class="touch-btn w-full bg-holoo-700 text-white font-black rounded-xl text-sm">✔ ثبت کالا و همگام‌سازی ابری</button>
     </div>
   </div>
@@ -4042,7 +4042,7 @@
       document.getElementById('inventory-reconciliation-summary').innerHTML = [
         ['تعداد مغایرت‌ها', report.issueCount, report.issueCount ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-300 bg-emerald-50 text-emerald-900'],
         ['کالاهای بررسی‌شده', report.checkedProducts, 'border-slate-200 bg-slate-50'],
-        ['سری‌های ساختی بررسی‌شده', report.checkedBatches, 'border-slate-200 bg-slate-50'],
+        ['سری‌های ساخت بررسی‌شده', report.checkedBatches, 'border-slate-200 bg-slate-50'],
         ['ردیف‌های کاردکس', report.checkedMovements, 'border-slate-200 bg-slate-50'],
         ['موارد با اطلاعات ناکافی', report.unverifiedCount || 0, 'border-orange-200 bg-orange-50 text-orange-900'],
         ['انتقال‌های بررسی‌شده', report.checkedTransfers, 'border-slate-200 bg-slate-50']
@@ -4050,7 +4050,7 @@
       const list = document.getElementById('inventory-reconciliation-list');
       const issueNames = {
         'batch-balance': 'مغایرت موجودی کل با مجموع سری‌های ساخت',
-        'batch-id': 'شناسه سری ساخت با شناسه مفقود یا تکراری',
+        'batch-id': 'شناسه سری ساخت مفقود یا تکراری',
         'kardex-missing': 'کالای دارای موجودی بدون کاردکس',
         'kardex-balance': 'مغایرت مانده کاردکس با موجودی',
         'kardex-row': 'ردیف نامعتبر کاردکس',
@@ -4126,7 +4126,7 @@
         side('خروج از انبار', audit.source) + side('ورود به انبار', audit.destination) +
         '<div>ردیف‌های مرتبط: ' + faNum(audit.pairCount) + ' • تطبیق مقدار: ' + (audit.quantityMatches ? 'بله' : 'خیر') +
         ' • تطبیق تاریخ: ' + (audit.dateMatches ? 'بله' : 'خیر') + '</div>' +
-        '<div class="font-bold">' + esc(audit.reason) + '</div><div class="border-t border-indigo-100 pt-1"><strong>پیوند سری‌های ساختی FIFO:</strong>' + batchRows + '</div>' +
+        '<div class="font-bold">' + esc(audit.reason) + '</div><div class="border-t border-indigo-100 pt-1"><strong>پیوند سری‌های ساخت در FIFO:</strong>' + batchRows + '</div>' +
         '<div>snapshot قبل از انتقال، کاربر و دستگاه در رکورد قدیمی موجود نیست؛ این گزارش بازسازی محدود است.</div>' +
         '<div class="border-t border-indigo-100 pt-1"><strong>تاریخچه اصلاحات:</strong>' +
         (correctionEvents.length
@@ -4464,6 +4464,10 @@
         </div>
       `).join('');
 
+      const batchSection = batches.length
+        ? `<section class="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2"><div class="flex items-center justify-between gap-2"><strong class="text-sm text-indigo-950">سری ساخت‌های کالا</strong><span class="text-[10px] text-indigo-700">${faNum(batches.length)} مورد</span></div><div class="space-y-2">${batchRows}</div></section>`
+        : '';
+
       const movements = Array.isArray(p.kardex) ? p.kardex : [];
       const filteredMovements = movements.filter(k => {
         if (!fromKey && !toKey) return true;
@@ -4531,7 +4535,7 @@
         </section>`;
       document.getElementById('kardex-modal-list').innerHTML =
         transferCorrectionPanel +
-        (batchRows || '') +
+        batchSection +
         (movementRows || '<div class="p-4 text-center text-slate-500">برای این کالا هنوز گردش ثبت‌شده‌ای وجود ندارد.</div>');
       openModal('modal-kardex');
     }
@@ -5404,7 +5408,7 @@
       const credit = (state.treasuryTxs || []).find(tx => String(tx.sourceReturnId || '') === String(returnRef.id));
       if (credit && Number(credit.remainingAmount ?? credit.amount ?? 0) < Number(credit.amount || 0)) return 'اعتبار ناشی از برگشت مصرف یا تخصیص یافته است؛ ابتدا باید گردش اعتبار تعیین‌تکلیف شود.';
       if (credit && Number(credit.remainingAmount ?? credit.amount ?? 0) > 0) return 'برای برگشت، اعتبار طرف‌حساب ایجاد شده است؛ اصلاح باید هم‌زمان اعتبار و سند حسابداری را معکوس کند.';
-      return 'برگشت، موجودی و سری‌های ساختی FIFO، کاردکس، مالیات و سند حسابداری را هم‌زمان تغییر داده است؛ اصلاح مستقل این ردیف امن نیست و باید در فرایند اصلاح وابستگی‌ها انجام شود.';
+      return 'برگشت، موجودی و سری‌های ساخت در FIFO، کاردکس، مالیات و سند حسابداری را هم‌زمان تغییر داده است؛ اصلاح مستقل این ردیف امن نیست و باید در فرایند اصلاح وابستگی‌ها انجام شود.';
     }
 
     function requestInvoiceReturnCorrection(invoiceId, returnId) {
@@ -5701,7 +5705,7 @@
           }
         }
       } catch (error) {
-        showToast('کنترل موجودی یا سری‌های ساختی FIFO برای ابطال ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
+        showToast('کنترل موجودی یا سری‌های ساخت در FIFO برای ابطال ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return false;
       }
 
