@@ -5712,7 +5712,7 @@
       received: 'تحویل انبار', cancelled: 'لغوشده'
     };
 
-    function receiveImportShipment(shipment) {
+    function receiveImportShipment(shipment, receiptContext = {}) {
       if (!shipment || shipment.postedToWh) return false;
       const items = HolooImportDomain.normalizeItems(shipment);
       if (!items.length) throw new Error('اقلام محموله برای تحویل به انبار موجود نیست.');
@@ -5733,6 +5733,7 @@
         snapshotId: createStableId('receipt_snapshot'),
         capturedAt: new Date().toISOString(),
         receivedDate,
+        previousStatus: receiptContext.previousStatus || shipment.status || 'cleared',
         actor: state.activeRole || localStorage.getItem(DEVICE_ACTOR_KEY) || 'mehran',
         deviceId: DEVICE_ID,
         costingMethod: state.costingMethod || 'AVG'
@@ -5837,6 +5838,107 @@
       const dependencySummary = 'مصرف خالص ثبت‌شده از بچ‌های اصلی: ' + faNum(consumedQty) + ' کیلوگرم؛ بچ‌های انتقالی وابسته: ' + faNum(transferDescendants) + '؛ فاکتورهای دارای تخصیص FIFO مرتبط: ' + faNum(invoiceReferences) + '؛ گردش‌های بعدی بدون ردیابی بچ در روش میانگین: ' + faNum(untrackedLaterMovements) + '. ';
       return dependencySummary + 'معکوس‌سازی خودکار هنوز امن نیست: نسخه فعلی snapshot قبل از رسید برای بازگردانی دقیق موجودی و بهای میانگین ندارد و سند ثبت محموله نیز اثر مالی مستقل دارد. بنابراین اصلاح/حذف مستقیم مسدود است؛ ابتدا باید زنجیره بچ‌های منتقل‌شده و مصرف‌شده و اثر سند مالی در یک عملیات اتمیک پوشش داده شود.';
     }
+    function getImportReceiptReversalBlockReason(shipment) {
+      return HolooImportDomain.getReceiptReversalBlockReason(
+        shipment, state.products, state.invoices, state.vouchers
+      );
+    }
+
+    function requestImportReceiptReversal(importId) {
+      const shipment = (state.imports || []).find(item => String(item.id) === String(importId));
+      const blockReason = getImportReceiptReversalBlockReason(shipment);
+      if (blockReason) {
+        showToast('برگشت رسید متوقف شد: ' + blockReason, 'error');
+        return false;
+      }
+      const snapshot = shipment.receiptSnapshot;
+      const voucher = (state.vouchers || []).find(entry =>
+        entry.sourceType === 'import' &&
+        String(entry.sourceId) === String(shipment.id) &&
+        (entry.sourceEvent || 'default') === 'registration'
+      );
+      const accepted = window.confirm(
+        'برگشت رسید انبار ' + shipment.id + ' انجام شود؟\n' +
+        'فقط وضعیت فیزیکی انبار، کاردکس، بچ‌ها و بهای کالا به snapshot قبل از رسید بازمی‌گردد.\n' +
+        'سند مالی ثبت محموله' + (voucher ? ' (' + (voucher.id || 'ثبت واردات') + ')' : '') +
+        ' حذف یا معکوس نمی‌شود و دست‌نخورده باقی می‌ماند.'
+      );
+      if (!accepted) return false;
+
+      const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+      const productBackups = [];
+      const shipmentBackup = clone(shipment);
+      try {
+        for (const entry of snapshot.products || []) {
+          const product = (state.products || []).find(item => String(item.id) === String(entry.productId));
+          if (!product || !entry.state) throw new Error('کالای snapshot برای بازیابی پیدا نشد.');
+          const fields = ['stock', 'buyPrice', 'lastMoveDays', 'kardex', 'batches'];
+          const backup = { product, values: {} };
+          fields.forEach(key => {
+            backup.values[key] = Object.prototype.hasOwnProperty.call(product, key)
+              ? { present: true, value: clone(product[key]) }
+              : { present: false };
+          });
+          productBackups.push(backup);
+          fields.forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(entry.state, key)) product[key] = clone(entry.state[key]);
+            else delete product[key];
+          });
+        }
+
+        const reversedAt = new Date().toISOString();
+        const reversal = {
+          id: createStableId('receipt_reversal'),
+          snapshotId: snapshot.snapshotId,
+          reversedAt,
+          actor: state.activeRole || localStorage.getItem(DEVICE_ACTOR_KEY) || 'mehran',
+          deviceId: DEVICE_ID,
+          previousStatus: snapshot.previousStatus || 'cleared',
+          restoredProductIds: (snapshot.products || []).map(entry => String(entry.productId)),
+          preservedRegistrationVoucherId: voucher?.id || null,
+          method: 'versioned_pre_receipt_snapshot'
+        };
+        shipment.receiptHistory = [...(shipment.receiptHistory || []), {
+          snapshot: clone(snapshot),
+          reversal
+        }];
+        delete shipment.receiptSnapshot;
+        shipment.postedToWh = false;
+        shipment.receivedAt = null;
+        shipment.status = reversal.previousStatus;
+        shipment.statusUpdatedAt = reversedAt;
+        shipment.statusHistory = [...(shipment.statusHistory || []), {
+          status: shipment.status,
+          at: reversedAt,
+          actor: reversal.actor,
+          deviceId: DEVICE_ID,
+          event: 'receipt_reversal',
+          snapshotId: snapshot.snapshotId
+        }];
+        addAudit(
+          'برگشت کنترل‌شده رسید محموله ' + shipment.id +
+          ' با بازیابی snapshot ' + snapshot.snapshotId +
+          '؛ سند ثبت مالی محموله بدون تغییر حفظ شد',
+          { mode: 'automatic', sourceType: 'import' }
+        );
+        if (!saveState()) throw new Error('ذخیره عملیات برگشت در حافظه محلی ناموفق بود.');
+        renderImportsModule();
+        showToast('رسید انبار با snapshot بازیابی شد؛ سند مالی محموله تغییری نکرد.');
+        return true;
+      } catch (error) {
+        productBackups.forEach(backup => {
+          Object.entries(backup.values).forEach(([key, value]) => {
+            if (value.present) backup.product[key] = clone(value.value);
+            else delete backup.product[key];
+          });
+        });
+        Object.keys(shipment).forEach(key => { if (!Object.prototype.hasOwnProperty.call(shipmentBackup, key)) delete shipment[key]; });
+        Object.assign(shipment, shipmentBackup);
+        showToast('برگشت رسید انجام نشد و تغییرات حافظه بازگردانده شد: ' + (error?.message || ''), 'error');
+        return false;
+      }
+    }
+
     function requestImportReceiptCorrection(importId) {
       const shipment = (state.imports || []).find(item => String(item.id) === String(importId));
       showToast('بررسی اصلاح رسید ' + String(importId) + ': ' + getImportReceiptCorrectionBlockReason(shipment), 'error');
@@ -5852,7 +5954,7 @@
       shipment.status = nextStatus;
       shipment.statusUpdatedAt = new Date().toISOString();
       try {
-        if (nextStatus === 'received') receiveImportShipment(shipment);
+        if (nextStatus === 'received') receiveImportShipment(shipment, { previousStatus });
       } catch (error) {
         shipment.status = previousStatus;
         showToast(error.message || 'ثبت تحویل انبار ناموفق بود.', 'error'); renderImportsModule(); return;
@@ -5908,6 +6010,7 @@
                 ${Object.entries(IMPORT_STATUS_LABELS).map(([value,label]) => `<option value="${value}" ${(m.status || 'registered') === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
               ${m.postedToWh ? '<button type="button" onclick="requestImportReceiptCorrection(\'' + String(m.id).replace(/'/g, '') + '\')" class="touch-btn border border-amber-300 text-amber-800 rounded-lg px-3 py-2 font-bold">بررسی اصلاح رسید انبار</button>' : ''}
+              ${m.postedToWh && m.receiptSnapshot ? '<button type="button" onclick="requestImportReceiptReversal(\\'' + String(m.id).replace(/'/g, '') + '\\')" class="touch-btn border border-rose-300 text-rose-800 rounded-lg px-3 py-2 font-bold">برگشت امن رسید</button>' : ''}
             </div>
             <div class="text-[10px] text-slate-600">${itemSummary}</div>
             <div class="rounded-lg border px-2 py-1"><strong>بهای تمام‌شده و هزینه تخصیصی هر قلم</strong>${costRows}</div>
