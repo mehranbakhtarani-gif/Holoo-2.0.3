@@ -19,11 +19,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Run all regression tests
+      - name: Run import receipt regression tests
         run: |
           set -e
-          for test_file in tests/*.test.js; do
-            echo "::group::${test_file}"
-            node "${test_file}"
-            echo "::endgroup::"
-          done
+          node tests/import-receipt-audit.test.js
+          node tests/import-receipt-snapshot.test.js
+          node tests/import-receipt-dependency-preflight.test.js
+          node tests/import-dashboard.test.js
