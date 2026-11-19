@@ -363,7 +363,7 @@
     .main-workspace :where(.rounded-full[class*="bg-"]) { letter-spacing:-.01em; }
     .main-workspace :where(canvas,svg) { max-width:100%; }
     .main-workspace canvas { image-rendering:auto; }
-    .main-workspace :where(img) { object-fit:cover; }
+    /* Preserve each image's existing fit mode to avoid cropping logos and product artwork. */
     .main-workspace :where(img:not([src]),img[src=""]) { visibility:hidden; }
     #toast-container > * {
       border:1px solid rgba(255,255,255,.35);
