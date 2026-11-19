@@ -220,7 +220,8 @@ test('party control reconciliation lists legacy rows with missing or unknown par
   ];
   const before = JSON.stringify(vouchers);
   const build = loadFunction(source, 'buildPartyControlReconciliation', {
-    state: { parties: [{ id: 'P1', name: 'مشتری' }], vouchers },
+    state: { parties: [{ id: 'P1', name: 'مشتری', ledgerAccountCode: '1103' }], vouchers },
+    getPartyLedgerControlCodes(party) { return new Set([party.ledgerAccountCode || '1103']); },
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
     jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
     countInvalidReportVoucherLines() { return 0; }
