@@ -33,6 +33,8 @@ const vouchers = freezeDeep([]);
 const view = getWarehouseMovementAuditView(products, warehouses, products[0], products[0].kardex[0], vouchers);
 assert.equal(view.kind, 'transfer');
 assert.equal(view.verified, true);
+assert.equal(view.productMatches, true);
+assert.equal(view.warehouseDiffers, true);
 assert.equal(view.transferId, 'TR-123-abcd');
 assert.equal(view.source.warehouseName, 'انبار الف');
 assert.equal(view.destination.warehouseName, 'انبار ب');
