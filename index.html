@@ -4485,8 +4485,11 @@
 
     function renderInventoryModule() {
       document.getElementById('warehouses-summary-cards').innerHTML = state.warehouses.map(w => {
-        const items = state.products.filter(p => p.warehouseId === w.id);
-        const totalKg = items.reduce((sum, p) => sum + Number(p.stock || 0), 0);
+        const items = state.products.filter(p => String(p.warehouseId ?? '') === String(w.id ?? ''));
+        const totalKg = items.reduce((sum, p) => {
+          const stock = Number(p.stock);
+          return sum + (Number.isFinite(stock) && stock >= 0 ? stock : 0);
+        }, 0);
         const itemValues = items.map(getInventoryBookValue);
         const hasUnverifiedValue = itemValues.some(value => value === null);
         const totalVal = hasUnverifiedValue ? null : itemValues.reduce((sum, value) => sum + value, 0);
@@ -5356,6 +5359,7 @@
         }
       }
 
+      const transferTransactionSnapshot = JSON.parse(JSON.stringify(state));
       const date = getTodayJalaliDate();
       const transferId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       const sourceName = getWhName(sourceWh), destinationName = getWhName(destWh);
@@ -5406,8 +5410,14 @@
       });
 
       addAudit(`انتقال ${qty} کیلوگرم ${p.name} از ${sourceName} به ${destinationName}؛ ${transferId}`);
-      saveState(); closeModal('modal-wh-transfer'); renderAll();
-      showToast('انتقال ثبت شد؛ موجودی و سری‌های ساختی هر دو انبار و کاردکس به‌روزرسانی شد ✔');
+      if (!saveState()) {
+        state = transferTransactionSnapshot;
+        showToast('ذخیره محلی انتقال ناموفق بود؛ موجودی، سری ساخت و کاردکس هر دو انبار به وضعیت قبل بازگشتند.', 'error');
+        renderAll();
+        return;
+      }
+      closeModal('modal-wh-transfer'); renderAll();
+      showToast('انتقال در حافظه محلی ثبت شد؛ همگام‌سازی ابری در صف قرار گرفت ✔');
     }
 
     function parsePhysicalStocktakingCounts(products, entries, warehouseId = null) {
@@ -6697,6 +6707,8 @@
         showToast('کنترل سری ساخت، مقدار یا بهای دفتری برگشتی ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return;
       }
+      // Keep a complete rollback point until the local snapshot has been persisted.
+      const returnTransactionSnapshot = JSON.parse(JSON.stringify(state));
       const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
       const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
       const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : 0;
@@ -6760,8 +6772,14 @@
           desc: inv.type === 'sale' ? `اعتبار مشتری از برگشت فاکتور #${invId}` : `اعتبار تأمین‌کننده از برگشت فاکتور #${invId}`
         });
       }
-      saveState(); closeModal('modal-partial-return'); renderAll();
-      showToast('برگشت جزئی ردیف‌ها ثبت، انبار اصلاح و سند حسابداری صادر شد ✔');
+      if (!saveState()) {
+        state = returnTransactionSnapshot;
+        showToast('ذخیره محلی برگشت ناموفق بود؛ فاکتور، موجودی و سند حسابداری به وضعیت قبل بازگشتند.', 'error');
+        renderAll();
+        return;
+      }
+      closeModal('modal-partial-return'); renderAll();
+      showToast('برگشت جزئی ردیف‌ها در حافظه محلی ثبت شد؛ همگام‌سازی ابری در صف قرار گرفت ✔');
     }
 
     function cancelInvoice(invId, options = {}) {
