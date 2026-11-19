@@ -11189,6 +11189,29 @@
           item.returnDescription = returnRecord
             ? 'جزئیات برگشت از سابقه برگشت فاکتور و تخصیص سری ساخت خوانده شده است.'
             : 'سابقه جزئیات برگشت در فاکتور پیدا نشد؛ این گردش نیازمند بررسی دستی است.';
+        } else if (sourceType === 'stocktake') {
+          item.stocktakeOperationId = sourceId;
+          item.stocktakeProductId = String(voucher.sourceEvent || '');
+          const product = (state.products || []).find(entry => String(entry.id) === item.stocktakeProductId);
+          const movement = product && (product.kardex || []).find(entry =>
+            entry && entry.sourceType === 'stocktake' &&
+            String(entry.operationId || '') === sourceId &&
+            String(entry.sourceId || '') === item.stocktakeProductId
+          );
+          item.stocktake = movement ? {
+            productId: item.stocktakeProductId,
+            productName: String(product.name || product.id || 'کالای نامشخص'),
+            warehouseId: product.warehouseId ?? null,
+            quantityDifference: Number(movement.inQty || 0) - Number(movement.outQty || 0),
+            countedStock: Number(movement.bal),
+            unitCost: Number(movement.price),
+            inventoryCost: Number(movement.inventoryCost),
+            valuationBasis: String(movement.valuationBasis || ''),
+            date: String(movement.date || '')
+          } : null;
+          item.stocktakeDescription = movement
+            ? 'مغایرت انبارگردانی به قلم کالا و گردش کاردکس متصل شد.'
+            : 'گردش کاردکس متناظر با سند انبارگردانی پیدا نشد؛ بررسی دستی لازم است.';
         }
       });
       const labels = { invoice: 'فاکتور خرید/فروش', invoice_return: 'برگشت فاکتور', invoice_cancel: 'ابطال فاکتور', stocktake: 'انبارگردانی', import: 'محموله وارداتی', manual: 'سند دستی یا بدون منشأ' };
@@ -11299,6 +11322,8 @@
           (item.invoiceId ? '<p class="text-[10px]">فاکتور مرتبط: '+escapeLedgerText(item.invoiceId)+' | نوع: '+escapeLedgerText(item.invoiceType || 'نامشخص')+'</p>' : '') +
           (item.productLines.length ? '<div class="text-[10px]">اقلام فاکتور: '+item.productLines.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، بهای تمام‌شده '+money(line.cogs)+')').join('؛ ')+'</div>' : '') +
           (item.returnItems && item.returnItems.length ? '<div class="text-[10px]">اقلام برگشتی: '+item.returnItems.map(line=>escapeLedgerText(line.productName)+' ('+faNum(line.quantity)+'، ارزش برگشتی '+money(line.inventoryCost)+'، سری ساخت '+faNum(line.batchAllocations.length)+')').join('؛ ')+'</div>' : '') +
+          (item.stocktake ? '<div class="text-[10px]">قلم انبارگردانی: '+escapeLedgerText(item.stocktake.productName)+' | انبار: '+escapeLedgerText((state.warehouses || []).find(w=>String(w.id)===String(item.stocktake.warehouseId))?.name || item.stocktake.warehouseId || 'نامشخص')+' | اختلاف مقدار: '+faNum(item.stocktake.quantityDifference)+' | بهای واحد: '+money(item.stocktake.unitCost)+' | ارزش اصلاح: '+money(item.stocktake.inventoryCost)+' | موجودی شمارش‌شده: '+faNum(item.stocktake.countedStock)+'</div>' : '') +
+          (item.stocktakeDescription ? '<p class="text-[10px] text-amber-800">'+escapeLedgerText(item.stocktakeDescription)+'</p>' : '') +
           (item.returnDescription ? '<p class="text-[10px] text-amber-800">'+escapeLedgerText(item.returnDescription)+'</p>' : '') +
           '<p class="text-[10px] text-slate-500">شرح: '+escapeLedgerText(item.descriptions.slice(0,3).join(' | ') || 'بدون شرح')+'</p></div>'
         ).join('') + '</div>' : '<p class="text-xs text-slate-500">گردش ثبت‌شده‌ای برای حساب ۱۱۰۵ پیدا نشد.</p>') +
