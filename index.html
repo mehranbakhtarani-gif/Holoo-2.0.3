@@ -6321,6 +6321,27 @@
           : credit > 0 && debit === 0 && Math.abs(credit - amount) < 0.01;
       }).map(v => ({ id: v.id, desc: v.desc || 'سند بانکی', date: v.date || v.operationDate }));
     }
+    function getTreasuryReconciliationCandidates(item) {
+      const dateKey = bankTxDateKey(item.date);
+      const signedAmount = Number(item.amount);
+      const amount = Math.abs(signedAmount);
+      if (!dateKey || !Number.isFinite(signedAmount) || amount <= 0) return [];
+      const expectedDirection = signedAmount > 0 ? 'receive' : 'pay';
+      const usedTreasuryIds = new Set((state.bankReconcileItems || [])
+        .filter(x => x.id !== item.id && x.matched && x.linkedTreasuryTxId)
+        .map(x => String(x.linkedTreasuryTxId)));
+      return (state.treasuryTxs || []).filter(tx => {
+        if (usedTreasuryIds.has(String(tx.id)) || tx.kind === 'party_credit' || tx.kind === 'party_credit_refund') return false;
+        if (String(tx.dir || '') !== expectedDirection) return false;
+        const txDate = bankTxDateKey(tx.date || tx.operationDate);
+        const txAmount = Number(tx.amount);
+        return txDate === dateKey && Number.isFinite(txAmount) && Math.abs(txAmount - amount) < 0.01;
+      }).map(tx => ({
+        id: tx.id, date: tx.date || tx.operationDate || '',
+        desc: tx.desc || tx.description || 'گردش خزانه',
+        amount: Number(tx.amount), dir: tx.dir, partyId: tx.partyId || null
+      }));
+    }
     function getBankReconciliationReviewCandidates(item) {
       const dateKey = bankTxDateKey(item.date);
       const signedAmount = Number(item.amount);
@@ -6363,6 +6384,27 @@
           })
         }];
       }).sort((a, b) => Number(b.amountMatch) - Number(a.amountMatch) || Number(b.dateMatch) - Number(a.dateMatch)).slice(0, 5);
+    }
+    function confirmBankReconcileTreasuryMatch(itemId, treasuryTxId) {
+      const item = (state.bankReconcileItems || []).find(x => String(x.id) === String(itemId));
+      const treasuryTx = (state.treasuryTxs || []).find(tx => String(tx.id) === String(treasuryTxId));
+      if (!item || !treasuryTx) { showToast('تراکنش بانکی یا گردش خزانه انتخاب‌شده پیدا نشد.', 'error'); return; }
+      if (item.matched || item.linkedVoucherId || item.linkedTreasuryTxId) {
+        showToast('این تراکنش بانکی قبلاً تعیین‌تکلیف شده است.', 'error'); return;
+      }
+      if ((state.bankReconcileItems || []).some(x => x.id !== item.id && x.matched && String(x.linkedTreasuryTxId || '') === String(treasuryTxId))) {
+        showToast('این گردش خزانه قبلاً به تراکنش بانکی دیگری وصل شده است.', 'error'); return;
+      }
+      if (!getTreasuryReconciliationCandidates(item).some(x => String(x.id) === String(treasuryTxId))) {
+        showToast('جهت دریافت/پرداخت، مبلغ یا تاریخ گردش خزانه با تراکنش بانکی یکسان نیست.', 'error'); return;
+      }
+      item.matched = true;
+      item.linkedTreasuryTxId = treasuryTx.id;
+      item.matchedAt = new Date().toISOString();
+      item.matchMethod = 'user_confirmed_treasury_exact';
+      addAudit('تطبیق دستی گردش بانکی با گردش خزانه #' + treasuryTx.id, { mode: 'manual', sourceType: 'bank_reconciliation_treasury_match' });
+      saveState(); renderAll();
+      showToast('تراکنش بانکی به گردش خزانه موجود وصل شد؛ سند حسابداری جدیدی ساخته نشد.');
     }
     function confirmBankReconcileMatch(itemId, voucherId) {
       const item = (state.bankReconcileItems || []).find(x => x.id === itemId);
@@ -6427,8 +6469,11 @@
     }
     function renderReconcileModule() {
       const bankBalances = getBankAccountBookBalances();
-      const verified = (state.bankReconcileItems || []).filter(x => x.matched && x.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(x.linkedVoucherId)));
-      const legacy = (state.bankReconcileItems || []).filter(x => x.matched && !x.linkedVoucherId).length;
+      const verified = (state.bankReconcileItems || []).filter(x => x.matched && (
+        (x.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(x.linkedVoucherId))) ||
+        (x.linkedTreasuryTxId && (state.treasuryTxs || []).some(tx => String(tx.id) === String(x.linkedTreasuryTxId)))
+      ));
+      const legacy = (state.bankReconcileItems || []).filter(x => x.matched && !x.linkedVoucherId && !x.linkedTreasuryTxId).length;
       const pending = (state.bankReconcileItems || []).length - verified.length;
       const bankRows = bankBalances.accounts.map(row => `
         <div class="rounded-lg bg-white/10 p-2"><span class="block text-slate-300">${window.escapeBankReconcileText(row.account.name)}</span><strong class="tabular-nums">${money(row.net)}</strong></div>
@@ -6461,8 +6506,11 @@
         <div><span class="text-slate-400 block">تطبیق‌های قدیمی بدون مرجع سند:</span><strong class="text-amber-300">${faNum(legacy)} مورد</strong></div>
       `;
       document.getElementById('reconcile-tx-list').innerHTML = (state.bankReconcileItems || []).map(r => {
-        const linked = r.matched && r.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(r.linkedVoucherId));
+        const linkedVoucher = r.matched && r.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(r.linkedVoucherId));
+        const linkedTreasury = r.matched && r.linkedTreasuryTxId && (state.treasuryTxs || []).some(tx => String(tx.id) === String(r.linkedTreasuryTxId));
+        const linked = Boolean(linkedVoucher || linkedTreasury);
         const candidates = linked ? [] : getBankReconciliationCandidates(r);
+        const treasuryCandidates = linked ? [] : getTreasuryReconciliationCandidates(r);
         const reviewCandidates = !linked ? getBankReconciliationReviewCandidates(r) : [];
         const reviewHtml = !linked
           ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary onclick="event.preventDefault(); this.parentElement.open = !this.parentElement.open;" class="text-xs font-bold text-amber-900 cursor-pointer">🔎 بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار' + (reviewCandidates.length ? ' (' + faNum(reviewCandidates.length) + ')' : '') + '</summary><div class="mt-2 space-y-2">' +
@@ -6478,10 +6526,14 @@
             '<div class="flex justify-end pt-1"><button type="button" class="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-bold text-amber-900" onclick="this.closest(\'details\').open=false; event.stopPropagation();">بستن پنجره</button></div></div></details>'
           : '';
         const actions = linked
-          ? `<div class="text-emerald-700 font-bold">وصل به سند #${faNum(r.linkedVoucherId)} <button onclick="toggleReconcileMatch('${window.escapeBankReconcileText(r.id)}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`
+          ? (linkedVoucher
+            ? `<div class="text-emerald-700 font-bold">وصل به سند حسابداری #${faNum(r.linkedVoucherId)} <button onclick="toggleReconcileMatch('${window.escapeBankReconcileText(r.id)}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`
+            : `<div class="text-emerald-700 font-bold">وصل به گردش خزانه #${faNum(r.linkedTreasuryTxId)} <button onclick="toggleReconcileMatch('${window.escapeBankReconcileText(r.id)}')" class="underline text-rose-700 mr-2">لغو اتصال</button></div>`)
           : candidates.length
             ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">سندهای هم‌مبلغ و هم‌تاریخ؛ یکی را بررسی و تأیید کنید:</span>${candidates.map(v => `<button onclick="confirmBankReconcileMatch('${window.escapeBankReconcileText(r.id)}','${window.escapeBankReconcileText(v.id)}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید سند #${faNum(v.id)} — ${window.escapeBankReconcileText(v.desc)}</button>`).join('')}</div>`
-            : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع سند ندارد و نیازمند بازبینی است.' : 'سند دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>${reviewHtml}`;
+            : treasuryCandidates.length
+              ? `<div class="w-full mt-2 space-y-1"><span class="text-xs font-bold text-slate-600">گردش‌های خزانه هم‌جهت، هم‌مبلغ و هم‌تاریخ؛ پس از بررسی تأیید کنید:</span>${treasuryCandidates.map(tx => `<button onclick="confirmBankReconcileTreasuryMatch('${window.escapeBankReconcileText(r.id)}','${window.escapeBankReconcileText(tx.id)}')" class="block w-full text-right p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">تأیید گردش خزانه #${faNum(tx.id)} — ${window.escapeBankReconcileText(tx.desc)} | ${faNum(tx.date)} | ${money(tx.amount)}</button>`).join('')}</div>`
+              : `<span class="text-xs text-amber-700">${r.matched ? 'وضعیت قدیمی؛ مرجع معتبر ندارد و نیازمند بازبینی است.' : 'سند یا گردش دقیق هم‌مبلغ و هم‌تاریخ پیدا نشد؛ نیازمند بررسی دستی است.'}</span>${reviewHtml}`;
         const legacyReset = !linked && r.matched ? `<button onclick="clearLegacyReconcileFlag('${window.escapeBankReconcileText(r.id)}')" class="text-xs underline text-rose-700">پاک‌کردن وضعیت تطبیق قدیمی</button>` : '';
         return `
           <div class="p-3 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
@@ -6493,7 +6545,7 @@
     }
     function clearLegacyReconcileFlag(id) {
       const item = (state.bankReconcileItems || []).find(x => x.id === id);
-      if (!item || !item.matched || item.linkedVoucherId) return;
+      if (!item || !item.matched || item.linkedVoucherId || item.linkedTreasuryTxId) return;
       item.matched = false;
       saveState(); renderAll();
       showToast('علامت تطبیق قدیمیِ بدون سند پاک شد؛ هیچ سند حسابداری تغییر نکرد.');
@@ -6501,11 +6553,11 @@
     function toggleReconcileMatch(id) {
       const item = (state.bankReconcileItems || []).find(x => x.id === id);
       if (!item) return;
-      if (!item.matched || !item.linkedVoucherId) {
-        showToast('این تراکنش تطبیق تأییدشده ندارد؛ برای اتصال، یکی از اسناد پیشنهادی را انتخاب کنید.', 'error'); return;
+      if (!item.matched || (!item.linkedVoucherId && !item.linkedTreasuryTxId)) {
+        showToast('این تراکنش تطبیق تأییدشده ندارد؛ برای اتصال، یکی از پیشنهادهای معتبر را انتخاب کنید.', 'error'); return;
       }
       item.matched = false;
-      delete item.linkedVoucherId; delete item.matchedAt; delete item.matchMethod;
+      delete item.linkedVoucherId; delete item.linkedTreasuryTxId; delete item.matchedAt; delete item.matchMethod;
       saveState(); renderAll();
       showToast('اتصال بانکی لغو شد؛ سند حسابداری تغییری نکرد.');
     }
