@@ -8861,7 +8861,6 @@
           <label class="block text-xs font-bold">نام بانک<input id="bank-account-bank" maxlength="80" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.bankName || '')}" placeholder="نام بانک" /></label>
           <label class="block text-xs font-bold">شماره حساب<input id="bank-account-number" maxlength="40" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.accNo || '')}" placeholder="شماره حساب" /></label>
           <label class="block text-xs font-bold">شعبه (اختیاری)<input id="bank-account-branch" maxlength="100" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.branch || '')}" placeholder="نام یا کد شعبه" /></label>
-          <label class="block text-xs font-bold">شعبه (اختیاری)<input id="bank-account-branch" maxlength="100" class="mt-1 w-full rounded-lg border p-3 text-sm" value="${window.escapeBankReconcileText(account?.branch || '')}" placeholder="نام یا کد شعبه" /></label>
           ${!account ? `
             <div class="rounded-xl border border-teal-100 bg-teal-50/60 p-3 space-y-2">
               <strong class="text-xs text-teal-900">ثبت موجودی افتتاحیه (اختیاری)</strong>
@@ -9306,9 +9305,7 @@
         const bankLines = (v.lines || []).filter(line => String(line.code) === '1102');
         if (bankLines.length !== 1) return false;
         const line = bankLines[0];
-        const voucherDescription = [v.desc, v.description, v.memo, line.desc, line.description, line.memo]
-          .filter(Boolean).join(' ').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
-        if (voucherDescription.includes('افتتاحیه') && voucherDescription.includes('بانک')) return false;
+        if (isBankOpeningVoucher(v)) return false;
         const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
         if (selectedBankId) {
           if (voucherBankId ? voucherBankId !== selectedBankId : !allowLegacyUnassigned) return false;
@@ -9375,12 +9372,11 @@
         const voucherBankId = line.bankAccountId == null ? '' : String(line.bankAccountId);
         if (voucherBankId ? voucherBankId !== effectiveBankId : !allowLegacyUnassigned) return [];
         const description = [v.desc, v.description, v.memo, line.desc, line.description, line.memo].filter(Boolean).join(' ');
-        const normalizedDescription = description.replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
-        if (normalizedDescription.includes('افتتاحیه') && normalizedDescription.includes('بانک')) return [];
+        if (isBankOpeningVoucher(v)) return [];
         const voucherAmount = debit > 0 ? debit : credit;
         const amountMatch = Math.abs(voucherAmount - amount) < 0.01;
         const dateMatch = Boolean(voucherDate && voucherDate === dateKey);
-        if (!amountMatch && !dateMatch) return [];
+        if (!amountMatch || !dateMatch) return [];
         return [{
           id: v.id, desc: v.desc || v.description || v.memo || 'سند بانکی',
           date: v.date || v.operationDate || '', debit, credit, bankAccountId: voucherBankId,
@@ -9410,31 +9406,47 @@
       if (!getTreasuryReconciliationCandidates(item).some(x => String(x.id) === String(treasuryTxId))) {
         showToast('جهت دریافت/پرداخت، مبلغ یا تاریخ گردش خزانه با تراکنش بانکی یکسان نیست.', 'error'); return;
       }
+      const before = JSON.stringify(state);
       item.matched = true;
       item.linkedTreasuryTxId = treasuryTx.id;
       item.matchedAt = new Date().toISOString();
       item.matchMethod = 'user_confirmed_treasury_exact';
       addAudit('تطبیق دستی گردش بانکی با گردش خزانه #' + treasuryTx.id, { mode: 'manual', sourceType: 'bank_reconciliation_treasury_match' });
-      saveState(); renderAll();
+      if (saveState() === false) { state = JSON.parse(before); showToast('ذخیره تطبیق انجام نشد؛ اطلاعات قبلی حفظ شد.', 'error'); return; }
+      renderAll();
       showToast('تراکنش بانکی به گردش خزانه موجود وصل شد؛ سند حسابداری جدیدی ساخته نشد.');
     }
     function confirmBankReconcileMatch(itemId, voucherId) {
       const item = (state.bankReconcileItems || []).find(x => x.id === itemId);
       const voucher = (state.vouchers || []).find(v => String(v.id) === String(voucherId));
       if (!item || !voucher) { showToast('تراکنش یا سند انتخاب‌شده پیدا نشد.', 'error'); return; }
-      if ((state.bankReconcileItems || []).some(x => x.id !== itemId && x.matched && String(x.linkedVoucherId) === String(voucherId))) {
+      if (item.matched || item.linkedVoucherId || item.linkedTreasuryTxId) { showToast('این تراکنش بانکی قبلاً تعیین‌تکلیف شده است.', 'error'); return; }
+      if ((state.bankReconcileItems || []).some(x => String(x.id) !== String(itemId) && x.matched && String(x.linkedVoucherId) === String(voucherId))) {
         showToast('این سند قبلاً به تراکنش بانکی دیگری وصل شده است.', 'error'); return;
       }
       if (!getBankReconciliationCandidates(item).some(x => String(x.id) === String(voucherId))) {
         showToast('مبلغ، جهت یا تاریخ سند با تراکنش بانکی یکسان نیست.', 'error'); return;
       }
+      const before = JSON.stringify(state);
       item.matched = true;
       item.linkedVoucherId = voucher.id;
       item.matchedAt = new Date().toISOString();
       item.matchMethod = 'user_confirmed_exact';
-      saveState(); renderAll();
+      if (saveState() === false) { state = JSON.parse(before); showToast('ذخیره تطبیق انجام نشد؛ اطلاعات قبلی حفظ شد.', 'error'); return; }
+      renderAll();
       showToast('تراکنش به سند موجود وصل شد؛ سند جدیدی ثبت نشد.');
     }
+    function isBankOpeningVoucher(voucher) {
+      if (!voucher || typeof voucher !== 'object') return false;
+      if (voucher.sourceType === 'bank_account_opening') return true;
+      const normalize = value => String(value || '').normalize('NFKC')
+        .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\s]+/g, ' ').trim();
+      const titles = [voucher.desc, voucher.description, voucher.memo, voucher.title, voucher.name]
+        .map(normalize).filter(Boolean);
+      // Legacy records are recognized only by an explicit opening-title prefix.
+      return titles.some(title => /^(?:موجودی افتتاحیه بانک|اضافه‌برداشت افتتاحیه بانک|افتتاحیه بانک)(?:\s|$)/.test(title));
+    }
+
     function getBankAccountBookBalances() {
       const accounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
       const byId = new Map(accounts.map(account => [String(account.id), { account, debit: 0, credit: 0, net: 0 }]));
@@ -9454,11 +9466,7 @@
           voucherDesc: voucher.desc || '', lineDesc: line.desc || '',
           debit, credit, bankAccountId: id
         };
-        const voucherDescription = [
-          voucher.desc, voucher.description, voucher.memo, voucher.title, voucher.name,
-          line.desc, line.description, line.memo
-        ].filter(value => value != null).join(' ').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
-        const isOpeningBankBalance = voucherDescription.includes('افتتاحیه') && voucherDescription.includes('بانک');
+        const isOpeningBankBalance = isBankOpeningVoucher(voucher);
         if (isOpeningBankBalance) {
           openingDebit += debit;
           openingCredit += credit;
