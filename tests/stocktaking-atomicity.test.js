@@ -49,6 +49,7 @@ const sandbox = {
   addAudit(action, meta) { sandbox.state.auditLogs.unshift({ action, meta }); }
 };
 vm.createContext(sandbox);
+vm.runInContext(extractFunction('inspectProductBatchReconciliation'), sandbox);
 vm.runInContext(extractFunction('parsePhysicalStocktakingCounts'), sandbox);
 vm.runInContext(extractFunction('buildPhysicalStocktakingDraft'), sandbox);
 
