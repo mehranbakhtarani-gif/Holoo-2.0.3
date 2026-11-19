@@ -6285,10 +6285,10 @@
         '</div>'
       ).join('');
       const unassigned = bankBalances.unassignedLines.length
-        ? '<details class="rounded-lg bg-amber-900/30 p-2 text-amber-100"><summary class="cursor-pointer font-bold">گردش‌های فاقد شناسه حساب بانکی — ' + faNum(bankBalances.unassignedLines.length) + ' ردیف | مانده ' + money(bankBalances.unassignedNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unassignedLines, 'unassigned') + '</div></details>'
+        ? '<details open class="rounded-lg bg-amber-900/30 p-2 text-amber-100"><summary class="font-bold">گردش‌های فاقد شناسه حساب بانکی — ' + faNum(bankBalances.unassignedLines.length) + ' ردیف | مانده ' + money(bankBalances.unassignedNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unassignedLines, 'unassigned') + '</div></details>'
         : '';
       const unknown = bankBalances.unknownLines.length
-        ? '<details class="rounded-lg bg-rose-900/30 p-2 text-rose-100"><summary class="cursor-pointer font-bold">گردش‌های دارای شناسه حساب ناشناخته — ' + faNum(bankBalances.unknownLines.length) + ' ردیف | مانده ' + money(bankBalances.unknownNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unknownLines, 'unknown') + '</div></details>'
+        ? '<details open class="rounded-lg bg-rose-900/30 p-2 text-rose-100"><summary class="font-bold">گردش‌های دارای شناسه حساب ناشناخته — ' + faNum(bankBalances.unknownLines.length) + ' ردیف | مانده ' + money(bankBalances.unknownNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unknownLines, 'unknown') + '</div></details>'
         : '';
       const invalidBankWarning = bankBalances.invalidBankLines
         ? `<div class="col-span-full rounded-lg bg-amber-900/30 p-2 text-amber-200">توجه: ${faNum(bankBalances.invalidBankLines)} ردیف حساب بانکی به دلیل مبلغ نامعتبر، منفی یا ثبت هم‌زمان بدهکار و بستانکار در مانده دفتری محاسبه نشده است.</div>`
