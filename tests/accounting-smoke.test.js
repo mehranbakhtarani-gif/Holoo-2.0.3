@@ -187,7 +187,7 @@ test('kardex reconciliation sorts dated movements and preserves an earlier openi
 });
 
 test('kardex baseline remains unverified when the earliest dated movement is an ordinary receipt', () => {
-  const source = section('function inspectInventoryReconciliation(products, warehouses)', 'function ensureProductBatches(product)');
+  const source = section('function inspectInventoryReconciliation(products, warehouses, appState', 'function ensureProductBatches(product)');
   const inspect = loadFunction(source, 'inspectInventoryReconciliation', {
     inspectProductBatchReconciliation() { return { valid: true, stock: 4200, tracked: 4200, difference: 0 }; },
     inspectWarehouseProductTopology() { return { issues: [], checkedBaseProducts: 0, companyTotalStock: 0, summaries: [] }; },
