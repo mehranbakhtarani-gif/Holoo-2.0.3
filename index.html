@@ -3843,7 +3843,8 @@
 
     function inspectWarehouseProductTopology(products, warehouses) {
       const items = Array.isArray(products) ? products : [];
-      const knownWarehouseIds = new Set((Array.isArray(warehouses) ? warehouses : []).map(item => String(item?.id ?? '')).filter(Boolean));
+      const hasWarehouseCatalog = Array.isArray(warehouses);
+      const knownWarehouseIds = new Set((hasWarehouseCatalog ? warehouses : []).map(item => String(item?.id ?? '')).filter(Boolean));
       const groups = new Map();
       const productIds = new Map();
       const issues = [];
@@ -3855,7 +3856,7 @@
         if (!productId || !rootId) {
           issues.push({ type: 'warehouse-product-identity', productId: productId || '—', productName, message: 'شناسه کالا یا شناسه کالای پایه ثبت نشده است.', detail: 'شناسه کالا و شناسه پایه برای تطبیق چندانباره الزامی است.' });
         }
-        if (!warehouseId || !knownWarehouseIds.has(warehouseId)) {
+        if (hasWarehouseCatalog && (!warehouseId || !knownWarehouseIds.has(warehouseId))) {
           issues.push({ type: 'warehouse-product-reference', productId: productId || '—', productName, message: 'کالا به انبار معتبر متصل نیست.', detail: 'شناسه انبار: ' + (warehouseId || 'ثبت‌نشده') });
         }
         const previousProductId = productId ? productIds.get(productId) : null;
@@ -3877,7 +3878,7 @@
           group.valid = false;
           issues.push({ type: 'warehouse-product-stock', productId, productName, message: 'موجودی کالا برای جمع‌بندی چندانباره نامعتبر است.', detail: 'موجودی ثبت‌شده: ' + String(product?.stock ?? 'ثبت‌نشده') });
         }
-        if (!warehouseId || !knownWarehouseIds.has(warehouseId)) group.valid = false;
+        if (hasWarehouseCatalog && (!warehouseId || !knownWarehouseIds.has(warehouseId))) group.valid = false;
         if (group.warehouseRows.has(warehouseId)) {
           group.valid = false;
           const first = group.warehouseRows.get(warehouseId);
