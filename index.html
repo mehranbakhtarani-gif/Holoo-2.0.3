@@ -8465,11 +8465,11 @@
         const checkBankAccount = state.bankAccounts.find(account =>
           String(account.id) === String(checkBankId) && account.type === 'bank');
         if (!checkBankAccount) { showToast('برای چک، حساب بانکی مقصد یا مبدأ معتبر انتخاب کنید.', 'error'); return; }
-        const normalizedSayad = sayad.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\\s-]/g, '');
-        const duplicateSayad = state.checks.some(c => String(c.sayad || '').replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\\s-]/g, '') === normalizedSayad);
+        const normalizedSayad = sayad.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\s-]/g, '');
+        const duplicateSayad = state.checks.some(c => String(c.sayad || '').replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\s-]/g, '') === normalizedSayad);
         const dueDate = document.getElementById('tr-chk-due').value.trim();
         const checkBankName = document.getElementById('tr-chk-bank').value.trim();
-        if (!/^\\d{16}$/.test(normalizedSayad) || duplicateSayad) { showToast('شناسه صیادی باید دقیقاً ۱۶ رقم معتبر و غیرتکراری باشد.', 'error'); return; }
+        if (!/^\d{16}$/.test(normalizedSayad) || duplicateSayad) { showToast('شناسه صیادی باید دقیقاً ۱۶ رقم معتبر و غیرتکراری باشد.', 'error'); return; }
         if (jalaliDateOrdinal(dueDate) === null) { showToast('تاریخ سررسید معتبر شمسی وارد کنید.', 'error'); return; }
         if (!checkBankName) { showToast('نام بانک و شعبه چک را وارد کنید.', 'error'); return; }
       } else {
@@ -8485,7 +8485,7 @@
       const txId = 'TR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       if (method === 'check') {
         const sayadRaw = document.getElementById('tr-sayad').value.trim();
-        const sayad = sayadRaw.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\\s-]/g, '');
+        const sayad = sayadRaw.replace(/[۰-۹٠-٩]/g, ch => { const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩'; const fi = fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch)); }).replace(/[\s-]/g, '');
         const checkId = 'CHK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         const check = { id: checkId, dir, sayad, checkNo: sayad.slice(-6), issueDate: getTodayJalaliDate(), dueDate: document.getElementById('tr-chk-due').value.trim().replace(/-/g, '/'), amount, bank: document.getElementById('tr-chk-bank').value.trim(), bankAccountId: document.getElementById('tr-check-account').value, partyId, status: 'in_progress', sourceTxId: txId, allocations: allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) };
         const lines = dir === 'receive' ? [{ code: '1104', partyId, desc: 'چک صیادی ' + sayad, debit: amount, credit: 0 }, { code: '1103', partyId, desc: 'بستانکار مشتری', debit: 0, credit: amount }] : [{ code: '2101', partyId, desc: 'بدهکار تأمین‌کننده', debit: amount, credit: 0 }, { code: '2102', partyId, desc: 'صدور چک ' + sayad, debit: 0, credit: amount }];
