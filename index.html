@@ -8771,7 +8771,8 @@
         const reversalVoucher = state.vouchers.find(item => Number(item.id) === Number(reversalVoucherId)); if (reversalVoucher) reversalVoucher.reversesTxId = String(txId);
         state.treasuryTxs.unshift({ id: replacementTxId, date: getTodayJalaliDate(), dir, partyId, method: method === 'bank' ? 'حواله بانکی' : 'صندوق نقدی', bankAccountId: accountLive.id, amount, allocInv: '—', allocInvId: null, allocations: [], desc, correctsTxId: String(txId), voucherId: replacementVoucherId, reversalVoucherId });
         addAudit('اصلاح تراکنش خزانه ' + txId + ' با تراکنش جایگزین ' + replacementTxId, { mode: 'manual', sourceType: 'treasury_correction', sourceId: correctionId, previous: { txId: String(txId), amount: Number(originalLive.amount || 0), dir: originalLive.dir }, note: 'تراکنش اولیه حفظ شد؛ سند معکوس و تراکنش جایگزین در یک عملیات ثبت شدند.' });
-        saveState(); closeModal('modal-treasury-correction'); renderAll();
+        if (!saveState()) throw new Error('ذخیره محلی اصلاح خزانه ناموفق بود؛ سندها و مانده حساب‌ها بازگردانده شدند.');
+        closeModal('modal-treasury-correction'); renderAll();
         showToast('سند معکوس و تراکنش اصلاح‌شده خزانه ثبت شدند.', 'success');
       } catch (error) { state = before; showToast('اصلاح خزانه انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error'); }
     }
@@ -8869,7 +8870,8 @@
         const reversalVoucher = state.vouchers.find(item => Number(item.id) === Number(reversalVoucherId)); if (reversalVoucher) reversalVoucher.reversesCheckId = String(checkId);
         state.treasuryTxs.unshift({ id: newTxId, date: getTodayJalaliDate(), dir, partyId, method: 'چک صیادی', amount, allocInv: '—', allocInvId: null, allocations: [], desc: 'چک صیادی ' + sayad, checkId: newCheckId, correctsTxId: String(originalTx.id), voucherId: replacementVoucherId, reversalVoucherId });
         addAudit('اصلاح چک صیادی ' + checkId + ' با چک جایگزین ' + newCheckId, { mode: 'manual', sourceType: 'check_correction', sourceId: correctionId, previous: { checkId: String(checkId), sayad: oldLive.sayad, amount: Number(oldLive.amount || 0) }, note: 'چک اولیه باطل و حفظ شد؛ سند معکوس و چک جایگزین در یک عملیات ثبت شدند.' });
-        saveState(); closeModal('modal-check-correction'); renderAll();
+        if (!saveState()) throw new Error('ذخیره محلی اصلاح چک ناموفق بود؛ سندها و سوابق چک بازگردانده شدند.');
+        closeModal('modal-check-correction'); renderAll();
         showToast('سند معکوس و چک جایگزین با موفقیت ثبت شدند.', 'success');
       } catch (error) { state = before; showToast('اصلاح چک انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error'); }
     }
@@ -9238,6 +9240,7 @@
           showToast('تخصیص مرتبط با این چک قابل برگشت امن نیست؛ وضعیت چک تغییر نکرد.', 'error'); return;
         }
       }
+      const checkStatusPreCommitSnapshot = JSON.parse(JSON.stringify(state));
       if (st === 'cleared') {
         const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
         // Legacy checks without a stored account may use a sole bank account only;
@@ -9251,6 +9254,7 @@
           const voucherId = postVoucher('وصول چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true, bankAccountId: bank.id });
           if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
         } catch (error) {
+          state = checkStatusPreCommitSnapshot;
           showToast('صدور سند وصول چک ناموفق بود؛ وضعیت چک و مانده بانک تغییر نکردند. ' + (error?.message || ''), 'error');
           return;
         }
@@ -9263,6 +9267,7 @@
           const voucherId = postVoucher((st === 'bounced' ? 'برگشت' : 'ابطال') + ' چک صیادی ' + c.sayad, lines, undefined, { type: 'check', id: c.id, event: st, deferSave: true });
           if (voucherId === null || voucherId === undefined || voucherId === false) throw new Error('شماره سند معتبر برنگشت.');
         } catch (error) {
+          state = checkStatusPreCommitSnapshot;
           showToast('صدور سند برگشت/ابطال چک ناموفق بود؛ وضعیت و تخصیص‌ها تغییر نکردند. ' + (error?.message || ''), 'error');
           return;
         }
@@ -9274,7 +9279,12 @@
       }
       c.status = st; c.statusUpdatedAt = new Date().toISOString();
       addAudit('تغییر وضعیت چک ' + c.sayad + ' به ' + st);
-      saveState(); renderAll(); showToast('وضعیت چک صیادی به‌روزرسانی شد.');
+      if (!saveState()) {
+        state = checkStatusPreCommitSnapshot;
+        showToast('ذخیره محلی تغییر وضعیت چک ناموفق بود؛ سند، مانده بانک و تخصیص‌ها بازگردانده شدند.', 'error');
+        return;
+      }
+      renderAll(); showToast('وضعیت چک صیادی به‌روزرسانی شد.');
     }
 
     function computeCheckRas() {
