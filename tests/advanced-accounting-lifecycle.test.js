@@ -805,7 +805,8 @@ test('FIFO supplier purchase return consumes the original batches and posts bala
   assert.equal(state.products[0].kardex[0].outQty,3);
   const lines=posted[0][1];
   assert.equal(lines.find(line=>line.code==='2101')?.debit,30);
-  assert.equal(lines.find(line=>line.code==='1105')?.credit,30);
+  assert.equal(lines.find(line=>line.code==='1105')?.credit,24, 'FIFO return must reverse the actual source-batch carrying cost');
+  assert.equal(lines.find(line=>line.code==='4198')?.credit,6, 'purchase price versus FIFO carrying value must be recorded as return variance');
   assert.equal(lines.reduce((n,line)=>n+line.debit,0),lines.reduce((n,line)=>n+line.credit,0));
   assert.equal(saves,1);
 });
