@@ -9343,14 +9343,13 @@
       `;
 
       const checkAudit = buildCheckAuditSummary();
-      const checkAuditBox = document.getElementById('checks-list-container');
-      checkAuditBox.innerHTML = '<div class="mb-3 rounded-xl border ' + (checkAudit.issueCount ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50') + ' p-3 text-xs space-y-2">' +
+      const checkAuditHtml = '<div class="mb-3 rounded-xl border ' + (checkAudit.issueCount ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50') + ' p-3 text-xs space-y-2">' +
         '<div class="flex flex-wrap items-center justify-between gap-2"><strong>کنترل حسابرسی چک‌ها و اسناد دفترکل</strong><span class="font-black">' + (checkAudit.issueCount ? faNum(checkAudit.issueCount) + ' مورد نیازمند بررسی' : 'بدون مغایرت شناسایی‌شده') + '</span></div>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-2"><span>کل چک‌ها: <b>' + faNum(checkAudit.total) + '</b></span><span>چک‌های باز: <b>' + faNum(checkAudit.active) + '</b></span><span>سند صدور مفقود/تکراری: <b>' + faNum(checkAudit.missingIssueVoucher) + '</b></span><span>گردش خزانه مفقود: <b>' + faNum(checkAudit.missingTreasuryLink) + '</b></span><span>شناسه صیادی تکراری: <b>' + faNum(checkAudit.duplicateSayad) + '</b></span><span>سند وضعیت نهایی مفقود: <b>' + faNum(checkAudit.missingStatusVoucher) + '</b></span><span>سند نامعتبر/نامتوازن: <b>' + faNum(checkAudit.invalidVoucher) + '</b></span><span>تخصیص نامعتبر: <b>' + faNum(checkAudit.allocationIssues) + '</b></span></div>' +
         (checkAudit.issues.length ? '<details class="rounded-lg border border-amber-200 bg-white p-2"><summary class="cursor-pointer font-bold text-amber-900">مشاهده موارد نیازمند بررسی (' + faNum(checkAudit.issues.length) + ' مورد اول)</summary><ul class="mt-2 list-disc pr-5 space-y-1 text-amber-900">' + checkAudit.issues.map(issue => '<li>' + window.escapeBankReconcileText(issue) + '</li>').join('') + '</ul></details>' : '<p class="text-emerald-800">برای چک‌های ثبت‌شده، ارتباط سند صدور، گردش خزانه و رویدادهای نهایی بررسی شد.</p>') +
         '<p class="text-[10px] text-slate-500">این گزارش فقط کنترل و هشدار است؛ هیچ چک یا سندی را تغییر نمی‌دهد.</p></div>';
       const statusLabels = { in_progress: 'در جریان', overdue: 'سررسیدشده', cleared: 'وصول‌شده ✔', bounced: 'برگشتی ❌', endorsed: 'واگذارشده', voided: 'باطل‌شده' };
-      document.getElementById('checks-list-container').innerHTML = state.checks.map(c => `
+      document.getElementById('checks-list-container').innerHTML = checkAuditHtml + state.checks.map(c => `
         <div class="p-3 rounded-xl bg-slate-50 border space-y-1.5">
           <div class="flex justify-between items-center">
             <span class="font-extrabold ${c.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${c.dir === 'receive' ? 'دریافتی' : 'پرداختی'} • ${c.bank}</span>
