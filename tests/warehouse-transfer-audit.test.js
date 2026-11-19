@@ -103,6 +103,32 @@ const laterPlan = buildWarehouseTransferReversalPlan(laterMovementState, 'TR-200
 assert.equal(laterPlan.ok, false);
 assert.match(laterPlan.reason, /گردش دیگری ثبت شده است/);
 
+
+const correctedHistoryProducts = freezeDeep([
+  {
+    ...JSON.parse(JSON.stringify(reversalState.products[0])),
+    kardex: [
+      ...JSON.parse(JSON.stringify(reversalState.products[0].kardex)),
+      { date: '1405/08/29', doc: 'برگشت حواله انتقال TR-200-abcd به درخواست اصلاح', inQty: 5, outQty: 0, bal: 18, reversalOf: 'TR-200-abcd' },
+      { date: '1405/08/29', doc: 'حواله خروج انتقال TR-201-efgh (جایگزین TR-200-abcd)', inQty: 0, outQty: 4, bal: 14, correctionOf: 'TR-200-abcd' }
+    ]
+  },
+  {
+    ...JSON.parse(JSON.stringify(reversalState.products[1])),
+    kardex: [
+      ...JSON.parse(JSON.stringify(reversalState.products[1].kardex)),
+      { date: '1405/08/29', doc: 'برگشت حواله انتقال TR-200-abcd از درخواست اصلاح', inQty: 0, outQty: 5, bal: 10, reversalOf: 'TR-200-abcd' }
+    ]
+  }
+]);
+const historicalView = getWarehouseMovementAuditView(
+  correctedHistoryProducts, warehouses, correctedHistoryProducts[0],
+  correctedHistoryProducts[0].kardex[0], []
+);
+assert.equal(historicalView.pairCount, 2, 'audit projection should preserve the original transfer pair and ignore appended correction rows');
+assert.equal(historicalView.source.quantity, 5);
+assert.equal(historicalView.destination.quantity, 5);
+
 const voucherState = freezeDeep({
   ...JSON.parse(JSON.stringify(reversalState)),
   vouchers: [{ id: 99, desc: 'سند انتقال TR-200-abcd', lines: [] }]
@@ -155,6 +181,9 @@ assert.ok(html.includes("/TR-\\d+-[a-z0-9]+/i.test(String(k.doc || ''))"), 'audi
 assert.ok(html.includes('function applyWarehouseTransferCorrection('));
 assert.ok(html.includes('warehouseTransferCorrection = {'));
 assert.ok(html.includes('state.auditLogs[0].warehouseTransferCorrection'));
+assert.ok(html.includes('const correctionEvents = audit.kind === \'transfer\''));
+assert.ok(html.includes('تاریخچه اصلاحات:'));
+assert.ok(!html.includes('draft.warehouseTransferCorrections'));
 assert.ok(html.includes('reversalOf: plan.transferId'));
 assert.ok(html.includes('correctionOf: plan.transferId'));
 assert.ok(html.includes('actor: draft.activeRole || \'mehran\', deviceId: DEVICE_ID, createdAt: now.toISOString()'));
