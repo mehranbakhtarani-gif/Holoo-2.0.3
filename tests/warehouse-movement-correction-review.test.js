@@ -8,7 +8,7 @@ assert.ok(html.includes('TR-\\\\d+-[a-z0-9]+') === false, 'transfer ID regex mus
 
 assert.ok(html.includes('function requestWarehouseMovementCorrection(productId, movementIndex)'));
 assert.ok(html.includes('دو سمت خروج و ورود انتقال به‌صورت یکتا پیدا نشد'));
-assert.ok(html.includes('بچ‌های FIFO، دو کاردکس و موجودی هر دو انبار'));
+assert.ok(html.includes('بچ‌های مبدأ و مقصد، دو کاردکس و موجودی هر دو انبار'));
 assert.ok(html.includes('شناسه یکتای عملیات و پیوند قطعی به سند مغایرت ندارد'));
 assert.ok(html.includes('requestWarehouseMovementCorrection'));
 assert.ok(html.includes('بررسی اصلاح گردش انبار'));
