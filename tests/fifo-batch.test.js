@@ -198,8 +198,8 @@ test('inventory reconciliation detects a positive-stock product with no kardex h
 
 test('inventory reconciliation validates paired warehouse transfer references and quantities', () => {
   const products = [
-    { id: 'SRC', name: 'مبدأ', stock: 4, batches: [], kardex: [{ bal: 4, outQty: 3, inQty: 0, doc: 'حواله خروج انتقال TR-123-abcd به مقصد' }] },
-    { id: 'DST', name: 'مقصد', stock: 3, batches: [], kardex: [{ bal: 3, inQty: 3, outQty: 0, doc: 'حواله ورود انتقال TR-123-abcd از مبدأ' }] }
+    { id: 'SRC', baseProductId: 'ROOT', warehouseId: 'WH-A', name: 'مبدأ', stock: 4, batches: [], kardex: [{ bal: 4, outQty: 3, inQty: 0, doc: 'حواله خروج انتقال TR-123-abcd به مقصد' }] },
+    { id: 'DST', baseProductId: 'ROOT', warehouseId: 'WH-B', name: 'مقصد', stock: 3, batches: [], kardex: [{ bal: 3, inQty: 3, outQty: 0, doc: 'حواله ورود انتقال TR-123-abcd از مبدأ' }] }
   ];
   const report = inspectInventoryReconciliation(products);
   assert.equal(report.checkedTransfers, 1);
@@ -207,6 +207,18 @@ test('inventory reconciliation validates paired warehouse transfer references an
   products[1].kardex[0].inQty = 2;
   const mismatch = inspectInventoryReconciliation(products);
   assert.ok(mismatch.issues.some(x => x.type === 'transfer'));
+  const wrongProduct = products.map(p => ({ ...p, baseProductId: p.id }));
+  assert.ok(inspectInventoryReconciliation(wrongProduct).issues.some(x => x.type === 'transfer' && /هویت کالای/.test(x.message)));
+  const sameWarehouse = products.map(p => ({ ...p, warehouseId: 'WH-A' }));
+  assert.ok(inspectInventoryReconciliation(sameWarehouse).issues.some(x => x.type === 'transfer' && /هویت کالای/.test(x.message)));
 });
 
-console.log('PASS: 17 FIFO and inventory reconciliation tests');
+test('inventory reconciliation detects batch identifiers duplicated across different products', () => {
+  const report = inspectInventoryReconciliation([
+    { id: 'GLOBAL-A', name: 'کالای اول', stock: 1, batches: [{ id: 'SHARED-BATCH', remainingQty: 1, unitCost: 1 }], kardex: [] },
+    { id: 'GLOBAL-B', name: 'کالای دوم', stock: 1, batches: [{ id: 'SHARED-BATCH', remainingQty: 1, unitCost: 1 }], kardex: [] }
+  ]);
+  assert.ok(report.issues.some(x => x.type === 'batch-id-global' && /بین دو کالای متفاوت/.test(x.message)));
+});
+
+console.log('PASS: 18 FIFO and inventory reconciliation tests');
