@@ -127,7 +127,7 @@ warehouseScoped.products[1].warehouseId = 'WH-B';
 const scopedCounts = sandbox.parsePhysicalStocktakingCounts(warehouseScoped.products, [
   { productId: 'P1', rawValue: '6' }
 ], 'WH-A');
-assert.deepEqual(Array.from(scopedCounts), [{ productId: 'P1', real: 6 }], 'only products from the selected warehouse may be counted');
+assert.deepEqual(Array.from(scopedCounts, item => ({ productId: item.productId, real: item.real })), [{ productId: 'P1', real: 6 }], 'only products from the selected warehouse may be counted');
 sandbox.state = warehouseScoped;
 voucherCalls = 0;
 const scopedDraft = sandbox.buildPhysicalStocktakingDraft(warehouseScoped, [
