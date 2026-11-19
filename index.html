@@ -11350,13 +11350,14 @@
       return jalaliDateOrdinal(candidate30) !== null ? candidate30 : String(year) + '/12/29';
     }
 
-    function buildFiscalYearCarryForwardSummary(year, projectedProfit = 0) {
+    function buildFiscalYearCarryForwardSummary(year, projectedProfit = 0, options = {}) {
       const fiscalYear = normalizeAccountingDate(year);
       const endDate = getFiscalYearEndDate(fiscalYear);
       const endKey = normalizeLedgerDate(endDate);
       const accounts = new Map();
       let invalidDateVouchers = 0, invalidAmountLines = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0;
       (state.vouchers || []).forEach(voucher => {
+        if (options.excludeVoucherId != null && String(voucher.id) === String(options.excludeVoucherId)) return;
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
@@ -11456,7 +11457,7 @@
       if (Math.abs(profit - incomeSummary.netProfit) > 0.5) warnings.push('محاسبه سود و زیان با مانده حساب‌های نتیجه‌دار تطبیق ندارد؛ اختلاف: ' + money(profit - incomeSummary.netProfit));
       const retainedEarningsAccount = (CHART_ACCOUNTS || []).find(account => String(account.code) === '3102');
       if (!retainedEarningsAccount) warnings.push('حساب سود (زیان) انباشته ۳۱۰۲ در سرفصل‌های حسابداری تعریف نشده است.');
-      const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit);
+      const carryForward = buildFiscalYearCarryForwardSummary(fiscalYear, profit, options);
       if (carryForward.invalidDateVouchers) warnings.push(carryForward.invalidDateVouchers + ' سند در دفترکل تاریخ نامعتبر دارد؛ تا تعیین تکلیف تاریخ، بستن سال مجاز نیست.');
       if (carryForward.invalidAmountLines) warnings.push(carryForward.invalidAmountLines + ' ردیف سند در دفترکل مبلغ نامعتبر دارد؛ تا اصلاح ردیف‌ها، بستن سال مجاز نیست.');
       if (carryForward.invalidStructureVouchers) warnings.push(carryForward.invalidStructureVouchers + ' سند در دفترکل ساختار نامعتبر دارد؛ ابتدا ساختار سند اصلاح شود.');
