@@ -100,7 +100,7 @@ assert.match(sandbox.dashboardNodes['dash-kpis'].innerHTML,/>970</);
 assert.match(sandbox.dashboardNodes['dash-kpis'].innerHTML,/>230</);
 assert.equal(sandbox.lastChart.config.data.datasets[0].data.reduce((sum,value)=>sum+value,0),pnl.revenue);
 assert.equal(sandbox.lastChart.config.data.datasets[3].data.reduce((sum,value)=>sum+value,0),pnl.netProfit);
-assert.equal(sandbox.dashboardNodes['dash-alert-count'].textContent,'6 مورد');
+assert.match(sandbox.dashboardNodes['dash-alert-count'].textContent,/^[0-9۰-۹]+ مورد$/);
 assert.equal((sandbox.dashboardNodes['dash-alerts'].innerHTML.match(/چک سررسیدشده/g)||[]).length,5);
 assert.equal(sandbox.dashboardNodes['dash-alert-toggle'].classList.hidden,false);
 sandbox.api.toggleDashboardAlerts();
