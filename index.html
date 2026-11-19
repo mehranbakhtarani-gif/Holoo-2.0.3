@@ -3375,6 +3375,13 @@
         !Number.isFinite(Number(p.buyPrice)) || !p.warehouseId ||
         !(state.warehouses || []).some(w => w.id === p.warehouseId)
       );
+      const warehouseIdentityIssues = inspectProductsWithoutValidWarehouse(state.products, state.warehouses);
+      const missingWarehouseCount = warehouseIdentityIssues.filter(item => item.reason === 'missing-warehouse').length;
+      const unknownWarehouseCount = warehouseIdentityIssues.length - missingWarehouseCount;
+      add('ارجاع کالا به انبار', warehouseIdentityIssues.length === 0,
+        warehouseIdentityIssues.length
+          ? missingWarehouseCount + ' کالا بدون شناسه انبار و ' + unknownWarehouseCount + ' کالا با شناسه انبار نامعتبر؛ از گزارش تطبیق پیگیری شود.'
+          : (state.products || []).length + ' کالا دارای ارجاع معتبر به انبار');
       add('اطلاعات کالا و انبار', productErrors.length === 0, productErrors.length ? productErrors.length + ' رکورد کالا دارای فیلد ناقص یا انبار نامعتبر' : (state.products || []).length + ' رکورد کالا بررسی شد');
 
       const voucherErrors = [];
@@ -3844,6 +3851,24 @@
       const expiryOrdinal = jalaliDateOrdinal(batch.expiryDate);
       if (expiryOrdinal === null || !Number.isFinite(todayOrdinal)) return false;
       return expiryOrdinal >= todayOrdinal;
+    }
+
+    function inspectProductsWithoutValidWarehouse(products, warehouses) {
+      const items = Array.isArray(products) ? products : [];
+      const catalog = Array.isArray(warehouses) ? warehouses : [];
+      const knownWarehouseIds = new Set(catalog.map(item => String(item?.id ?? '').trim()).filter(Boolean));
+      return items.filter(product => {
+        const warehouseId = String(product?.warehouseId ?? '').trim();
+        return !warehouseId || !knownWarehouseIds.has(warehouseId);
+      }).map(product => {
+        const warehouseId = String(product?.warehouseId ?? '').trim();
+        return {
+          productId: String(product?.id ?? '—'),
+          productName: String(product?.name ?? 'کالای بدون نام'),
+          warehouseId: warehouseId || null,
+          reason: warehouseId ? 'unknown-warehouse' : 'missing-warehouse'
+        };
+      });
     }
 
     function inspectWarehouseProductTopology(products, warehouses) {
@@ -4324,21 +4349,28 @@
         warehouses.map(warehouse => '<option value="' + escapeKardexText(warehouse.id) + '">' +
           escapeKardexText(warehouse.name) + '</option>').join('');
       warehouseSelect.value = selectedWarehouseId;
+      const unassignedProducts = inspectProductsWithoutValidWarehouse(state.products, warehouses);
+      const unassignedWarning = unassignedProducts.length
+        ? '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2"><div class="font-bold text-amber-900">توجه: ' + faNum(unassignedProducts.length) + ' کالا به انبار معتبر متصل نیست و در شمارش هیچ انباری قرار نمی‌گیرد.</div><div class="text-[10px] text-amber-900">' +
+          unassignedProducts.slice(0, 8).map(item => escapeKardexText(item.productName) + ' (' + escapeKardexText(item.productId) + '): ' + (item.reason === 'missing-warehouse' ? 'شناسه انبار ثبت نشده' : 'شناسه انبار نامعتبر: ' + escapeKardexText(item.warehouseId))).join('<br>') +
+          (unassignedProducts.length > 8 ? '<br>و ' + faNum(unassignedProducts.length - 8) + ' کالای دیگر' : '') +
+          '</div><div class="text-[10px] text-amber-800">برای تعیین تکلیف، گزارش «تطبیق موجودی» را اجرا کنید؛ این کالاها را به‌صورت خودکار به انبار دیگری منتقل نمی‌کنیم.</div></div>'
+        : '';
       if (!selectedWarehouseId) {
-        rows.innerHTML = '<div class="rounded-xl border border-dashed p-4 text-center text-slate-500">برای نمایش اقلام شمارش، یک انبار انتخاب کنید.</div>';
+        rows.innerHTML = unassignedWarning + '<div class="rounded-xl border border-dashed p-4 text-center text-slate-500">برای نمایش اقلام شمارش، یک انبار انتخاب کنید.</div>';
         return;
       }
       const warehouseExists = warehouses.some(warehouse => String(warehouse.id) === selectedWarehouseId);
       if (!warehouseExists) {
-        rows.innerHTML = '<div class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">انبار انتخاب‌شده معتبر نیست؛ دوباره انتخاب کنید.</div>';
+        rows.innerHTML = unassignedWarning + '<div class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">انبار انتخاب‌شده معتبر نیست؛ دوباره انتخاب کنید.</div>';
         return;
       }
       const products = (state.products || []).filter(product => String(product.warehouseId ?? '') === selectedWarehouseId);
       if (!products.length) {
-        rows.innerHTML = '<div class="rounded-xl border border-dashed p-4 text-center text-slate-500">در این انبار کالایی برای شمارش ثبت نشده است.</div>';
+        rows.innerHTML = unassignedWarning + '<div class="rounded-xl border border-dashed p-4 text-center text-slate-500">در این انبار کالایی برای شمارش ثبت نشده است.</div>';
         return;
       }
-      rows.innerHTML = products.map(product => `
+      rows.innerHTML = unassignedWarning + products.map(product => `
         <div class="p-3 rounded-xl bg-slate-50 border flex justify-between items-center gap-3">
           <div class="min-w-0 flex-1"><strong class="block break-words">${escapeKardexText(product.name)}</strong><span class="text-[10px] text-slate-500 tabular-nums">موجودی سیستم: ${faNum(product.stock)} KG</span><span class="block text-[10px] text-slate-400">کد کالا: ${escapeKardexText(product.id)} • ${escapeKardexText(getWhName(product.warehouseId))}</span></div>
           <label class="w-28 shrink-0 text-[10px] font-bold text-slate-600">موجودی واقعی (KG)
