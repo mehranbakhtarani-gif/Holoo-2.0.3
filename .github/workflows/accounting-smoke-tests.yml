@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Run every test suite
+      - name: Run dashboard and accounting regression suites
         run: |
           set -e
           for test_file in \
