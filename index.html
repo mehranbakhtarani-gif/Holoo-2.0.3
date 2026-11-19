@@ -6653,7 +6653,7 @@
 
         function canCorrectInvoice(inv) {
       if (!inv || inv.status !== 'active' || !['sale', 'purchase'].includes(inv.type) ||
-          inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0) return false;
+          inv.payMethod !== 'credit' || Number(inv.paidAmount || 0) > 0 || jalaliDateOrdinal(inv.date) === null) return false;
       if (inv.type === 'sale' && Number(inv.commAmount || 0) > 0 && !inv.salespersonPartyId) return false;
       if (Array.isArray(inv.returnRefs) && inv.returnRefs.length) return false;
       if (getAccountingPeriodLockForDate(inv.date)) return false;
@@ -6978,6 +6978,7 @@
     function cancelInvoice(invId, options = {}) {
       const inv = state.invoices.find(i => i.id === invId);
       if (!inv || inv.status === 'cancelled') return false;
+      if (jalaliDateOrdinal(inv.date) === null) { if (!options.silent) showToast('تاریخ فاکتور نامعتبر است؛ ابطال امن امکان‌پذیر نیست.', 'error'); return false; }
       const invoicePeriodLock = getAccountingPeriodLockForDate(inv.date);
       if (invoicePeriodLock) {
         const message = 'ابطال یا اصلاح این فاکتور مجاز نیست؛ تاریخ سند در ' + invoicePeriodLock.label + ' قفل‌شده قرار دارد. ابتدا بازگشایی کنترل‌شده با ثبت علت انجام شود.';
@@ -6987,8 +6988,6 @@
       const invoiceYear = String(normalizeLedgerDate(inv.date) || '').slice(0, 4);
       const closedFiscalYear = invoiceYear && (state.vouchers || []).find(item => item.sourceType === 'fiscal_year_close' && String(item.sourceId || '') === invoiceYear && (item.sourceEvent || 'default') === 'closing');
       if (closedFiscalYear) { if (!options.silent) showToast('ابطال فاکتور متعلق به سال مالی بسته‌شده مجاز نیست؛ ابتدا سال مالی باید با فرایند کنترل‌شده بازگشایی شود.', 'error'); return false; }
-      const cancellationReason = String(options.reason || (options.silent ? '' : (prompt('علت ابطال فاکتور #' + invId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || ''))).trim();
-      if (cancellationReason.length < 8) { if (!options.silent) showToast('برای ابطال فاکتور، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return false; }
       const hasTreasuryAllocation = (state.treasuryTxs || []).some(tx => {
         if (tx.kind === 'party_credit') return false;
         if ((tx.allocations || []).some(allocation =>
@@ -7004,6 +7003,8 @@
         showToast('این فاکتور سابقه دریافت، پرداخت یا تخصیص چک دارد؛ ابتدا تسویه مرتبط را تعیین‌تکلیف کنید.', 'error');
         return false;
       }
+      const cancellationReason = String(options.reason || (options.silent ? '' : (prompt('علت ابطال فاکتور #' + invId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || ''))).trim();
+      if (cancellationReason.length < 8) { if (!options.silent) showToast('برای ابطال فاکتور، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return false; }
 
       const getInvoiceLineNetTotal = line => {
         if (line.total !== undefined && line.total !== null) return Number(line.total);
@@ -10947,6 +10948,7 @@
       const operationDate = document.getElementById('mvc-date').value.trim() || getTodayJalaliDate();
       if (!desc || jalaliDateOrdinal(operationDate) === null) { showToast('شرح و تاریخ شمسی معتبر برای سند جایگزین الزامی است.', 'error'); return; }
       const originalDate = originalLive.date || originalLive.operationDate;
+      if (jalaliDateOrdinal(originalDate) === null) { showToast('تاریخ سند اولیه نامعتبر است؛ اصلاح متوقف شد.', 'error'); return; }
       if (jalaliDateOrdinal(operationDate) < jalaliDateOrdinal(originalDate)) { showToast('تاریخ سند جایگزین نمی‌تواند قبل از تاریخ سند اولیه باشد.', 'error'); return; }
       const correctionReason = String(prompt('علت اصلاح سند دستی #' + originalId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || '').trim();
       if (correctionReason.length < 8) { showToast('برای اصلاح سند، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return; }
