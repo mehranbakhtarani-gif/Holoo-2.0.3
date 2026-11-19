@@ -19,6 +19,11 @@ function load(source, name, context) {
   const helperStart = html.indexOf('function getReturnCostOfGoods(');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   if (helperStart >= 0 && helperEnd > helperStart) vm.runInContext(html.slice(helperStart, helperEnd), sandbox);
+  const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
+  const warehouseResolverEnd = html.indexOf('function renderInvoiceProductOptions(', warehouseResolverStart);
+  if (warehouseResolverStart >= 0 && warehouseResolverEnd > warehouseResolverStart) {
+    vm.runInContext(html.slice(warehouseResolverStart, warehouseResolverEnd), sandbox);
+  }
   vm.runInContext(source + `; this.__testFn = ${name};`, sandbox);
   return sandbox.__testFn;
 }
@@ -80,7 +85,7 @@ test('opening stock creates kardex entry and accounting voucher', () => {
 
 // Invoice lifecycle with isolated in-memory state. No live database or user data is touched.
 function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAccountId = null) {
-  const product = { id: 'TX-101', name: 'کالای آزمایشی', stock: 100, buyPrice: 10, kardex: [] };
+  const product = { id: 'TX-101', name: 'کالای آزمایشی', warehouseId: 'WH1', stock: 100, buyPrice: 10, kardex: [] };
   const state = {
     fiscalYear: '1405', invoices: [], products: [product],
     bankAccounts,
