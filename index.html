@@ -7928,6 +7928,75 @@
       }
     }
 
+    function addManualVoucherCorrectionLine(line = {}) {
+      const host = document.getElementById('manual-voucher-correction-lines');
+      if (!host) return;
+      const options = (CHART_ACCOUNTS || []).map(account => `<option value="${escapeLedgerText(account.code)}" ${String(account.code) === String(line.code || '') ? 'selected' : ''}>${escapeLedgerText(account.code)} - ${escapeLedgerText(account.name)}</option>`).join('');
+      const row = document.createElement('div'); row.className = 'vc-line-row grid grid-cols-1 md:grid-cols-4 gap-2 border rounded-xl p-2 bg-slate-50';
+      row.innerHTML = `<select data-vc-code class="touch-btn border rounded-lg px-2 bg-white">${options}</select><input data-vc-desc class="touch-btn border rounded-lg px-2" placeholder="شرح ردیف" value="${escapeLedgerText(line.desc || '')}"><input data-vc-debit type="number" min="0" step="any" class="touch-btn border rounded-lg px-2" placeholder="بدهکار" value="${Number(line.debit || 0)}"><div class="flex gap-1"><input data-vc-credit type="number" min="0" step="any" class="touch-btn min-w-0 flex-1 border rounded-lg px-2" placeholder="بستانکار" value="${Number(line.credit || 0)}"><button type="button" class="px-3 rounded-lg bg-rose-100 text-rose-700 font-bold" onclick="this.closest('.vc-line-row').remove()">حذف</button></div>`;
+      host.appendChild(row);
+    }
+
+    function openManualVoucherCorrection(voucherId) {
+      const original = (state.vouchers || []).find(item => Number(item.id) === Number(voucherId));
+      if (!original || original.sourceType !== 'manual_voucher' || original.locked || original.correctedByVoucherId) { showToast('فقط اسناد دستیِ باز و اصلاح‌نشده از این مسیر قابل اصلاح‌اند.', 'error'); return; }
+      let modal = document.getElementById('modal-manual-voucher-correction');
+      if (!modal) {
+        modal = document.createElement('div'); modal.id = 'modal-manual-voucher-correction';
+        modal.className = 'fixed inset-0 z-[10060] bg-slate-950/60 p-3 flex items-center justify-center';
+        modal.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-4 space-y-3"><div class="flex justify-between items-center gap-2"><h3 id="mvc-title" class="font-black">اصلاح سند دستی</h3><button type="button" onclick="closeModal('modal-manual-voucher-correction')" class="px-3 py-2 rounded-lg bg-slate-100 font-bold">بستن</button></div><p class="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3">با ثبت اصلاح، سند قبلی حذف نمی‌شود؛ یک سند معکوس و سپس نسخه اصلاح‌شده صادر می‌شود. هر دو در دفتر روزنامه باقی می‌مانند.</p><label class="block text-xs font-bold">شرح سند جایگزین</label><input id="mvc-desc" class="touch-btn w-full border rounded-xl px-3"/><label class="block text-xs font-bold">تاریخ سند جایگزین (شمسی)</label><input id="mvc-date" class="touch-btn w-full border rounded-xl px-3"/><div class="flex justify-between items-center"><strong class="text-sm">ردیف‌های سند</strong><button type="button" onclick="addManualVoucherCorrectionLine()" class="px-3 py-2 rounded-lg bg-sky-100 text-sky-900 font-bold">افزودن ردیف</button></div><div id="manual-voucher-correction-lines" class="space-y-2"></div><div class="flex flex-wrap justify-end gap-2"><button type="button" onclick="closeModal('modal-manual-voucher-correction')" class="px-4 py-2 rounded-xl bg-slate-100 font-bold">انصراف</button><button type="button" onclick="saveManualVoucherCorrection()" class="px-4 py-2 rounded-xl bg-holoo-700 text-white font-bold">ثبت سند معکوس و نسخه اصلاحی</button></div></div>`;
+        document.body.appendChild(modal);
+      }
+      modal.dataset.voucherId = String(original.id);
+      document.getElementById('mvc-title').textContent = 'اصلاح سند دستی #' + faNum(original.id);
+      document.getElementById('mvc-desc').value = original.desc || '';
+      document.getElementById('mvc-date').value = getTodayJalaliDate();
+      const host = document.getElementById('manual-voucher-correction-lines'); host.innerHTML = '';
+      (original.lines || []).forEach(line => addManualVoucherCorrectionLine(line));
+      openModal('modal-manual-voucher-correction');
+    }
+
+    function saveManualVoucherCorrection() {
+      const modal = document.getElementById('modal-manual-voucher-correction');
+      const originalId = Number(modal?.dataset.voucherId);
+      const originalLive = (state.vouchers || []).find(item => Number(item.id) === originalId);
+      if (!originalLive || originalLive.sourceType !== 'manual_voucher' || originalLive.locked || originalLive.correctedByVoucherId) { showToast('سند برای اصلاح پیدا نشد یا وضعیت آن تغییر کرده است.', 'error'); return; }
+      const desc = document.getElementById('mvc-desc').value.trim();
+      const operationDate = document.getElementById('mvc-date').value.trim() || getTodayJalaliDate();
+      if (!desc || jalaliDateOrdinal(operationDate) === null) { showToast('شرح و تاریخ شمسی معتبر برای سند جایگزین الزامی است.', 'error'); return; }
+      const rows = Array.from(document.querySelectorAll('#manual-voucher-correction-lines .vc-line-row'));
+      const lines = rows.map(row => ({
+        code: row.querySelector('[data-vc-code]')?.value || '',
+        desc: row.querySelector('[data-vc-desc]')?.value.trim() || desc,
+        debit: Number(row.querySelector('[data-vc-debit]')?.value || 0),
+        credit: Number(row.querySelector('[data-vc-credit]')?.value || 0),
+        partyId: (originalLive.lines || []).find(line => String(line.code) === String(row.querySelector('[data-vc-code]')?.value))?.partyId ?? null
+      }));
+      if (lines.length < 2 || lines.some(line => !CHART_ACCOUNTS.some(account => String(account.code) === String(line.code)) || !Number.isFinite(line.debit) || !Number.isFinite(line.credit) || line.debit < 0 || line.credit < 0 || (line.debit > 0 && line.credit > 0) || (line.debit === 0 && line.credit === 0))) { showToast('حداقل دو ردیف معتبر با حساب موجود و فقط یک سمت مبلغ لازم است.', 'error'); return; }
+      const debitTotal = lines.reduce((sum, line) => sum + line.debit, 0);
+      const creditTotal = lines.reduce((sum, line) => sum + line.credit, 0);
+      if (debitTotal <= 0 || Math.abs(debitTotal - creditTotal) > 0.000001) { showToast('جمع بدهکار و بستانکار سند جایگزین باید برابر و بیشتر از صفر باشد.', 'error'); return; }
+      const before = state;
+      state = JSON.parse(JSON.stringify(state));
+      try {
+        const original = state.vouchers.find(item => Number(item.id) === originalId);
+        const correctionId = createStableId('voucher-correction');
+        const reversalLines = (original.lines || []).map(line => ({ ...line, desc: 'معکوس: ' + (line.desc || original.desc || ''), debit: Number(line.credit || 0), credit: Number(line.debit || 0) }));
+        const reversalId = postVoucher('سند معکوس اصلاح سند دستی #' + originalId, reversalLines, getTodayJalaliDate(), { type: 'manual_voucher_correction', id: correctionId, event: 'reversal', mode: 'manual', deferSave: true });
+        const replacementId = postVoucher(desc, lines, operationDate, { type: 'manual_voucher_correction', id: correctionId, event: 'replacement', mode: 'manual', deferSave: true });
+        original.correctedByVoucherId = replacementId; original.reversalVoucherId = reversalId; original.correctionCompletedAt = new Date().toISOString();
+        const replacement = state.vouchers.find(item => Number(item.id) === Number(replacementId));
+        if (replacement) replacement.correctsVoucherId = originalId;
+        const reversal = state.vouchers.find(item => Number(item.id) === Number(reversalId));
+        if (reversal) reversal.reversesVoucherId = originalId;
+        addAudit('اصلاح سند دستی #' + originalId + ' با سند جایگزین #' + replacementId, { mode: 'manual', sourceType: 'manual_voucher_correction', sourceId: correctionId, previous: { voucherId: originalId, description: originalLive.desc }, note: 'سند اولیه حفظ شد؛ سند معکوس و نسخه جایگزین در یک عملیات ثبت شدند.' });
+        saveState(); closeModal('modal-manual-voucher-correction'); renderAll(); setAccTab('journal');
+        showToast('سند معکوس و نسخه اصلاح‌شده با موفقیت ثبت شدند.', 'success');
+      } catch (error) {
+        state = before;
+        showToast('اصلاح سند انجام نشد و وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error');
+      }
+    }
     function saveManualVoucher() {
       const desc = document.getElementById('mv-desc').value.trim();
       const amt = Number(document.getElementById('mv-amount').value || 0);
