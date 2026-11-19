@@ -5868,6 +5868,7 @@
       const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
       const productBackups = [];
       const shipmentBackup = clone(shipment);
+      const auditBackup = clone(state.auditLogs || []);
       try {
         for (const entry of snapshot.products || []) {
           const product = (state.products || []).find(item => String(item.id) === String(entry.productId));
@@ -5922,9 +5923,6 @@
           { mode: 'automatic', sourceType: 'import' }
         );
         if (!saveState()) throw new Error('ذخیره عملیات برگشت در حافظه محلی ناموفق بود.');
-        renderImportsModule();
-        showToast('رسید انبار با snapshot بازیابی شد؛ سند مالی محموله تغییری نکرد.');
-        return true;
       } catch (error) {
         productBackups.forEach(backup => {
           Object.entries(backup.values).forEach(([key, value]) => {
@@ -5934,9 +5932,13 @@
         });
         Object.keys(shipment).forEach(key => { if (!Object.prototype.hasOwnProperty.call(shipmentBackup, key)) delete shipment[key]; });
         Object.assign(shipment, shipmentBackup);
+        state.auditLogs = auditBackup;
         showToast('برگشت رسید انجام نشد و تغییرات حافظه بازگردانده شد: ' + (error?.message || ''), 'error');
         return false;
       }
+      renderImportsModule();
+      showToast('رسید انبار با snapshot بازیابی شد؛ سند مالی محموله تغییری نکرد.');
+      return true;
     }
 
     function requestImportReceiptCorrection(importId) {
