@@ -5118,16 +5118,16 @@
           const current = roots.get(rootId);
           if (!current || String(item.warehouseId) === String(warehouseId)) roots.set(rootId, item);
         });
-        options = [...roots.entries()].map(([rootId, product]) => ({
-          value: rootId,
-          product: (state.products || []).find(item =>
+        options = [...roots.entries()].map(([rootId, product]) => {
+          const warehouseProduct = (state.products || []).find(item =>
             String(item.warehouseId) === String(warehouseId) &&
             String(item.baseProductId || item.id) === rootId
-          ) || product
-        }));
+          );
+          return { value: rootId, product: warehouseProduct || product, stock: Number(warehouseProduct?.stock || 0) };
+        });
       }
       select.innerHTML = options.map(option =>
-        `<option value="${window.escapeBankReconcileText(option.value)}">${window.escapeBankReconcileText(option.product.name)} (موجود در این انبار: ${faNum(option.product.stock || 0)} KG)</option>`
+        `<option value="${window.escapeBankReconcileText(option.value)}">${window.escapeBankReconcileText(option.product.name)} (موجود در این انبار: ${faNum(option.stock ?? option.product.stock ?? 0)} KG)</option>`
       ).join('');
       if (options.some(option => option.value === String(previous))) select.value = String(previous);
       else if (options.length) select.value = options[0].value;
