@@ -3717,6 +3717,7 @@
       }
       if (fromMethod === toMethod) return { ok: true, unchanged: true, updates: [], beforeValue: 0, afterValue: 0, delta: 0 };
       const updates = [];
+      const globalBatchIds = new Set();
       let beforeValue = 0;
       let afterValue = 0;
       for (const product of (Array.isArray(products) ? products : [])) {
@@ -3726,7 +3727,7 @@
           return { ok: false, reason: 'موجودی یا بهای خرید کالای «' + String(product?.name || product?.id || 'بدون نام') + '» معتبر نیست.' };
         }
         let batches = Array.isArray(product.batches) ? product.batches.map(batch => ({ ...batch })) : [];
-        if (stock > 0 && batches.length === 0) {
+        if (stock > 0 && batches.length === 0 && fromMethod === 'AVG') {
           batches = [{
             id: 'LEGACY-' + String(product.id),
             lot: product.lot || 'LEGACY',
@@ -3748,20 +3749,26 @@
           const id = String(batch?.id || '');
           const qty = Number(batch?.remainingQty ?? batch?.quantity ?? 0);
           const cost = Number(batch?.unitCost);
-          if (!id || seenBatchIds.has(id) || !Number.isFinite(qty) || qty < 0 || !Number.isFinite(cost) || cost < 0) {
+          if (!id || seenBatchIds.has(id) || globalBatchIds.has(id) || !Number.isFinite(qty) || qty < 0 || !Number.isFinite(cost) || cost < 0) {
             return { ok: false, reason: 'شناسه، مقدار یا بهای سری ساخت کالای «' + String(product?.name || product?.id || 'بدون نام') + '» ناقص یا نامعتبر است.' };
           }
           seenBatchIds.add(id);
+          globalBatchIds.add(id);
           tracked += qty;
           batchValue += qty * cost;
+          if (!Number.isFinite(tracked) || !Number.isFinite(batchValue)) {
+            return { ok: false, reason: 'ارزش یا مقدار سری‌های ساخت کالای «' + String(product?.name || product?.id || 'بدون نام') + '» از محدوده عددی معتبر خارج است.' };
+          }
         }
         if (Math.abs(stock - tracked) > 0.000001) {
           return { ok: false, reason: 'موجودی کالا «' + String(product?.name || product?.id || 'بدون نام') + '» با مجموع سری‌های ساخت برابر نیست؛ ابتدا مغایرت‌گیری کنید.' };
         }
         const currentValue = fromMethod === 'FIFO' ? batchValue : stock * buyPrice;
+        if (!Number.isFinite(currentValue)) return { ok: false, reason: 'ارزش فعلی موجودی کالا معتبر نیست.' };
         let nextBuyPrice = buyPrice;
         if (toMethod === 'AVG' && stock > 0) nextBuyPrice = Math.round(batchValue / stock);
         const nextValue = toMethod === 'FIFO' ? batchValue : stock * nextBuyPrice;
+        if (!Number.isFinite(nextValue)) return { ok: false, reason: 'ارزش موجودی پس از تغییر روش معتبر نیست.' };
         beforeValue += currentValue;
         afterValue += nextValue;
         updates.push({ productId: String(product.id), batches, buyPrice: nextBuyPrice });
@@ -4066,7 +4073,10 @@
         batches: Array.isArray(product.batches) ? product.batches : undefined,
         buyPrice: product.buyPrice
       }));
+      let localSnapshot = null;
       try {
+        const storageKeys = [STORE_KEY, LOCAL_UPDATED_KEY, OPERATION_SOURCE_SEQUENCE_KEY, CLOUD_OUTBOX_KEY];
+        localSnapshot = new Map(storageKeys.map(key => [key, localStorage.getItem(key)]));
         plan.updates.forEach(update => {
           const product = state.products.find(item => String(item.id) === update.productId);
           if (!product) throw new Error('کالا هنگام اعمال تغییر پیدا نشد؛ عملیات لغو شد.');
@@ -4074,7 +4084,7 @@
           product.buyPrice = update.buyPrice;
         });
         state.costingMethod = m;
-        saveState();
+        if (!saveState()) throw new Error('ذخیره محلی ناموفق بود.');
         renderInventoryModule();
         showToast('روش قیمت‌گذاری به ' + m + ' تغییر کرد. اختلاف ارزش برآوردی: ' + money(delta));
       } catch (error) {
@@ -4084,6 +4094,9 @@
           snapshot.product.buyPrice = snapshot.buyPrice;
         });
         state.costingMethod = currentMethod;
+        if (localSnapshot) localSnapshot.forEach((value, key) => {
+          try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (restoreError) { console.error('Costing switch rollback failed:', restoreError); }
+        });
         if (selector) selector.value = currentMethod;
         showToast('تغییر روش قیمت‌گذاری ذخیره نشد؛ وضعیت قبلی حفظ شد. ' + (error?.message || ''), 'error');
       }
