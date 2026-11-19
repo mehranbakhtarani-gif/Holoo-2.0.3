@@ -5978,17 +5978,17 @@
         : 'شناسه/وضعیت سند مالی از اطلاعات تاریخچه قابل تأیید نیست؛ این گزارش هیچ تغییری در سند ایجاد نمی‌کند.';
       const snapshotPanel = (snapshot, heading, reversal, preservedVoucher) => {
         if (!snapshot) return '<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">اطلاعات snapshot این رویداد ناقص یا در دسترس نیست.</div>';
-        const productRows = (Array.isArray(snapshot.products) ? snapshot.products : []).map(entry => {
+        const productRows = (Array.isArray(snapshot.products) ? snapshot.products : []).filter(Boolean).map(entry => {
           const stateBefore = entry && entry.state && typeof entry.state === 'object' ? entry.state : {};
           const product = (state.products || []).find(item => String(item.id) === String(entry.productId));
-          const name = product && product.name ? product.name : entry.productId;
+          const name = product && product.name ? product.name : (entry && entry.productId ? entry.productId : 'کالای نامشخص');
           const stock = Number(stateBefore.stock || 0);
           const price = Number(stateBefore.buyPrice || 0);
           const batches = Array.isArray(stateBefore.batches) ? stateBefore.batches.length : 0;
           const kardex = Array.isArray(stateBefore.kardex) ? stateBefore.kardex.length : 0;
-          return '<tr class="border-t"><td class="p-2">' + esc(name || '—') + '<div class="text-[10px] text-slate-500">' + esc(entry.productId || '') + '</div></td><td class="p-2 tabular-nums">' + faNum(stock) + ' KG</td><td class="p-2 tabular-nums">' + money(price) + '</td><td class="p-2 tabular-nums">' + faNum(batches) + '</td><td class="p-2 tabular-nums">' + faNum(kardex) + '</td></tr>';
+          return '<tr class="border-t"><td class="p-2">' + esc(name || '—') + '<div class="text-[10px] text-slate-500">' + esc(entry && entry.productId ? entry.productId : '') + '</div></td><td class="p-2 tabular-nums">' + faNum(stock) + ' KG</td><td class="p-2 tabular-nums">' + money(price) + '</td><td class="p-2 tabular-nums">' + faNum(batches) + '</td><td class="p-2 tabular-nums">' + faNum(kardex) + '</td></tr>';
         }).join('');
-        const itemRows = (Array.isArray(snapshot.items) ? snapshot.items : []).map(item =>
+        const itemRows = (Array.isArray(snapshot.items) ? snapshot.items : []).filter(Boolean).map(item =>
           '<span class="inline-block rounded-md bg-slate-100 px-2 py-1 m-0.5">' + esc(item.productId || 'کالا') + ' • ' + faNum(Number(item.quantityKg || 0)) + ' KG</span>'
         ).join('');
         const reversalDetails = reversal ? (
