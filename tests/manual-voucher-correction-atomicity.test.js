@@ -29,6 +29,7 @@ function makeHarness(saveResult) {
   const calls = { save: 0, closed: 0, rendered: 0, tab: 0, toasts: [] };
   const sandbox = {
     state: original,
+    prompt() { return 'اصلاح به دلیل اشتباه ثبت'; },
     CHART_ACCOUNTS: [{ code: '1101' }, { code: '4101' }],
     document: {
       getElementById(id) { return fields[id] || null; },
