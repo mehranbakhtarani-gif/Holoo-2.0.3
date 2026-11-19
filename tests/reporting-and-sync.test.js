@@ -32,7 +32,7 @@ async function test(name, fn) { await fn(); passed.push(name); }
 
 (async () => {
   await test('publishable Supabase keys are not sent as Bearer JWTs', () => {
-    const helper = html.match(/function cloudAuthHeaders\\(extra = \\{\\}\\) \\{[\\s\\S]*?\\n    \\}/)?.[0];
+    const helper = html.match(/function cloudAuthHeaders\(extra = \{\}\) \{[\s\S]*?\n    \}/)?.[0];
     assert.ok(helper, 'missing cloud auth header helper');
     const modernContext = vm.createContext({ cloudConfig: { key: 'sb_publishable_demo' } });
     vm.runInContext(helper, modernContext);
