@@ -225,6 +225,7 @@
       shipmentId: String(shipment.id),
       capturedAt: String(metadata.capturedAt || new Date().toISOString()),
       receivedDate: String(metadata.receivedDate || ''),
+      previousStatus: String(metadata.previousStatus || ''),
       actor: String(metadata.actor || ''),
       deviceId: String(metadata.deviceId || ''),
       costingMethod: String(metadata.costingMethod || ''),
@@ -233,7 +234,122 @@
     };
   }
 
-  const api = { normalizeItems, allocateImportExpenses, calculateLandedCost, calculateShipmentProfit, createReceiptSnapshot };
+  function getReceiptReversalBlockReason(shipment, products, invoices, vouchers) {
+    if (!shipment) return 'محموله وارداتی پیدا نشد.';
+    if (!shipment.postedToWh) return 'رسید این محموله در حال حاضر به انبار ثبت نشده است.';
+    const snapshot = shipment.receiptSnapshot;
+    if (!snapshot || Number(snapshot.schemaVersion) !== 1 || String(snapshot.shipmentId) !== String(shipment.id) || !snapshot.snapshotId) {
+      return 'snapshot معتبر و نسخه‌دار پیش از رسید برای این محموله وجود ندارد؛ رسیدهای قدیمی قابل برگشت خودکار نیستند.';
+    }
+    const registrationVoucher = (vouchers || []).find(voucher =>
+      voucher.sourceType === 'import' &&
+      String(voucher.sourceId) === String(shipment.id) &&
+      (voucher.sourceEvent || 'default') === 'registration'
+    );
+    if (!registrationVoucher) return 'سند ثبت مالی محموله پیدا نشد؛ برگشت فیزیکی رسید بدون تطبیق سند مجاز نیست.';
+    const items = normalizeItems(shipment);
+    if (!items.length || JSON.stringify(items) !== JSON.stringify(snapshot.items || [])) {
+      return 'اقلام محموله پس از ثبت رسید تغییر کرده‌اند یا با snapshot تطبیق ندارند.';
+    }
+    const productById = new Map((products || []).map(product => [String(product.id), product]));
+    const snapshotById = new Map((snapshot.products || []).map(entry => [String(entry.productId), entry]));
+    const itemsByProduct = new Map();
+    items.forEach(item => {
+      const key = String(item.productId);
+      if (!itemsByProduct.has(key)) itemsByProduct.set(key, []);
+      itemsByProduct.get(key).push(item);
+    });
+    const sourceBatchIds = new Set();
+    for (const [productId, productItems] of itemsByProduct) {
+      const product = productById.get(productId);
+      const before = snapshotById.get(productId)?.state;
+      if (!product || !before || String(before.id) !== productId) {
+        return 'snapshot یا کالای متناظر برای ' + productId + ' کامل نیست.';
+      }
+      const currentBatches = Array.isArray(product.batches) ? product.batches : [];
+      const beforeBatches = Array.isArray(before.batches) ? before.batches : [];
+      const currentKardex = Array.isArray(product.kardex) ? product.kardex : [];
+      const beforeKardex = Array.isArray(before.kardex) ? before.kardex : [];
+      const receiptRows = [];
+      let expectedStock = Number(before.stock || 0);
+      let expectedBuyPrice = Number(before.buyPrice || 0);
+      for (const item of productItems) {
+        const qty = Number(item.quantityKg || 0);
+        const rows = currentKardex.filter(row =>
+          String(row.batchRef || '') === String(shipment.id) &&
+          String(row.sourceItemId || '') === String(item.id) &&
+          String(row.doc || '').includes(String(shipment.id)) &&
+          Number(row.inQty || 0) > 0
+        );
+        const batches = currentBatches.filter(batch =>
+          String(batch.sourceType || '') === 'import' &&
+          String(batch.sourceRef || '') === String(shipment.id) &&
+          String(batch.sourceItemId || '') === String(item.id)
+        );
+        if (rows.length !== 1 || batches.length !== 1) {
+          return 'ردیف کاردکس یا بچ وارداتی برای قلم ' + item.id + ' یکتا نیست.';
+        }
+        const batch = batches[0];
+        if (Math.abs(Number(rows[0].inQty || 0) - qty) > 0.000001 ||
+            Math.abs(Number(batch.quantity || 0) - qty) > 0.000001 ||
+            Math.abs(Number(batch.remainingQty || 0) - qty) > 0.000001) {
+          return 'بخشی از موجودی قلم ' + item.id + ' مصرف، منتقل یا تغییر داده شده است.';
+        }
+        sourceBatchIds.add(String(batch.id));
+        receiptRows.push(rows[0]);
+        const itemCost = Number(item.landedCostRial ?? (qty * Number(item.landedCostPerKg ?? shipment.landedCostPerKg ?? 0)));
+        if (snapshot.costingMethod === 'AVG') {
+          expectedBuyPrice = Math.round(((expectedStock * expectedBuyPrice) + itemCost) / (expectedStock + qty));
+        }
+        expectedStock += qty;
+      }
+      const receiptRowIndexes = receiptRows.map(row => currentKardex.indexOf(row));
+      if (receiptRowIndexes.some(index => index < 0)) return 'ردیف کاردکس رسید قابل بازیابی نیست.';
+      const firstReceiptIndex = Math.min(...receiptRowIndexes);
+      if (firstReceiptIndex !== beforeKardex.length ||
+          currentKardex.length !== beforeKardex.length + receiptRows.length ||
+          JSON.stringify(currentKardex.slice(0, beforeKardex.length)) !== JSON.stringify(beforeKardex)) {
+        return 'پس از رسید، گردش دیگری در کاردکس ثبت شده یا سابقه قبلی تغییر کرده است.';
+      }
+      if (JSON.stringify(currentBatches.filter(batch => !sourceBatchIds.has(String(batch.id)))) !== JSON.stringify(beforeBatches)) {
+        return 'بچ‌های قبلی کالا پس از رسید تغییر کرده‌اند؛ بازیابی snapshot می‌تواند عملیات دیگری را حذف کند.';
+      }
+      if (Math.abs(Number(product.stock || 0) - expectedStock) > 0.000001 ||
+          Math.abs(Number(product.buyPrice || 0) - expectedBuyPrice) > 0.000001 ||
+          Number(product.lastMoveDays || 0) !== 0) {
+        return 'موجودی یا بهای کالا با اثر مورد انتظار همین رسید تطبیق ندارد.';
+      }
+    }
+    const allBatches = (products || []).flatMap(product =>
+      (Array.isArray(product.batches) ? product.batches : []).map(batch => ({ product, batch }))
+    );
+    const descendants = new Set(sourceBatchIds);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      allBatches.forEach(entry => {
+        const parentId = String(entry.batch.sourceBatchId || '');
+        if (parentId && descendants.has(parentId) && !descendants.has(String(entry.batch.id))) {
+          descendants.add(String(entry.batch.id));
+          grew = true;
+        }
+      });
+    }
+    if (descendants.size !== sourceBatchIds.size) return 'برای بچ‌های رسید، بچ انتقالی وابسته وجود دارد.';
+    const invoiceReference = (invoices || []).some(invoice =>
+      (invoice.items || []).some(line =>
+        [...(line.fifoAllocations || []), ...(line.fifoReturnedAllocations || [])]
+          .some(allocation => descendants.has(String(allocation.batchId || '')))
+      )
+    );
+    if (invoiceReference) return 'حداقل یک فاکتور به بچ‌های رسید ارجاع داده است؛ برگشت متوقف شد.';
+    if (snapshot.costingMethod !== 'AVG' && snapshot.costingMethod !== 'FIFO') {
+      return 'روش قیمت‌گذاری ثبت‌شده در snapshot معتبر نیست.';
+    }
+    return null;
+  }
+
+  const api = { normalizeItems, allocateImportExpenses, calculateLandedCost, calculateShipmentProfit, createReceiptSnapshot, getReceiptReversalBlockReason };
   root.HolooImportDomain = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
