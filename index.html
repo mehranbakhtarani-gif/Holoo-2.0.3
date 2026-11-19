@@ -8994,6 +8994,7 @@
       const c = state.checks.find(x => String(x.id) === String(id));
       if (!c) return;
       if (!['cleared', 'bounced', 'endorsed', 'voided'].includes(st)) { showToast('وضعیت انتخاب‌شده معتبر نیست.', 'error'); return; }
+      if (st === 'endorsed') { showToast('واگذاری بدون تعیین ذی‌نفع و صدور سند انتقال مجاز نیست؛ وضعیت چک تغییر نکرد.', 'error'); return; }
       if (!['in_progress', 'overdue'].includes(c.status)) { showToast('این چک قبلاً تعیین‌تکلیف شده است؛ ثبت سند تکراری مجاز نیست.', 'error'); return; }
       const amount = Number(c.amount || 0);
       if (!Number.isFinite(amount) || amount <= 0) { showToast('مبلغ چک معتبر نیست.', 'error'); return; }
