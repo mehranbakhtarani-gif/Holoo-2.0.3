@@ -57,4 +57,5 @@ jobs:
           node tests/invoice-correction.test.js
           node tests/treasury-check-correction.test.js
           node tests/voucher-correction-review.test.js
+          node tests/invoice-return-correction-review.test.js
           node tests/full-fiscal-period.integration.test.js

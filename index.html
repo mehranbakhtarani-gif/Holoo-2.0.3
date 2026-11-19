@@ -4944,6 +4944,7 @@
             <span class="font-black text-sm tabular-nums">${money(inv.grandTotal)}</span>
             <div class="flex flex-wrap gap-1.5">
               ${inv.status !== 'cancelled' ? `<button onclick="openPartialReturnModal(${inv.id})" class="bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-1.5 rounded-xl font-bold">↩️ برگشت جزئی</button>` : ''}
+              ${(inv.returnRefs || []).map(ref => `<button onclick="requestInvoiceReturnCorrection(${inv.id}, '${String(ref.id).replace(/'/g, '')}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-xl font-bold">✏️ بررسی اصلاح برگشت ${escapeKardexText(ref.id)}</button>`).join('')}
               ${canCorrectInvoice(inv) ? `<button onclick="openInvoiceCorrection(${inv.id})" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-xl font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}
               ${inv.status !== 'cancelled' ? `<button onclick="cancelInvoice(${inv.id})" class="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1.5 rounded-xl font-bold">✕ ابطال</button>` : ''}
               <button onclick="openShareInvoice(${inv.id})" class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1.5 rounded-xl font-bold">📤 ارسال</button>
@@ -4952,6 +4953,27 @@
           </div>
         </div>
       `).join('');
+    }
+
+    function getInvoiceReturnCorrectionBlockReason(inv, returnRef) {
+      if (!inv || !returnRef || !(inv.returnRefs || []).some(ref => String(ref.id) === String(returnRef.id))) return 'سابقه برگشت پیدا نشد.';
+      const voucher = (state.vouchers || []).find(item =>
+        item.sourceType === 'invoice_return' && String(item.sourceId) === String(returnRef.id) &&
+        String(item.sourceEvent) === String(inv.id)
+      );
+      if (!voucher) return 'سند حسابداری متناظر برگشت پیدا نشد؛ اصلاح متوقف شد تا سند ناقص ایجاد نشود.';
+      if (voucher.locked) return 'سند حسابداری برگشت قفل است؛ اصلاح مستقیم مجاز نیست.';
+      const credit = (state.treasuryTxs || []).find(tx => String(tx.sourceReturnId || '') === String(returnRef.id));
+      if (credit && Number(credit.remainingAmount ?? credit.amount ?? 0) < Number(credit.amount || 0)) return 'اعتبار ناشی از برگشت مصرف یا تخصیص یافته است؛ ابتدا باید گردش اعتبار تعیین‌تکلیف شود.';
+      if (credit && Number(credit.remainingAmount ?? credit.amount ?? 0) > 0) return 'برای برگشت، اعتبار طرف‌حساب ایجاد شده است؛ اصلاح باید هم‌زمان اعتبار و سند حسابداری را معکوس کند.';
+      return 'برگشت، موجودی و بچ‌های FIFO، کاردکس، مالیات و سند حسابداری را هم‌زمان تغییر داده است؛ اصلاح مستقل این ردیف امن نیست و باید در فرایند اصلاح وابستگی‌ها انجام شود.';
+    }
+
+    function requestInvoiceReturnCorrection(invoiceId, returnId) {
+      const inv = (state.invoices || []).find(item => Number(item.id) === Number(invoiceId));
+      const returnRef = (inv?.returnRefs || []).find(item => String(item.id) === String(returnId));
+      const reason = getInvoiceReturnCorrectionBlockReason(inv, returnRef);
+      showToast('بررسی اصلاح برگشت ' + returnId + ': ' + reason, 'warning');
     }
 
     function openPartialReturnModal(invId) {
