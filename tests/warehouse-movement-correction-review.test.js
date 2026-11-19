@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const html = fs.readFileSync('index.html', 'utf8');
 
 assert.ok(html.includes('function getWarehouseMovementCorrectionBlockReason(product, movement)'));
+assert.ok(html.includes('TR-\\\\d+-[a-z0-9]+') === false, 'transfer ID regex must not match a literal backslash');
+
 assert.ok(html.includes('function requestWarehouseMovementCorrection(productId, movementIndex)'));
 assert.ok(html.includes('دو سمت خروج و ورود انتقال به‌صورت یکتا پیدا نشد'));
 assert.ok(html.includes('بچ‌های FIFO، دو کاردکس و موجودی هر دو انبار'));
