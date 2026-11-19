@@ -5,7 +5,10 @@ const assert = require('node:assert/strict');
 const html = fs.readFileSync('index.html', 'utf8');
 const start = html.indexOf('    function getBankReconciliationCandidates(item)');
 const end = html.indexOf('    function confirmBankReconcileMatch(itemId, voucherId)', start);
+const helperStart = html.indexOf('    function isBankOpeningVoucher(voucher)', end);
+const helperEnd = html.indexOf('    function getBankAccountBookBalances()', helperStart);
 assert.ok(start >= 0 && end > start, 'reconciliation candidate function must exist');
+assert.ok(helperStart > end && helperEnd > helperStart, 'bank opening voucher classifier must exist');
 
 const state = {
   bankAccounts: [
@@ -23,7 +26,7 @@ const state = {
 };
 const sandbox = { state, bankTxDateKey: value => /^1405\/\d{2}\/\d{2}$/.test(value) ? value : null };
 vm.createContext(sandbox);
-vm.runInContext(html.slice(start, end) + '; this.getBankReconciliationCandidates = getBankReconciliationCandidates;', sandbox);
+vm.runInContext(html.slice(start, end) + html.slice(helperStart, helperEnd) + '; this.getBankReconciliationCandidates = getBankReconciliationCandidates;', sandbox);
 
 const a = { id: 'A-TX', date: '1405/09/02', amount: 100, bankAccountId: 'BANK-A' };
 const b = { id: 'B-TX', date: '1405/09/02', amount: 100, bankAccountId: 'BANK-B' };
