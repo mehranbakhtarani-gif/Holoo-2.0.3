@@ -2353,7 +2353,8 @@
         vouchers: [],
         accountCatalog: [],
         approvals: [],
-        auditLogs: []
+        auditLogs: [],
+        accountingPeriodLocks: []
       };
     }
 
@@ -2624,6 +2625,7 @@
       } catch (e) { return defaultState(); }
     })();
 
+    if (!Array.isArray(state.accountingPeriodLocks)) state.accountingPeriodLocks = [];
     if (!Array.isArray(state.checks)) state.checks = [];
     if (!Array.isArray(state.guarantees)) state.guarantees = [];
     if (!Array.isArray(state.payableCommitments)) state.payableCommitments = [];
@@ -2681,7 +2683,7 @@
     const SYNC_ENTITY_COLLECTIONS = [
       'capitalPlans', 'warehouses', 'products', 'parties', 'invoices', 'orders', 'imports', 'fxCommitments',
       'bankAccounts', 'checks', 'guarantees', 'payableCommitments', 'treasuryTxs', 'bankReconcileItems',
-      'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits'
+      'employees', 'payrollRuns', 'fixedAssets', 'depreciationEntries', 'vouchers', 'accountCatalog', 'approvals', 'auditLogs', 'customUnits', 'accountingPeriodLocks'
     ];
     let lastSavedState = JSON.parse(JSON.stringify(state));
     // آخرین رویداد حسابرسی که برای یک عملیات ثبت شده؛ از تکرار خلاصهٔ قدیمی در ذخیره‌های بعدی جلوگیری می‌کند.
