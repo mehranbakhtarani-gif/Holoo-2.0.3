@@ -6350,13 +6350,13 @@
         '</div>'
       ).join('');
       const openingBalance = bankBalances.openingBalanceLines.length
-        ? '<details class="rounded-lg bg-sky-900/30 p-2 text-sky-100"><summary class="font-bold cursor-pointer flex flex-wrap items-center justify-between gap-2"><span>موجودی افتتاحیه بانک‌ها — جدا از گردش‌های بانکی</span><span class="tabular-nums">مانده افتتاحیه: ' + money(bankBalances.openingNet) + '</span></summary><div class="text-xs mt-2">این مبلغ در مانده افتتاحیه حسابداری ثبت شده و به‌تنهایی مشخص نمی‌کند سهم هر بانک چقدر است؛ در جمع گردش‌های فاقد شناسه محاسبه نمی‌شود.</div><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.openingBalanceLines, 'opening') + '</div></details>'
+        ? '<details class="rounded-lg bg-sky-900/30 p-2 text-sky-100"><summary onclick="event.preventDefault(); this.parentElement.open = !this.parentElement.open;" class="font-bold cursor-pointer flex flex-wrap items-center justify-between gap-2"><span>موجودی افتتاحیه بانک‌ها — جدا از گردش‌های بانکی</span><span class="tabular-nums">مانده افتتاحیه: ' + money(bankBalances.openingNet) + '</span></summary><div class="text-xs mt-2">این مبلغ در مانده افتتاحیه حسابداری ثبت شده و به‌تنهایی مشخص نمی‌کند سهم هر بانک چقدر است؛ در جمع گردش‌های فاقد شناسه محاسبه نمی‌شود.</div><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.openingBalanceLines, 'opening') + '</div></details>'
         : '';
       const unassigned = bankBalances.unassignedLines.length
-        ? '<details class="rounded-lg bg-amber-900/30 p-2 text-amber-100"><summary class="font-bold cursor-pointer">گردش‌های فاقد شناسه حساب بانکی — ' + faNum(bankBalances.unassignedLines.length) + ' ردیف | مانده ' + money(bankBalances.unassignedNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unassignedLines, 'unassigned') + '</div></details>'
+        ? '<details class="rounded-lg bg-amber-900/30 p-2 text-amber-100"><summary onclick="event.preventDefault(); this.parentElement.open = !this.parentElement.open;" class="font-bold cursor-pointer">گردش‌های فاقد شناسه حساب بانکی — ' + faNum(bankBalances.unassignedLines.length) + ' ردیف | مانده ' + money(bankBalances.unassignedNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unassignedLines, 'unassigned') + '</div></details>'
         : '';
       const unknown = bankBalances.unknownLines.length
-        ? '<details class="rounded-lg bg-rose-900/30 p-2 text-rose-100"><summary class="font-bold cursor-pointer">گردش‌های دارای شناسه حساب ناشناخته — ' + faNum(bankBalances.unknownLines.length) + ' ردیف | مانده ' + money(bankBalances.unknownNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unknownLines, 'unknown') + '</div></details>'
+        ? '<details class="rounded-lg bg-rose-900/30 p-2 text-rose-100"><summary onclick="event.preventDefault(); this.parentElement.open = !this.parentElement.open;" class="font-bold cursor-pointer">گردش‌های دارای شناسه حساب ناشناخته — ' + faNum(bankBalances.unknownLines.length) + ' ردیف | مانده ' + money(bankBalances.unknownNet) + '</summary><div class="mt-2 space-y-2">' + renderUnassignedBankLines(bankBalances.unknownLines, 'unknown') + '</div></details>'
         : '';
       const invalidBankWarning = bankBalances.invalidBankLines
         ? `<div class="col-span-full rounded-lg bg-amber-900/30 p-2 text-amber-200">توجه: ${faNum(bankBalances.invalidBankLines)} ردیف حساب بانکی به دلیل مبلغ نامعتبر، منفی یا ثبت هم‌زمان بدهکار و بستانکار در مانده دفتری محاسبه نشده است.</div>`
@@ -6373,7 +6373,7 @@
         const candidates = linked ? [] : getBankReconciliationCandidates(r);
         const reviewCandidates = !linked ? getBankReconciliationReviewCandidates(r) : [];
         const reviewHtml = !linked
-          ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="text-xs font-bold text-amber-900 cursor-pointer">🔎 بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار' + (reviewCandidates.length ? ' (' + faNum(reviewCandidates.length) + ')' : '') + '</summary><div class="mt-2 space-y-2">' +
+          ? '<details class="w-full mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><summary onclick="event.preventDefault(); this.parentElement.open = !this.parentElement.open;" class="text-xs font-bold text-amber-900 cursor-pointer">🔎 بررسی اسناد نزدیک — فقط پیشنهاد، بدون اتصال خودکار' + (reviewCandidates.length ? ' (' + faNum(reviewCandidates.length) + ')' : '') + '</summary><div class="mt-2 space-y-2">' +
             (reviewCandidates.length
               ? reviewCandidates.map(v => '<div class="rounded border bg-white p-2 text-xs"><strong>سند #' + faNum(v.id) + '</strong> — ' + window.escapeBankReconcileText(v.desc) +
                 '<div>تاریخ سند: ' + faNum(v.date) + ' | بدهکار بانک: ' + money(v.debit) + ' | بستانکار بانک: ' + money(v.credit) + '</div>' +
