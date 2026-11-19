@@ -27,6 +27,7 @@ jobs:
           node tests/stocktaking-atomicity.test.js
           node tests/warehouse-stagnant-days.test.js
           node tests/warehouse-batch-metadata.test.js
+          node tests/multi-warehouse-reconciliation.test.js
           node tests/aging-report.test.js
           node tests/profit-loss-report.test.js
           node tests/balance-sheet-report.test.js
