@@ -38,11 +38,11 @@ function createContext({ saveResult = true } = {}) {
       auditLogs: []
     },
     getTodayJalaliDate() { return '1405/08/28'; },
-    addAudit(message) { this.state.auditLogs.push(message); },
     saveState() { return saveResult; },
-    renderAccountingModule() {},
-    showToast(message, type) { this.lastToast = { message, type }; }
+    renderAccountingModule() {}
   };
+  sandbox.addAudit = message => sandbox.state.auditLogs.push(message);
+  sandbox.showToast = (message, type) => { sandbox.lastToast = { message, type }; };
   vm.createContext(sandbox);
   for (const name of [
     'jalaliDateOrdinal',
@@ -84,7 +84,7 @@ function createContext({ saveResult = true } = {}) {
   sandbox.__loaded_closeFiscalYear();
   const close = sandbox.state.vouchers.find(voucher =>
     voucher.sourceType === 'fiscal_year_close' && voucher.sourceId === '1404' && voucher.sourceEvent === 'closing');
-  assert.ok(close, 'closing voucher must be created');
+  assert.ok(close, 'closing voucher must be created: ' + (sandbox.lastToast?.message || 'no toast'));
   assert.equal(close.locked, true);
   assert.equal(close.date, sandbox.__loaded_getFiscalYearEndDate('1404'));
   assert.equal(sandbox.state.auditLogs.length, 2);
