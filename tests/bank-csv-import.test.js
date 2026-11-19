@@ -49,6 +49,7 @@ const integration = load({
   showToast(message,type){messages.push({message,type});},faNum:String
 });
 integration.parseBankCSV();
+console.log('CSV DEBUG', JSON.stringify({ items: state.bankReconcileItems, messages }));
 assert.equal(state.bankReconcileItems.length, 3);
 assert.equal(state.bankReconcileItems[0].ref,'REF-3');
 assert.equal(state.bankReconcileItems[0].desc,'شرح چند\nخطی');
