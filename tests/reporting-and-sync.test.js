@@ -18,7 +18,7 @@ function functionSource(name) {
 function load(name, context) {
   const sandbox = { ...context, fetchWithTimeout: context.fetchWithTimeout || ((url, options) => context.fetch(url, options)) };
   vm.createContext(sandbox);
-  vm.runInContext(functionSource(name) + `; this.__fn = ${name};`, sandbox);
+  vm.runInContext(functionSource('cloudAuthHeaders') + '\n' + functionSource(name) + `; this.__fn = ${name};`, sandbox);
   return sandbox.__fn;
 }
 const passed = [];
