@@ -10977,10 +10977,20 @@
         window.location.reload();
       });
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
           .then(reg => {
             console.info('Holoo offline worker registered:', reg.scope);
+            // Check the worker script on every app startup so installed PWAs do not stay on an old shell.
+            reg.update().catch(err => console.debug('بررسی به‌روزرسانی PWA فعلاً انجام نشد:', err));
             if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            reg.addEventListener('updatefound', () => {
+              const installing = reg.installing;
+              if (installing) installing.addEventListener('statechange', () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.info('Holoo PWA update installed; activating new worker.');
+                }
+              });
+            });
           })
           .catch(err => console.error('ثبت حالت آفلاین ناموفق بود:', err));
       });
