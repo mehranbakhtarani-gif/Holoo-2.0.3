@@ -10,10 +10,10 @@ function extract(startMarker, endMarker, sandbox, exportName, includeBankOpening
   assert.ok(start >= 0 && end > start, `missing source block: ${startMarker}`);
   let source = html.slice(start, end);
   if (includeBankOpeningHelper) {
-    const helperStart = html.indexOf('    function isBankOpeningVoucher(voucher)', end);
+    const helperStart = html.indexOf('    function isBankOpeningVoucher(voucher)');
     const helperEnd = html.indexOf('    function getBankAccountBookBalances()', helperStart);
-    assert.ok(helperStart > end && helperEnd > helperStart, 'bank opening voucher classifier must exist');
-    source += html.slice(helperStart, helperEnd);
+    assert.ok(helperStart >= 0 && helperEnd > helperStart, 'bank opening voucher classifier must exist');
+    source = html.slice(helperStart, helperEnd) + source;
   }
   vm.createContext(sandbox);
   vm.runInContext(source + `; this.${exportName} = ${exportName};`, sandbox);
