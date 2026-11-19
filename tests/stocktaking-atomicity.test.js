@@ -66,7 +66,7 @@ function fixture() {
 }
 const entries = [
   { productId: 'P1', rawValue: '8' },
-  { productId: 'P2', rawValue: '7' }
+  { productId: 'P2', rawValue: '7', rawUnitCost: '8' }
 ];
 
 const original = fixture();
