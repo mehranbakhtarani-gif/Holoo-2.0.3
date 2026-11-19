@@ -9288,6 +9288,7 @@
     }
 
     function computeCheckRas() {
+      const rasPreCommitSnapshot = JSON.parse(JSON.stringify(state));
       const today = jalaliDateOrdinal(getTodayJalaliDate());
       const groups = [
         { key: 'receive', label: 'دریافتنی' },
@@ -9315,7 +9316,13 @@
           (average === null ? '؛ راس قابل محاسبه نیست' : '؛ راس وزنی ' + (average < 0 ? faNum(Math.abs(average)) + ' روز گذشته' : faNum(average) + ' روز آینده')) +
           (invalidDates ? '؛ ' + faNum(invalidDates) + ' چک با تاریخ/مبلغ نامعتبر' : ''));
       });
-      if (changed) { addAudit('به‌روزرسانی وضعیت سررسید چک‌ها هنگام راس‌گیری یا بازکردن خزانه'); saveState(); }
+      if (changed) {
+        addAudit('به‌روزرسانی وضعیت سررسید چک‌ها هنگام راس‌گیری یا بازکردن خزانه');
+        if (!saveState()) {
+          state = rasPreCommitSnapshot;
+          showToast('ذخیره تغییرات سررسید چک‌ها ناموفق بود؛ وضعیت‌ها و سابقه حسابرسی بازگردانده شدند.', 'error');
+        }
+      }
       b.classList.remove('hidden');
       b.textContent = '🧮 راس‌گیری بر اساس تاریخ واقعی سررسید: ' + reports.join(' | ');
     }
