@@ -14,7 +14,7 @@ function extract(name, endMarker) {
   return html.slice(start, end);
 }
 function load(source, fnName, context) {
-  const sandbox = { jalaliDateOrdinal: () => 1, ...context };
+  const sandbox = { jalaliDateOrdinal: () => 1, normalizeLedgerDate: value => String(value || '1405/08/29').replace(/-/g, '/'), getAccountingPeriodLockForDate: () => null, getFiscalYearCloseRecord: () => null, ...context };
   vm.createContext(sandbox);
   vm.runInContext(source + `; this.__fn = ${fnName};`, sandbox);
   return sandbox.__fn;
