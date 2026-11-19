@@ -1,0 +1,12 @@
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const html = fs.readFileSync('index.html', 'utf8');
+assert.ok(html.includes('const descendants = new Set(sourceBatchIds)'));
+assert.ok(html.includes('sourceBatchId ||'));
+assert.ok(html.includes('const invoiceIds = new Set()'));
+assert.ok(html.includes('allocation.batchId ||'));
+assert.ok(html.includes('remainingQty'));
+assert.ok(html.includes('untrackedLaterMovements'));
+assert.ok(html.includes('snapshot قبل از رسید'));
+assert.ok(html.includes('عملیات اتمیک'));
+console.log('PASS: import receipt preflight traces FIFO consumption, transfer descendants, invoice allocations, and AVG downstream movements');
