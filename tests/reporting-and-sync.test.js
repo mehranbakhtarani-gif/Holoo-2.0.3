@@ -32,12 +32,16 @@ async function test(name, fn) { await fn(); passed.push(name); }
 
 (async () => {
   await test('publishable Supabase keys are not sent as Bearer JWTs', () => {
-    const modern = load('cloudAuthHeaders', { cloudConfig: { key: 'sb_publishable_demo' } });
-    const modernHeaders = modern({ 'Content-Type': 'application/json' });
+    const helper = html.match(/function cloudAuthHeaders\\(extra = \\{\\}\\) \\{[\\s\\S]*?\\n    \\}/)?.[0];
+    assert.ok(helper, 'missing cloud auth header helper');
+    const modernContext = vm.createContext({ cloudConfig: { key: 'sb_publishable_demo' } });
+    vm.runInContext(helper, modernContext);
+    const modernHeaders = vm.runInContext("cloudAuthHeaders({ 'Content-Type': 'application/json' })", modernContext);
     assert.equal(modernHeaders.apikey, 'sb_publishable_demo');
     assert.equal(Object.hasOwn(modernHeaders, 'Authorization'), false);
-    const legacy = load('cloudAuthHeaders', { cloudConfig: { key: 'eyJ.legacy.anon' } });
-    const legacyHeaders = legacy();
+    const legacyContext = vm.createContext({ cloudConfig: { key: 'eyJ.legacy.anon' } });
+    vm.runInContext(helper, legacyContext);
+    const legacyHeaders = vm.runInContext('cloudAuthHeaders()', legacyContext);
     assert.equal(legacyHeaders.apikey, 'eyJ.legacy.anon');
     assert.equal(legacyHeaders.Authorization, 'Bearer eyJ.legacy.anon');
   });
