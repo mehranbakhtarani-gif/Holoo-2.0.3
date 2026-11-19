@@ -826,7 +826,7 @@
               <h2 class="text-base font-black text-slate-900">پیش‌فاکتورها و سفارشات فروش مشتریان</h2>
               <p class="text-xs text-slate-500">ثبت سفارش با قیمت پیشنهادی، کنترل موجودی انبار و تبدیل یک‌کلیکی به فاکتور فروش</p>
             </div>
-            <button onclick="openModal('modal-new-order')" class="touch-btn bg-holoo-700 text-white px-4 rounded-xl text-xs font-extrabold">+ ثبت پیش‌فاکتور / سفارش جدید</button>
+            <button onclick="openOrderModal()" class="touch-btn bg-holoo-700 text-white px-4 rounded-xl text-xs font-extrabold">+ ثبت پیش‌فاکتور / سفارش جدید</button>
           </div>
           <div id="orders-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
         </section>
@@ -1429,7 +1429,7 @@
 
   <div id="modal-new-order" class="hidden fixed inset-0 bg-slate-900/75 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-3xl w-full max-w-md p-4 space-y-2.5 text-xs">
-      <div class="flex justify-between items-center border-b pb-2"><h3 class="font-black text-sm">📋 ثبت پیش‌فاکتور و سفارش فروش</h3><button onclick="closeModal('modal-new-order')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
+      <div class="flex justify-between items-center border-b pb-2"><h3 id="ord-modal-title" class="font-black text-sm">📋 ثبت پیش‌فاکتور و سفارش فروش</h3><button onclick="editingOrderId=null; closeModal('modal-new-order')" class="w-8 h-8 rounded-lg bg-slate-100 font-bold">✕</button></div>
       <select id="ord-party" class="touch-btn w-full border rounded-xl px-2.5 font-bold"></select>
       <select id="ord-prod" class="touch-btn w-full border rounded-xl px-2.5 font-bold"></select>
       <div class="grid grid-cols-2 gap-2">
@@ -1437,7 +1437,7 @@
         <input type="number" id="ord-price" value="1650000" placeholder="قیمت پیشنهادی هر KG" class="touch-btn border rounded-xl px-2 tabular-nums" />
       </div>
       <input type="text" id="ord-terms" value="تحویل درب انبار تهران - چک ۳۰ روزه" class="touch-btn w-full border rounded-xl px-3" />
-      <button onclick="saveOrder()" class="touch-btn w-full bg-holoo-700 text-white font-extrabold rounded-xl">✔ ثبت سفارش مشتری</button>
+      <button id="ord-save-button" onclick="saveOrder()" class="touch-btn w-full bg-holoo-700 text-white font-extrabold rounded-xl">✔ ثبت سفارش مشتری</button>
     </div>
   </div>
 
@@ -5296,20 +5296,56 @@
             <div class="font-bold">${getPartyName(o.partyId)}</div>
             <div class="text-[11px] text-slate-600 tabular-nums">${p ? p.name : ''} — مقدار: <strong>${faNum(o.kg)} KG</strong> × ${money(o.price)}</div>
             <div class="text-[10px] ${stockOk ? 'text-emerald-700' : 'text-rose-700'} font-bold">${stockOk ? `✔ موجودی انبار کافی است (${faNum(p.stock)} KG)` : '⚠️ نیاز به تامین از محموله وارداتی'}</div>
-            <div class="flex justify-between items-center pt-2 border-t">
+            <div class="flex flex-wrap justify-between items-center pt-2 border-t gap-2">
               <strong class="tabular-nums">${money(o.kg * o.price)}</strong>
-              ${!o.status.includes('تکمیل') ? `<button onclick="convertOrderToInvoice('${o.id}')" class="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-bold">تبدیل به فاکتور فروش</button>` : ''}
+              <div class="flex gap-1.5">
+                ${!o.status.includes('تکمیل') ? `<button onclick="openOrderModal('${String(o.id).replace(/'/g, '&#39;')}')" class="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-xl font-bold">✏️ ویرایش</button><button onclick="convertOrderToInvoice('${o.id}')" class="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-bold">تبدیل به فاکتور فروش</button>` : '<span class="text-[10px] text-slate-500">سفارش تبدیل‌شده؛ ویرایش از روی فاکتور پیگیری شود.</span>'}
+              </div>
             </div>
           </div>
         `;
       }).join('');
     }
+    let editingOrderId = null;
+    function openOrderModal(orderId = null) {
+      editingOrderId = orderId === null ? null : String(orderId);
+      const order = editingOrderId === null ? null : (state.orders || []).find(item => String(item.id) === editingOrderId);
+      if (editingOrderId !== null && (!order || String(order.status || '').includes('تکمیل'))) {
+        showToast('این سفارش قابل ویرایش نیست؛ سفارش تبدیل‌شده باید از مسیر فاکتور اصلاح شود.', 'error'); return;
+      }
+      document.getElementById('ord-party').innerHTML = state.parties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      document.getElementById('ord-prod').innerHTML = state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      document.getElementById('ord-party').value = order?.partyId || state.parties[0]?.id || '';
+      document.getElementById('ord-prod').value = order?.productId || state.products[0]?.id || '';
+      document.getElementById('ord-qty').value = order?.kg ?? 1000;
+      document.getElementById('ord-price').value = order?.price ?? 1650000;
+      document.getElementById('ord-terms').value = order?.terms || 'تحویل درب انبار تهران - چک ۳۰ روزه';
+      document.getElementById('ord-modal-title').textContent = order ? '✏️ ویرایش پیش‌فاکتور / سفارش' : '📋 ثبت پیش‌فاکتور و سفارش فروش';
+      document.getElementById('ord-save-button').textContent = order ? '✔ ذخیره ویرایش سفارش' : '✔ ثبت سفارش مشتری';
+      openModal('modal-new-order');
+    }
     function saveOrder() {
+      const partyId = document.getElementById('ord-party').value, productId = document.getElementById('ord-prod').value;
+      const kg = Number(document.getElementById('ord-qty').value), price = Number(document.getElementById('ord-price').value);
+      const terms = document.getElementById('ord-terms').value.trim();
+      if (!state.parties.some(p => String(p.id) === String(partyId)) ||
+          !state.products.some(p => String(p.id) === String(productId)) ||
+          !Number.isFinite(kg) || kg <= 0 || !Number.isFinite(price) || price < 0 || !terms) {
+        showToast('طرف حساب، کالا، مقدار، قیمت و شرایط سفارش را معتبر وارد کنید.', 'error'); return;
+      }
+      if (editingOrderId !== null) {
+        const order = (state.orders || []).find(item => String(item.id) === editingOrderId);
+        if (!order || String(order.status || '').includes('تکمیل')) { showToast('سفارش دیگر قابل ویرایش نیست.', 'error'); return; }
+        const previous = { partyId: order.partyId, productId: order.productId, kg: order.kg, price: order.price, terms: order.terms };
+        Object.assign(order, { partyId, productId, kg, price, terms, updatedAt: new Date().toISOString() });
+        addAudit('ویرایش سفارش ' + order.id, { mode: 'manual', sourceType: 'sales_order', sourceId: order.id, previous });
+        editingOrderId = null;
+        saveState(); closeModal('modal-new-order'); renderAll(); showToast('ویرایش سفارش ذخیره شد؛ هیچ فاکتور یا سند حسابداری تغییر نکرد.');
+        return;
+      }
       state.orders.unshift({
         id: 'ORD-' + (501 + state.orders.length), date: getTodayJalaliDate(),
-        partyId: document.getElementById('ord-party').value, productId: document.getElementById('ord-prod').value,
-        kg: Number(document.getElementById('ord-qty').value || 1000), price: Number(document.getElementById('ord-price').value || 1650000),
-        terms: document.getElementById('ord-terms').value, status: 'باز (در انتظار تبدیل)'
+        partyId, productId, kg, price, terms, status: 'باز (در انتظار تبدیل)'
       });
       saveState(); closeModal('modal-new-order'); renderOrdersModule(); showToast('پیش‌فاکتور و سفارش مشتری ثبت شد.');
     }
