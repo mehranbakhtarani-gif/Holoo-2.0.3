@@ -239,5 +239,37 @@ test('party control reconciliation lists legacy rows with missing or unknown par
   assert.equal(JSON.stringify(vouchers), before);
 });
 
+
+
+// Bank reconciliation must require amount AND date, and opening vouchers need explicit identity.
+test('bank opening classification uses structured source metadata or a narrow legacy title', () => {
+  const source = section('function isBankOpeningVoucher(voucher)', 'function getBankAccountBookBalances()');
+  const isOpening = loadFunction(source, 'isBankOpeningVoucher', {});
+  assert.equal(isOpening({ sourceType: 'bank_account_opening', desc: 'هر عنوانی' }), true);
+  assert.equal(isOpening({ desc: 'موجودی افتتاحیه بانک ملت' }), true);
+  assert.equal(isOpening({ desc: 'پرداخت بابت خرید از بانک' }), false);
+  assert.equal(isOpening({ desc: 'سند عادی بانک و افتتاحیه قرارداد' }), false);
+});
+
+test('bank statement review requires exact amount and exact date together', () => {
+  const source = section('function getBankReconciliationReviewCandidates(item)', 'function confirmBankReconcileTreasuryMatch(');
+  const find = loadFunction(source, 'getBankReconciliationReviewCandidates', {
+    state: {
+      bankAccounts: [{ id: 'B1', type: 'bank' }],
+      bankReconcileItems: [],
+      accountCatalog: [],
+      vouchers: [{ id: 10, date: '1405/01/01', desc: 'سند بانکی', lines: [
+        { code: '1102', bankAccountId: 'B1', debit: 100, credit: 0 },
+        { code: '4101', debit: 0, credit: 100 }
+      ] }]
+    },
+    bankTxDateKey(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? String(value) : null; },
+    CHART_ACCOUNTS: [{ code: '1102', name: 'بانک' }, { code: '4101', name: 'فروش' }]
+  });
+  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 101, date: '1405/01/01' }).length, 0);
+  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 100, date: '1405/01/02' }).length, 0);
+  assert.equal(find({ id: 'R1', bankAccountId: 'B1', amount: 100, date: '1405/01/01' }).length, 1);
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
