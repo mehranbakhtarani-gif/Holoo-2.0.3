@@ -6456,6 +6456,10 @@
       const blockedPeriod = getAccountingPeriodLockForDate(date);
       if (blockedPeriod) { showToast('ثبت فاکتور در ' + blockedPeriod.label + ' ممنوع است؛ دوره قفل شده است.', 'error'); return; }
       const isInvoiceCorrection = invDraft.correctionOfInvoiceId !== undefined && invDraft.correctionOfInvoiceId !== null;
+      if (isInvoiceCorrection) {
+        const originalForDateCheck = (state.invoices || []).find(item => Number(item.id) === Number(invDraft.correctionOfInvoiceId));
+        if (!originalForDateCheck || jalaliDateOrdinal(date) < jalaliDateOrdinal(originalForDateCheck.date)) { showToast('تاریخ فاکتور اصلاحی نمی‌تواند قبل از تاریخ فاکتور اولیه باشد.', 'error'); return; }
+      }
       let correctionReason = '';
       if (isInvoiceCorrection) {
         correctionReason = String(prompt('علت اصلاح فاکتور #' + invDraft.correctionOfInvoiceId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || '').trim();
@@ -10942,6 +10946,10 @@
       const desc = document.getElementById('mvc-desc').value.trim();
       const operationDate = document.getElementById('mvc-date').value.trim() || getTodayJalaliDate();
       if (!desc || jalaliDateOrdinal(operationDate) === null) { showToast('شرح و تاریخ شمسی معتبر برای سند جایگزین الزامی است.', 'error'); return; }
+      const originalDate = originalLive.date || originalLive.operationDate;
+      if (jalaliDateOrdinal(operationDate) < jalaliDateOrdinal(originalDate)) { showToast('تاریخ سند جایگزین نمی‌تواند قبل از تاریخ سند اولیه باشد.', 'error'); return; }
+      const correctionReason = String(prompt('علت اصلاح سند دستی #' + originalId + ' را ثبت کنید؛ این علت در سابقه حسابرسی ذخیره می‌شود:') || '').trim();
+      if (correctionReason.length < 8) { showToast('برای اصلاح سند، درج علت حداقل ۸ نویسه‌ای الزامی است.', 'error'); return; }
       const rows = Array.from(document.querySelectorAll('#manual-voucher-correction-lines .vc-line-row'));
       const lines = rows.map(row => ({
         code: row.querySelector('[data-vc-code]')?.value || '',
@@ -10967,7 +10975,7 @@
         if (replacement) replacement.correctsVoucherId = originalId;
         const reversal = state.vouchers.find(item => Number(item.id) === Number(reversalId));
         if (reversal) reversal.reversesVoucherId = originalId;
-        addAudit('اصلاح سند دستی #' + originalId + ' با سند جایگزین #' + replacementId, { mode: 'manual', sourceType: 'manual_voucher_correction', sourceId: correctionId, previous: { voucherId: originalId, description: originalLive.desc }, note: 'سند اولیه حفظ شد؛ سند معکوس و نسخه جایگزین در یک عملیات ثبت شدند.' });
+        addAudit('اصلاح سند دستی #' + originalId + ' با سند جایگزین #' + replacementId, { mode: 'manual', sourceType: 'manual_voucher_correction', sourceId: correctionId, previous: { voucherId: originalId, description: originalLive.desc, date: originalDate }, relatedVoucherIds: [reversalId, replacementId], note: correctionReason, details: { reason: correctionReason, originalVoucherId: originalId, reversalVoucherId: reversalId, replacementVoucherId: replacementId, replacementDate: operationDate, actor: state.activeRole || 'mehran' } });
         if (!saveState()) throw new Error('ذخیره محلی انجام نشد؛ سند معکوس و نسخه جایگزین ثبت نشدند.');
         closeModal('modal-manual-voucher-correction'); renderAll(); setAccTab('journal');
         showToast('سند معکوس و نسخه اصلاح‌شده با موفقیت ثبت شدند.', 'success');
