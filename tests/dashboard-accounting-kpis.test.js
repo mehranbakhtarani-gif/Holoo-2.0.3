@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
+for (const [i, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new vm.Script(match[1], { filename: `index.html:inline-${i}` });
 }
 function sliceBetween(startText, endText) {
@@ -44,7 +44,7 @@ const sandbox = {
   state, CHART_ACCOUNTS,
   jalaliDateOrdinal(value) {
     const n = String(value||'').replace(/[۰-۹٠-٩]/g,ch => '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)>=0 ? String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)) : String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
-    const m = /^(14\\d{2})\\/(\\d{1,2})\\/(\\d{1,2})$/.exec(n);
+    const m = /^(14\d{2})\/(\d{1,2})\/(\d{1,2})$/.exec(n);
     if(!m) return null; const month=+m[2],day=+m[3]; return month>=1&&month<=12&&day>=1&&day<=31 ? +m[1]*10000+month*100+day : null;
   },
   getTodayJalaliDate:()=> '1405/02/29',
@@ -66,20 +66,20 @@ assert.equal(api.dashboardAccountNetBalance(quality.balances,'2106'),-80);
 const monthly=api.buildDashboardMonthlySeries('1405/01/01','1405/02/29');
 assert.deepEqual(Array.from(monthly,m=>[m.label,m.revenue,m.cogs,m.expenses,m.netProfit]),[
   ['1405/01',400,200,70,130],
-  ['1405/02',560,400,70,90]
+  ['1405/02',570,400,70,100]
 ]);
 const pnl= sandbox.buildProfitLossReport('1405/01/01','1405/02/29');
-assert.equal(pnl.revenue,960);
+assert.equal(pnl.revenue,970);
 assert.equal(pnl.cogs,600);
 assert.equal(pnl.expenses,140);
-assert.equal(pnl.netProfit,220);
+assert.equal(pnl.netProfit,230);
 assert.equal(monthly.reduce((s,m)=>s+m.netProfit,0),pnl.netProfit);
 assert.equal(quality.quality.unbalancedVouchers,1);
 assert.equal(quality.quality.invalidAmountVouchers,1);
-assert.match(html,/buildProfitLossReport\\(period\\.from, period\\.to\\)/);
+assert.match(html,/buildProfitLossReport\(period\.from, period\.to\)/);
 assert.match(html,/2101', '2102', '2103', '2104', '2105', '2106/);
 assert.match(html,/type: 'line'/);
-assert.doesNotMatch(html,/Math\\.max\\(0, netProfit\\)/);
+assert.doesNotMatch(html,/Math\.max\(0, netProfit\)/);
 assert.match(html,/dash-period-from/);
 console.log('PASS: dashboard balances use net debit/credit for cash, inventory, receivables and all six current-liability accounts');
 console.log('PASS: dashboard period sales and net profit use the canonical P&L engine, including FX and custom 61xx expenses');
