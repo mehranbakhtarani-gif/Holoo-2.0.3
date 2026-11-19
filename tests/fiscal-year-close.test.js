@@ -11,8 +11,8 @@ function sourceOf(name) {
   const start = html.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function: ${name}`);
   const ends = [
-    html.indexOf('\\n    function ', start + 10),
-    html.indexOf('\\n    async function ', start + 10)
+    html.indexOf('\n    function ', start + 10),
+    html.indexOf('\n    async function ', start + 10)
   ].filter(index => index > 0);
   return html.slice(start, ends.length ? Math.min(...ends) : html.length).trim();
 }
