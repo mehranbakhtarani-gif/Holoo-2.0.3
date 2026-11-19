@@ -6419,6 +6419,28 @@
       return !!getTreasuryTxAccount(tx) && !!(state.parties || []).some(party => String(party.id) === String(tx.partyId));
     }
 
+    function getTreasuryCorrectionBlockReason(tx) {
+      if (!tx) return 'تراکنش پیدا نشد.';
+      if (tx.kind === 'party_credit') return 'اعتبار طرف‌حساب از مسیر تخصیص/استرداد خودش مدیریت می‌شود.';
+      if (!['حواله بانکی','صندوق نقدی'].includes(tx.method)) return 'این مسیر فقط برای دریافت/پرداخت نقدی یا حواله بانکی است؛ چک مسیر اصلاح مستقل دارد.';
+      if (tx.correctedByTxId) return 'این تراکنش قبلاً اصلاح شده و نسخه جایگزین دارد.';
+      if (Number(tx.allocInvId || 0) > 0 || (tx.allocations || []).some(item => Number(item.amount || 0) > 0)) return 'به فاکتور تخصیص دارد؛ ابتدا باید وابستگی فاکتور در گردش اصلاح شود.';
+      if ((state.checks || []).some(check => String(check.sourceTxId || '') === String(tx.id))) return 'به یک چک متصل است؛ از مسیر اصلاح چک اقدام کنید.';
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'treasury' && String(item.sourceId) === String(tx.id) && (item.sourceEvent || 'default') === 'posted');
+      if (!voucher) return 'سند حسابداری متناظر پیدا نشد؛ اصلاح متوقف شد تا سند ناقص ایجاد نشود.';
+      if (voucher.locked || (voucher.lines || []).length < 2) return 'سند حسابداری قفل است یا ردیف‌های کافی ندارد.';
+      if (!getTreasuryTxAccount(tx)) return 'حساب نقد/بانک متناظر قابل تشخیص نیست.';
+      if (!(state.parties || []).some(party => String(party.id) === String(tx.partyId))) return 'طرف‌حساب معتبر برای تراکنش پیدا نشد.';
+      return '';
+    }
+
+    function requestTreasuryCorrection(txId) {
+      const tx = (state.treasuryTxs || []).find(item => String(item.id) === String(txId));
+      const reason = getTreasuryCorrectionBlockReason(tx);
+      if (reason) { showToast('امکان اصلاح این تراکنش وجود ندارد: ' + reason, 'warning'); return; }
+      openTreasuryCorrection(txId);
+    }
+
     function openTreasuryCorrection(txId) {
       const tx = (state.treasuryTxs || []).find(item => String(item.id) === String(txId));
       if (!canCorrectTreasuryTx(tx)) { showToast('این تراکنش چک، تخصیص فاکتور یا وابستگی نامشخص دارد؛ اصلاح مستقیم آن مجاز نیست.', 'error'); return; }
@@ -6498,6 +6520,27 @@
       const voucher = (state.vouchers || []).find(item => item.sourceType === 'check' && String(item.sourceId) === String(check.id) && (item.sourceEvent || 'default') === 'issued');
       const bank = (state.bankAccounts || []).find(item => String(item.id) === String(check.bankAccountId) && item.type === 'bank');
       return !!tx && !!voucher && !voucher.locked && !!bank && (voucher.lines || []).length >= 2;
+    }
+
+    function getCheckCorrectionBlockReason(check) {
+      if (!check) return 'چک پیدا نشد.';
+      if (!['in_progress','overdue'].includes(check.status)) return 'فقط چک در جریان یا سررسیدشده قابل اصلاح است؛ چک وصول‌شده، برگشتی، واگذارشده یا باطل‌شده قفل است.';
+      if (check.allocationsReleasedAt) return 'تخصیص‌های این چک قبلاً آزاد شده‌اند؛ اصلاح خودکار مجاز نیست.';
+      if ((check.allocations || []).some(item => Number(item.amount || 0) > 0)) return 'چک به فاکتور تخصیص دارد؛ ابتدا باید تخصیص آن تعیین‌تکلیف شود.';
+      const tx = (state.treasuryTxs || []).find(item => String(item.id) === String(check.sourceTxId) && item.method === 'چک صیادی');
+      if (!tx) return 'گردش خزانه متناظر با چک پیدا نشد.';
+      const voucher = (state.vouchers || []).find(item => item.sourceType === 'check' && String(item.sourceId) === String(check.id) && (item.sourceEvent || 'default') === 'issued');
+      if (!voucher) return 'سند صدور چک پیدا نشد.';
+      if (voucher.locked || (voucher.lines || []).length < 2) return 'سند صدور چک قفل است یا ردیف‌های کافی ندارد.';
+      if (!(state.bankAccounts || []).some(item => String(item.id) === String(check.bankAccountId) && item.type === 'bank')) return 'حساب بانکی معتبر برای چک پیدا نشد.';
+      return '';
+    }
+
+    function requestCheckCorrection(checkId) {
+      const check = (state.checks || []).find(item => String(item.id) === String(checkId));
+      const reason = getCheckCorrectionBlockReason(check);
+      if (reason) { showToast('امکان اصلاح این چک وجود ندارد: ' + reason, 'warning'); return; }
+      openCheckCorrection(checkId);
     }
 
     function openCheckCorrection(checkId) {
@@ -6594,7 +6637,7 @@
           <div class="flex flex-wrap justify-between items-center pt-1 border-t gap-1">
             <strong class="tabular-nums">${money(c.amount)}</strong>
             <div class="flex gap-1">
-              ${canCorrectCheck(c) ? `<button type="button" onclick="openCheckCorrection('${c.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-1 rounded font-bold text-[10px]">✏️ اصلاح حسابرسی‌شده</button>` : ''}
+              ${!c.correctedByCheckId ? `<button type="button" onclick="requestCheckCorrection('${c.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-1 rounded font-bold text-[10px]">✏️ بررسی / اصلاح</button>` : ''}
               ${c.correctedByCheckId ? `<span class="text-[10px] text-slate-600">اصلاح‌شده با چک جایگزین ${c.correctedByCheckId}</span>` : ''}
               ${c.correctsCheckId ? `<span class="text-[10px] text-indigo-700">نسخه اصلاحی چک ${c.correctsCheckId}</span>` : ''}
               ${['in_progress', 'overdue'].includes(c.status) ? `
@@ -6632,7 +6675,7 @@
         return `
           <div class="p-2.5 rounded-xl bg-slate-50 border flex flex-wrap justify-between items-center gap-2">
             <div><strong class="${t.dir === 'receive' ? 'text-emerald-700' : 'text-rose-700'}">${t.dir === 'receive' ? 'دریافت' : 'پرداخت'}</strong> • ${getPartyName(t.partyId)} <span class="block text-[10px] text-slate-500">تخصیص فاکتور: ${t.allocInv || '—'} | ${t.desc}</span>${t.correctsTxId ? `<span class="block text-[10px] text-indigo-700">نسخه اصلاحی تراکنش ${t.correctsTxId}</span>` : ''}${t.correctedByTxId ? `<span class="block text-[10px] text-slate-600">جایگزین‌شده با ${t.correctedByTxId}</span>` : ''}</div>
-            <div class="flex items-center gap-2"><strong class="tabular-nums">${money(t.amount)}</strong>${canCorrectTreasuryTx(t) ? `<button type="button" onclick="openTreasuryCorrection('${t.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold">✏️ اصلاح حسابرسی‌شده</button>` : ''}</div>
+            <div class="flex items-center gap-2"><strong class="tabular-nums">${money(t.amount)}</strong>${!t.correctedByTxId ? `<button type="button" onclick="requestTreasuryCorrection('${t.id}')" class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold">✏️ بررسی / اصلاح</button>` : ''}</div>
           </div>`;
       }).join('');
       renderGuaranteesAndCommitments();
