@@ -8017,6 +8017,7 @@
       ];
       if (diff > 0) lines.push({ code: '4104', partyId: null, desc: 'سود تسعیر ارز تحقق‌یافته', debit: 0, credit: diff });
       else if (diff < 0) lines.push({ code: '6106', partyId: null, desc: 'زیان تسعیر ارز تحقق‌یافته', debit: Math.abs(diff), credit: 0 });
+      const importFxPaymentPreCommitSnapshot = JSON.parse(JSON.stringify(state));
       const previousPaid = Number(shipment.fxPaid || 0);
       const previousPayments = [...(shipment.fxPayments || [])];
       const previousBankBalance = bank ? Number(bank.balance || 0) : null;
@@ -8026,13 +8027,15 @@
       try {
         postVoucher(`پرداخت مرحله‌ای تعهد ارزی ${shipment.id}`, lines, getTodayJalaliDate(), { type: 'import', id: shipment.id, event: paymentId, bankAccountId: bank.id });
       } catch (error) {
-        shipment.fxPaid = previousPaid;
-        shipment.fxPayments = previousPayments;
-        if (bank) bank.balance = previousBankBalance;
+        state = importFxPaymentPreCommitSnapshot;
         showToast('ثبت سند پرداخت ارزی ناموفق بود؛ اطلاعات محموله تغییر نکرد.', 'error'); return;
       }
       addAudit(`پرداخت ${payFx} ${shipment.currency} از تعهد محموله ${shipment.id}`, { mode: 'automatic', sourceType: 'import' });
-      saveState(); renderAll();
+      if (!saveState()) {
+        state = importFxPaymentPreCommitSnapshot;
+        showToast('ذخیره محلی پرداخت ارزی محموله ناموفق بود؛ پرداخت، سند و مانده بانک بازگردانده شدند.', 'error'); return;
+      }
+      renderAll();
       showToast(`پرداخت مرحله‌ای ${faNum(payFx)} ${shipment.currency} و سند تسعیر ارز ثبت شد ✔`);
     }
 
