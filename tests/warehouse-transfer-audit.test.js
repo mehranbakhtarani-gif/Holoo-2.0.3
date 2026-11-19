@@ -19,7 +19,7 @@ const products = freezeDeep([
     batches: [{ id: 'B-SRC', lot: 'LOT-1', remainingQty: 18 }]
   },
   {
-    id: 'P-DST', name: 'رزین', warehouseId: 'WH-B', stock: 27,
+    id: 'P-DST', baseProductId: 'P-SRC', name: 'رزین', warehouseId: 'WH-B', stock: 27,
     kardex: [{ date: '1405/08/28', doc: 'حواله ورود انتقال TR-123-abcd از انبار الف', inQty: 7, outQty: 0, bal: 27 }],
     batches: [{
       id: 'B-SRC::TR-123-abcd::1', lot: 'LOT-1', sourceType: 'warehouse_transfer',
