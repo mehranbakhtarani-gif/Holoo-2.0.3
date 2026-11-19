@@ -5197,7 +5197,7 @@
       }
 
       invDraft.lines.push({
-        productId: p.id, name: isGift ? `${p.name} (🎁 اشانتیون / نمونه)` : p.name,
+        productId: invDraft.type === 'purchase' ? String(p.baseProductId || p.id) : p.id, name: isGift ? `${p.name} (🎁 اشانتیون / نمونه)` : p.name,
         cartons, kg, price, disc, isGift, total: Math.max(0, (kg * price) - disc), returnedKg: 0,
         lot: document.getElementById('inv-line-lot')?.value.trim() || '',
         productionDate: document.getElementById('inv-line-prod-date')?.value.trim() || '',
@@ -5463,6 +5463,7 @@
       openInvoiceForm(inv.type);
       document.getElementById('inv-party').value = String(inv.partyId);
       document.getElementById('inv-warehouse').value = String(inv.warehouseId);
+      renderInvoiceProductOptions();
       document.getElementById('inv-pay-method').value = 'credit';
       renderInvoiceSettlementAccounts();
       document.getElementById('inv-due-date').value = inv.dueDate || getTodayJalaliDate();
