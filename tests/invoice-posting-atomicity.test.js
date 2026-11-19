@@ -29,6 +29,9 @@ function makeHarness(saveResult) {
     ] },
     document: { getElementById(id) { return elements[id] || null; } },
     getTodayJalaliDate() { return '1405/08/29'; },
+    normalizeAccountingDate(value) { return String(value || '').trim().replace(/-/g, '/'); },
+    jalaliDateOrdinal(value) { return value === '1405/08/29' ? 1 : value === '1405/09/01' ? 2 : null; },
+    getAccountingPeriodLockForDate() { return null; },
     resolveInvoiceWarehouseProduct(productId, warehouseId, products) {
       return { product: products.find(product => String(product.id) === String(productId) && String(product.warehouseId) === String(warehouseId)), created: false };
     },
