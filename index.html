@@ -12522,6 +12522,52 @@
         ledgerMismatches, missingKardex, creditMismatches, duplicateReturnIds, issueCount: issues.length, issues };
     }
 
+    function buildTrialBalanceLedgerReconciliation(fromDate, toDate) {
+      const report = buildTrialBalanceReport(fromDate, toDate);
+      if (typeof buildAccountLedger !== 'function') {
+        return {
+          checkedAccounts: 0, mismatches: 0, details: [], detailsTruncated: false,
+          periodDebitDifference: 0, periodCreditDifference: 0, closingNetDifference: 0,
+          issueCount: 0, unavailable: true
+        };
+      }
+      const details = [];
+      let checkedAccounts = 0;
+      let periodDebitDifference = 0;
+      let periodCreditDifference = 0;
+      let closingNetDifference = 0;
+      report.rows.forEach(row => {
+        const ledger = buildAccountLedger(row.code, fromDate, toDate);
+        checkedAccounts++;
+        const periodDebitDelta = Number(row.periodDebit || 0) - Number(ledger.periodDebit || 0);
+        const periodCreditDelta = Number(row.periodCredit || 0) - Number(ledger.periodCredit || 0);
+        const trialClosingNet = Number(row.closingBalanceDebit || 0) - Number(row.closingBalanceCredit || 0);
+        const closingNetDelta = trialClosingNet - Number(ledger.closingNet || 0);
+        periodDebitDifference += periodDebitDelta;
+        periodCreditDifference += periodCreditDelta;
+        closingNetDifference += closingNetDelta;
+        if (Math.abs(periodDebitDelta) > 0.5 || Math.abs(periodCreditDelta) > 0.5 || Math.abs(closingNetDelta) > 0.5) {
+          details.push({
+            code: String(row.code),
+            name: String(row.name || row.code),
+            periodDebitDifference: periodDebitDelta,
+            periodCreditDifference: periodCreditDelta,
+            closingNetDifference: closingNetDelta
+          });
+        }
+      });
+      return {
+        checkedAccounts,
+        mismatches: details.length,
+        details: details.slice(0, 100),
+        detailsTruncated: details.length > 100,
+        periodDebitDifference,
+        periodCreditDifference,
+        closingNetDifference,
+        issueCount: details.length
+      };
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -12630,6 +12676,8 @@
           '<p class="text-[10px] text-slate-500">شرح: '+escapeLedgerText(item.descriptions.slice(0,3).join(' | ') || 'بدون شرح')+'</p></div>'
         ).join('') + '</div>' : '<p class="text-xs text-slate-500">گردش ثبت‌شده‌ای برای حساب ۱۱۰۵ پیدا نشد.</p>') +
         '<p class="text-[10px]">برای تطبیق قطعی هر کالا، شناسه کالا و شناسه سری ساخت باید در جزئیات سند و گردش انبار به‌صورت مشترک موجود باشد؛ گزارش از حدس‌زدن انتساب جلوگیری می‌کند.</p></div>';
+      const trialBalanceLedgerAudit = buildTrialBalanceLedgerReconciliation(from, to);
+      const trialBalanceLedgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق تراز آزمایشی با دفتر حساب هر کد</strong><b class="block">'+(trialBalanceLedgerAudit.unavailable ? 'امکان اجرای تطبیق دفتر حساب در این محیط فراهم نیست' : trialBalanceLedgerAudit.issueCount ? faNum(trialBalanceLedgerAudit.issueCount)+' مغایرت نیازمند بررسی' : 'گردش و مانده حساب‌ها با دفتر حساب تطبیق دارد')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]"><span>حساب‌های تطبیق‌شده: <b>'+faNum(trialBalanceLedgerAudit.checkedAccounts)+'</b></span><span>اختلاف گردش بدهکار: <b>'+money(trialBalanceLedgerAudit.periodDebitDifference)+'</b></span><span>اختلاف گردش بستانکار: <b>'+money(trialBalanceLedgerAudit.periodCreditDifference)+'</b></span><span>اختلاف خالص مانده: <b>'+money(trialBalanceLedgerAudit.closingNetDifference)+'</b></span></div>'+(trialBalanceLedgerAudit.details.length ? '<div class="max-h-56 overflow-y-auto space-y-1">'+trialBalanceLedgerAudit.details.map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.code)+' — '+escapeLedgerText(item.name)+'</b><span> | اختلاف بدهکار: '+money(item.periodDebitDifference)+' | اختلاف بستانکار: '+money(item.periodCreditDifference)+' | اختلاف مانده خالص: '+money(item.closingNetDifference)+'</span></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">برای حساب‌های دارای گردش یا مانده، اختلافی بین تراز آزمایشی و دفتر حساب پیدا نشد.</p>')+(trialBalanceLedgerAudit.detailsTruncated ? '<p class="text-[10px] text-amber-800">نمایش جزئیات به ۱۰۰ مورد اول محدود شده است.</p>' : '')+'<p class="text-[10px]">کنترل صرفاً خواندنی است و هیچ سند یا مانده‌ای را تغییر نمی‌دهد.</p></div>';
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['ردیف مبلغ نامعتبر',subledgerAudit.invalidControlLines],['تاریخ سند کنترلی نامعتبر',subledgerAudit.invalidControlDates],['کد حساب ناسازگار',subledgerAudit.mappingMismatchLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
@@ -12661,7 +12709,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + auditPanel + auditDetailsPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + auditPanel + auditDetailsPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + trialBalanceLedgerAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
