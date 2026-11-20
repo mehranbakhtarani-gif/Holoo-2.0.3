@@ -12602,7 +12602,11 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
           const childCode = String(child.code || '').trim();
           return level === 'group' ? prefixTotals(childCode) : exactTotals(childCode);
         });
-        const childSum = totals(descendants);
+        const childSum = descendants.reduce((sum, item) => ({
+          periodDebit: sum.periodDebit + item.periodDebit,
+          periodCredit: sum.periodCredit + item.periodCredit,
+          closingNet: sum.closingNet + item.closingNet
+        }), { periodDebit: 0, periodCredit: 0, closingNet: 0 });
         const actual = prefixTotals(code);
         const differences = {
           periodDebitDifference: actual.periodDebit - direct.periodDebit - childSum.periodDebit,
