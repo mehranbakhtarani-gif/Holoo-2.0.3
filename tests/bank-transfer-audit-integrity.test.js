@@ -79,4 +79,12 @@ function fixture({ voucherId = 77, lines, txOverrides = {} } = {}) {
   console.log('PASS: treasury-side transfer amount mismatch remains detectable');
 }
 
+
+{
+  const result = fixture({ txOverrides: { out: { id: 'TX-OUT', transferId: '' } } });
+  assert.equal(result.missingTransferId, 1);
+  assert.ok(result.issues.some(issue => issue.includes('شناسه انتقال')));
+  console.log('PASS: transaction without a transfer correlation key is reported');
+}
+
 console.log('PASS: bank transfer voucher integrity audit tests');
