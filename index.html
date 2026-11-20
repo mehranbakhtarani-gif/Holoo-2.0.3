@@ -9607,10 +9607,12 @@
       const vouchers = (state.vouchers || []).filter(v => v.sourceType === 'bank_transfer' && (v.sourceEvent || 'default') === 'posted');
       const groups = new Map(), voucherGroups = new Map(), issues = [];
       const add = (map, key, value) => { if (!map.has(key)) map.set(key, []); map.get(key).push(value); };
+      const missingTransferKeyRows = txs.filter(tx => !String(tx.transferId || '').trim() && !/-(?:OUT|IN)$/.test(String(tx.id || '')));
       txs.forEach(tx => add(groups, String(tx.transferId || String(tx.id || '').replace(/-(?:OUT|IN)$/, '')), tx));
       vouchers.forEach(v => add(voucherGroups, String(v.sourceId || ''), v));
       const ids = new Set([...groups.keys(), ...voucherGroups.keys()]);
-      const result = { transfers: ids.size, missingPair: 0, duplicatePair: 0, missingVoucher: 0, duplicateVoucher: 0, invalidVoucher: 0, invalidAccounts: 0, amountMismatch: 0, dateMismatch: 0, orphanVoucher: 0, duplicateTxId: 0, missingTransferId: 0, missingVoucherId: 0, invalidLineAmounts: 0, issues: [] };
+      const result = { transfers: ids.size, missingPair: 0, duplicatePair: 0, missingVoucher: 0, duplicateVoucher: 0, invalidVoucher: 0, invalidAccounts: 0, amountMismatch: 0, dateMismatch: 0, orphanVoucher: 0, duplicateTxId: 0, missingTransferId: missingTransferKeyRows.length, missingVoucherId: 0, invalidLineAmounts: 0, issues: [] };
+      missingTransferKeyRows.forEach(tx => issues.push('گردش خزانه ' + String(tx.id || 'بدون شناسه') + ': شناسه انتقال یا پسوند قابل تشخیص مبدأ/مقصد ثبت نشده است.'));
       ids.forEach(id => {
         const events = groups.get(id) || [], vs = voucherGroups.get(id) || [];
         const outs = events.filter(tx => tx.dir === 'pay'), ins = events.filter(tx => tx.dir === 'receive');
@@ -9621,10 +9623,6 @@
         }
         if (vs.length === 0) { result.missingVoucher++; issues.push(id + ': سند حسابداری انتقال پیدا نشد.'); }
         if (vs.length > 1) { result.duplicateVoucher++; issues.push(id + ': بیش از یک سند حسابداری برای انتقال ثبت شده است.'); }
-        if (!id) {
-          result.missingTransferId++;
-          issues.push('انتقال بدون شناسه یکتای انتقال ثبت شده است.');
-        }
         if (vs.length !== 1) return;
         const voucher = vs[0], lines = Array.isArray(voucher.lines) ? voucher.lines : [];
         if (voucher.id === null || voucher.id === undefined || String(voucher.id).trim() === '') {
