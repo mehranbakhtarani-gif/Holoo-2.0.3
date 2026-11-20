@@ -972,7 +972,7 @@ test('subledger audit rejects ambiguous party IDs and malformed control amounts 
     state,
     isSupplierParty(party){return String(party?.role||'').includes('تأمین')||String(party?.role||'').includes('تامین');},
     jalaliDateOrdinal(value){
-      const match=String(value||'').match(/^(\\d{4})\\/(\\d{2})\\/(\\d{2})$/);
+      const match=String(value||'').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       if(!match)return null;
       const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
       return month>=1&&month<=12&&day>=1&&day<=(month<=6?31:month<=11?30:29)?year*10000+month*100+day:null;
