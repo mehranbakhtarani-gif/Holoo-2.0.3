@@ -11401,7 +11401,7 @@
         }
       };
       const txIds = new Set();
-      txs.filter(tx => tx && tx.kind !== 'party_credit').forEach(tx => {
+      txs.filter(tx => tx && !['party_credit','party_credit_refund'].includes(tx.kind)).forEach(tx => {
         counts.transactionsChecked++;
         const id = String(tx.id || '');
         if (!id || txIds.has(id)) { counts.duplicateTransactionIds++; add('transaction-id','شناسه گردش خزانه خالی یا تکراری است.','شناسه: '+(id || 'خالی')); }
@@ -11449,7 +11449,7 @@
       checks.forEach(check => {
         counts.checksChecked++;
         const released=!!check.allocationsReleasedAt || ['bounced','voided'].includes(String(check.status));
-        const linkedTx=txs.find(tx=>tx.kind!=='party_credit' && String(tx.id)===String(check.sourceTxId) && tx.method==='چک صیادی');
+        const linkedTx=txs.find(tx=>!['party_credit','party_credit_refund'].includes(tx.kind) && String(tx.id)===String(check.sourceTxId) && tx.method==='چک صیادی');
         if (!linkedTx) { counts.orphanChecks++; add('check-tx-orphan','رکورد چک بدون گردش خزانه متناظر است.','چک: '+String(check.id)+' | گردش: '+String(check.sourceTxId||'خالی')); }
         if (linkedTx && (String(linkedTx.partyId)!==String(check.partyId) || String(linkedTx.dir)!==String(check.dir) || !near(linkedTx.amount,check.amount))) {
           counts.invalidAllocations++; add('check-tx-mismatch','اطلاعات چک با گردش خزانه متناظر مغایرت دارد.','چک: '+String(check.id)+' | گردش: '+String(check.sourceTxId));
@@ -11498,7 +11498,7 @@
         });
       });
       vouchers.filter(v=>v && v.sourceType==='treasury' && (v.sourceEvent||'default')==='posted').forEach(v=>{
-        if (!txs.some(tx=>tx.kind!=='party_credit' && String(tx.id)===String(v.sourceId) && tx.method!=='چک صیادی')) {
+        if (!txs.some(tx=>!['party_credit','party_credit_refund'].includes(tx.kind) && String(tx.id)===String(v.sourceId) && tx.method!=='چک صیادی')) {
           counts.orphanTreasuryVouchers++; add('treasury-voucher-orphan','سند خزانه بدون گردش دریافت/پرداخت متناظر است.','سند: '+String(v.id)+' | منبع: '+String(v.sourceId));
         }
       });
