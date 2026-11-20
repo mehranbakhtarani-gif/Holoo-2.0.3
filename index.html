@@ -11788,10 +11788,10 @@
             const partyCode = isCleared ? (isReceive ? '1104' : '2102') : (isReceive ? '1104' : '2101');
             const accountSide = lines.filter(line => String(line.code) === accountCode &&
               (accountCode !== '1102' || String(line.bankAccountId || '') === String(check.bankAccountId || '')))
-              .reduce((sum,line)=>sum+(isCleared && isReceive ? Number(line.debit||0) : isCleared || !isReceive ? Number(line.credit||0) : Number(line.debit||0)),0);
+              .reduce((sum,line)=>sum+((isCleared && !isReceive) ? Number(line.credit||0) : Number(line.debit||0)),0);
             const partySide = lines.filter(line => String(line.code) === partyCode &&
               String(line.partyId || '') === String(check.partyId))
-              .reduce((sum,line)=>sum+(isCleared && isReceive ? Number(line.credit||0) : isCleared || !isReceive ? Number(line.debit||0) : Number(line.credit||0)),0);
+              .reduce((sum,line)=>sum+((isCleared && !isReceive) ? Number(line.debit||0) : Number(line.credit||0)),0);
             const totalDebit = lines.reduce((sum,line)=>sum+Number(line.debit||0),0);
             const totalCredit = lines.reduce((sum,line)=>sum+Number(line.credit||0),0);
             const ledgerLinesValid = validLedgerLines(lines);
