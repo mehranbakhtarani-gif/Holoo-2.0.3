@@ -9741,6 +9741,162 @@
       return result;
     }
 
+    function buildTreasurySettlementAuditSummary() {
+      const txs = (Array.isArray(state.treasuryTxs) ? state.treasuryTxs : []).filter(tx =>
+        !['bank_transfer','party_credit','party_credit_refund'].includes(String(tx.kind || '')) &&
+        String(tx.method || '') !== 'چک صیادی'
+      );
+      const vouchers = (Array.isArray(state.vouchers) ? state.vouchers : []).filter(v =>
+        v.sourceType === 'treasury' && (v.sourceEvent || 'default') === 'posted'
+      );
+      const parties = Array.isArray(state.parties) ? state.parties : [];
+      const accounts = Array.isArray(state.bankAccounts) ? state.bankAccounts : [];
+      const invoices = Array.isArray(state.invoices) ? state.invoices : [];
+      const bySource = new Map();
+      vouchers.forEach(v => {
+        const key = String(v.sourceId || '');
+        if (!bySource.has(key)) bySource.set(key, []);
+        bySource.get(key).push(v);
+      });
+      const result = {
+        transactions: txs.length, missingVoucher: 0, duplicateVoucher: 0, orphanVoucher: 0,
+        duplicateTransactionIds: 0, invalidTransactionData: 0, missingParty: 0, invalidAccount: 0,
+        missingAssetLine: 0, invalidJournal: 0, amountDirectionMismatch: 0, partyLedgerMismatch: 0,
+        dateMismatch: 0, feeMismatch: 0, undocumentedFeeLines: 0, invalidValueDates: 0,
+        valueDateDifferences: 0, missingValueDateMetadata: 0, allocationIssues: 0,
+        issues: []
+      };
+      const txIdCounts = new Map();
+      txs.forEach(tx => { const id=String(tx.id || ''); txIdCounts.set(id,(txIdCounts.get(id)||0)+1); });
+      result.duplicateTransactionIds = [...txIdCounts.values()].filter(count => count > 1).reduce((sum,count)=>sum+count-1,0);
+      const seenVoucherIds = new Set();
+      txs.forEach(tx => {
+        const id = String(tx.id || '');
+        const label = id || 'بدون شناسه';
+        const amount = Number(tx.amount);
+        const dir = String(tx.dir || '');
+        const method = String(tx.method || '');
+        const accountType = method === 'حواله بانکی' ? 'bank' : method === 'صندوق نقدی' ? 'cash' : '';
+        const accountCode = accountType === 'bank' ? '1102' : accountType === 'cash' ? '1101' : '';
+        const accountId = String(accountType === 'bank' ? (tx.bankAccountId || '') : (tx.cashAccountId || tx.bankAccountId || ''));
+        const party = parties.find(item => String(item.id) === String(tx.partyId));
+        if (!id || !['receive','pay'].includes(dir) || !accountCode || !Number.isFinite(amount) || amount <= 0 ||
+            jalaliDateOrdinal(tx.date) === null) {
+          result.invalidTransactionData++;
+          result.issues.push(label + ': جهت، روش، شناسه، مبلغ یا تاریخ تراکنش خزانه نامعتبر است.');
+        }
+        if (!party) {
+          result.missingParty++;
+          result.issues.push(label + ': طرف حساب تراکنش پیدا نشد.');
+        }
+        if (!accountId || !accounts.some(item => item.type === accountType && String(item.id) === accountId)) {
+          result.invalidAccount++;
+          result.issues.push(label + ': حساب بانکی/صندوق تراکنش خالی یا تعریف‌نشده است.');
+        }
+        const linked = bySource.get(id) || [];
+        if (!linked.length) {
+          result.missingVoucher++;
+          result.issues.push(label + ': سند حسابداری ثبت دریافت/پرداخت پیدا نشد.');
+        } else if (linked.length > 1) {
+          result.duplicateVoucher++;
+          result.issues.push(label + ': بیش از یک سند دریافت/پرداخت به تراکنش متصل است.');
+        }
+        if (linked.length === 1) {
+          const voucher = linked[0];
+          seenVoucherIds.add(String(voucher.id));
+          const lines = Array.isArray(voucher.lines) ? voucher.lines : [];
+          const integrity = inspectTrialBalanceVoucher(voucher);
+          if (integrity.invalidLines || integrity.invalidStructure || integrity.unbalanced ||
+              jalaliDateOrdinal(voucher.date || voucher.operationDate) === null) {
+            result.invalidJournal++;
+            result.issues.push(label + ': ساختار، مبلغ، توازن یا تاریخ سند خزانه نیازمند بررسی است.');
+          }
+          if (String(voucher.date || voucher.operationDate || '') !== String(tx.date || '')) {
+            result.dateMismatch++;
+            result.issues.push(label + ': تاریخ سند حسابداری با تاریخ گردش خزانه یکسان نیست.');
+          }
+          const assetLines = lines.filter(line => String(line.code) === accountCode);
+          const expectedSide = dir === 'receive' ? 'debit' : 'credit';
+          const oppositeSide = dir === 'receive' ? 'credit' : 'debit';
+          const assetAmount = assetLines.reduce((sum,line)=>sum+Number(line[expectedSide] || 0),0);
+          const wrongAssetAmount = assetLines.reduce((sum,line)=>sum+Number(line[oppositeSide] || 0),0);
+          const assetAccountIds = [...new Set(assetLines.map(line => String(accountType === 'bank' ? (line.bankAccountId || '') : (line.cashAccountId || '')).filter(Boolean))];
+          if (!assetLines.length) {
+            result.missingAssetLine++;
+            result.issues.push(label + ': ردیف حساب بانک/صندوق در سند خزانه وجود ندارد.');
+          }
+          if (Math.abs(assetAmount - amount) > 1 || wrongAssetAmount > 1 ||
+              assetLines.some(line => String(accountType === 'bank' ? (line.bankAccountId || '') : (line.cashAccountId || '')) !== accountId)) {
+            result.amountDirectionMismatch++;
+            result.issues.push(label + ': مبلغ، سمت بدهکار/بستانکار یا شناسه حساب ردیف بانک/صندوق با گردش خزانه مغایرت دارد.');
+          }
+          const counterpartCode = dir === 'receive' ? '1103' : '2101';
+          const counterpartSide = dir === 'receive' ? 'credit' : 'debit';
+          const counterpart = lines.filter(line => String(line.code) === counterpartCode && String(line.partyId || '') === String(tx.partyId || ''));
+          const counterpartAmount = counterpart.reduce((sum,line)=>sum+Number(line[counterpartSide] || 0),0);
+          if (Math.abs(counterpartAmount - amount) > 1) {
+            result.partyLedgerMismatch++;
+            result.issues.push(label + ': مبلغ یا طرف حساب ردیف معین طرف حساب با تراکنش خزانه تطبیق ندارد.');
+          }
+          const feeLines = lines.filter(line => String(line.code) === '6101');
+          const feeAmount = feeLines.reduce((sum,line)=>sum+Number(line.debit || 0)-Number(line.credit || 0),0);
+          const declaredFeeRaw = tx.bankFee ?? tx.feeAmount ?? tx.fee;
+          if (declaredFeeRaw !== undefined && declaredFeeRaw !== null && String(declaredFeeRaw).trim() !== '') {
+            const declaredFee = Number(declaredFeeRaw);
+            if (!Number.isFinite(declaredFee) || declaredFee < 0 || Math.abs(feeAmount - declaredFee) > 1) {
+              result.feeMismatch++;
+              result.issues.push(label + ': کارمزد ثبت‌شده در گردش خزانه با ردیف هزینه بانکی سند مغایرت دارد.');
+            }
+          } else if (Math.abs(feeAmount) > 1) {
+            result.undocumentedFeeLines++;
+            result.issues.push(label + ': در سند هزینه بانکی ثبت شده اما مبلغ کارمزد در گردش خزانه مستند نیست.');
+          }
+        }
+        const valueDateRaw = tx.valueDate ?? tx.bankValueDate ?? tx.settlementDate;
+        if (valueDateRaw === undefined || valueDateRaw === null || String(valueDateRaw).trim() === '') {
+          result.missingValueDateMetadata++;
+        } else {
+          const valueDate = jalaliDateOrdinal(valueDateRaw);
+          if (valueDate === null) {
+            result.invalidValueDates++;
+            result.issues.push(label + ': تاریخ ارزش/تسویه بانکی نامعتبر است.');
+          } else if (valueDate !== jalaliDateOrdinal(tx.date)) {
+            result.valueDateDifferences++;
+            result.issues.push(label + ': تاریخ ارزش بانکی با تاریخ ثبت گردش خزانه متفاوت است.');
+          }
+        }
+        const allocations = Array.isArray(tx.allocations) ? tx.allocations : [];
+        let allocationSum = 0;
+        const seenInvoices = new Set();
+        allocations.forEach(allocation => {
+          const invoice = invoices.find(item => String(item.id) === String(allocation.invoiceId));
+          const allocationAmount = Number(allocation.amount);
+          const expectedType = dir === 'receive' ? 'sale' : 'purchase';
+          if (!invoice || !Number.isFinite(allocationAmount) || allocationAmount <= 0 ||
+              String(invoice.partyId) !== String(tx.partyId) || (invoice.type && invoice.type !== expectedType) ||
+              seenInvoices.has(String(allocation.invoiceId))) {
+            result.allocationIssues++;
+            result.issues.push(label + ': تخصیص فاکتور مفقود، تکراری یا ناسازگار با طرف حساب/نوع تراکنش است.');
+          } else allocationSum += allocationAmount;
+          seenInvoices.add(String(allocation.invoiceId));
+        });
+        if (allocationSum > amount + 1) {
+          result.allocationIssues++;
+          result.issues.push(label + ': جمع تخصیص فاکتورها از مبلغ دریافت/پرداخت بیشتر است.');
+        }
+      });
+      result.orphanVoucher = vouchers.filter(v => !txIdCounts.has(String(v.sourceId || ''))).length;
+      if (result.orphanVoucher) result.issues.push('سند دریافت/پرداخت بدون گردش خزانه متناظر: ' + result.orphanVoucher + ' مورد.');
+      if (result.duplicateTransactionIds) result.issues.push('شناسه تکراری تراکنش‌های دریافت/پرداخت: ' + result.duplicateTransactionIds + ' مورد.');
+      result.issueCount = result.missingVoucher + result.duplicateVoucher + result.orphanVoucher +
+        result.duplicateTransactionIds + result.invalidTransactionData + result.missingParty + result.invalidAccount +
+        result.missingAssetLine + result.invalidJournal + result.amountDirectionMismatch + result.partyLedgerMismatch +
+        result.dateMismatch + result.feeMismatch + result.undocumentedFeeLines + result.invalidValueDates +
+        result.valueDateDifferences + result.allocationIssues;
+      result.issues = [...new Set(result.issues)].slice(0, 30);
+      return result;
+    }
+
     function buildTreasuryBankCashAuditSummary() {
       const bankBalances = getBankAccountBookBalances();
       const cashBalances = getCashAccountBookBalances();
@@ -9817,15 +9973,16 @@
         invalidDueDate: activeChecks.filter(check => jalaliDateOrdinal(check.dueDate) === null).length
       };
       const checkAudit = buildCheckAuditSummary();
+      const settlementAudit = buildTreasurySettlementAuditSummary();
       const differenceCount = bankComparisons.filter(row => Math.abs(row.difference) > 0.01).length;
       const issueCount = differenceCount + invalidStatementRows + unassignedStatementRows + unknownStatementRows +
         duplicateStatementRefs + outstanding.missingBankAccount + outstanding.unknownBankAccount +
-        outstanding.invalidDueDate + cashBalances.unassignedLines.length + cashBalances.unknownLines.length +
+        outstanding.invalidDueDate + settlementAudit.issueCount + cashBalances.unassignedLines.length + cashBalances.unknownLines.length +
         cashBalances.invalidLines + cashBalances.invalidVoucherDates + bankBalances.invalidBankLines +
         bankBalances.invalidBankVoucherDates + bankBalances.invalidBankVoucherStructures + bankBalances.unbalancedBankVouchers + checkAudit.issueCount;
       return {
         bankComparisons, statementRows: statementRows.length, invalidStatementRows, unassignedStatementRows,
-        unknownStatementRows, duplicateStatementRefs, outstanding, checkAudit, cashBalances, bankBalances,
+        unknownStatementRows, duplicateStatementRefs, outstanding, checkAudit, settlementAudit, cashBalances, bankBalances,
         differenceCount, issueCount
       };
     }
