@@ -9741,6 +9741,52 @@
       return result;
     }
 
+    function buildRevenueExpenseAuditSummary() {
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const invoices = Array.isArray(state.invoices) ? state.invoices : [];
+      const result = { revenueVoucherCount:0, expenseVoucherCount:0, revenueCredit:0, revenueDebit:0, expenseDebit:0, expenseCredit:0, cogsDebit:0, invoiceRevenueVoucherMissing:0, duplicateInvoiceRevenueVouchers:0, unlinkedRevenueLines:0, unlinkedExpenseLines:0, expenseLinesMissingDescription:0, invalidRevenueExpenseLines:0, duplicateExpenseEntries:0, expenseLines:0, revenueLines:0, issues:[] };
+      const saleInvoices=invoices.filter(inv=>inv&&inv.type==='sale'&&inv.status!=='cancelled');
+      const invoiceVouchers=new Map();
+      vouchers.filter(v=>v&&v.sourceType==='invoice').forEach(v=>{const key=String(v.sourceId||'');if(!invoiceVouchers.has(key))invoiceVouchers.set(key,[]);invoiceVouchers.get(key).push(v);});
+      saleInvoices.forEach(inv=>{const linked=invoiceVouchers.get(String(inv.id))||[];if(!linked.length)result.invoiceRevenueVoucherMissing++;else if(linked.length>1)result.duplicateInvoiceRevenueVouchers++;});
+      const fingerprints=new Map();
+      vouchers.forEach(v=>{
+        const lines=Array.isArray(v.lines)?v.lines:[];
+        const revenue=lines.filter(line=>/^4\\d{3}$/.test(String(line?.code||'')));
+        const expenses=lines.filter(line=>/^6\\d{3}$/.test(String(line?.code||'')));
+        if(revenue.length)result.revenueVoucherCount++;
+        if(expenses.length)result.expenseVoucherCount++;
+        revenue.forEach(line=>{
+          const debit=Number(line.debit||0),credit=Number(line.credit||0);result.revenueLines++;
+          if(!Number.isFinite(debit)||!Number.isFinite(credit)||debit<0||credit<0||(debit>0&&credit>0))result.invalidRevenueExpenseLines++;
+          else{result.revenueDebit+=debit;result.revenueCredit+=credit;}
+          if(v.sourceType!=='invoice'||!saleInvoices.some(inv=>String(inv.id)===String(v.sourceId)))result.unlinkedRevenueLines++;
+        });
+        expenses.forEach(line=>{
+          const debit=Number(line.debit||0),credit=Number(line.credit||0);result.expenseLines++;
+          if(!Number.isFinite(debit)||!Number.isFinite(credit)||debit<0||credit<0||(debit>0&&credit>0))result.invalidRevenueExpenseLines++;
+          else{result.expenseDebit+=debit;result.expenseCredit+=credit;}
+          if(!String(line.desc||'').trim()&&!String(v.description||v.title||'').trim())result.expenseLinesMissingDescription++;
+          if(!v.sourceType||!v.sourceId)result.unlinkedExpenseLines++;
+          const date=String(v.date||v.operationDate||''),party=String(line.partyId||'');
+          const desc=String(line.desc||v.description||v.title||'').normalize('NFKC').replace(/[\\sـ]+/g,'').trim().toLocaleLowerCase('fa');
+          const amount=Math.round((debit-credit)*100)/100;
+          const fingerprint=[date,String(line.code),amount,party,desc].join('|');
+          if(fingerprints.has(fingerprint)){result.duplicateExpenseEntries++;if(result.issues.length<30)result.issues.push('احتمال ثبت تکراری هزینه: سندهای '+fingerprints.get(fingerprint)+' و '+String(v.id||'بدون شماره')+'، حساب '+String(line.code)+'، مبلغ '+amount);}
+          else fingerprints.set(fingerprint,String(v.id||'بدون شماره'));
+        });
+        lines.filter(line=>String(line?.code||'')==='5101').forEach(line=>{const d=Number(line.debit||0),c=Number(line.credit||0);if(Number.isFinite(d)&&Number.isFinite(c)&&d>=0&&c>=0)result.cogsDebit+=d;else result.invalidRevenueExpenseLines++;});
+      });
+      if(result.invoiceRevenueVoucherMissing)result.issues.push('فاکتور فروش بدون سند منبع: '+result.invoiceRevenueVoucherMissing+' مورد.');
+      if(result.duplicateInvoiceRevenueVouchers)result.issues.push('فاکتور فروش با چند سند منبع: '+result.duplicateInvoiceRevenueVouchers+' مورد.');
+      if(result.unlinkedRevenueLines)result.issues.push('ردیف درآمد فاقد اتصال قابل‌ردیابی به فاکتور فروش: '+result.unlinkedRevenueLines+' ردیف؛ درآمدهای غیرعملیاتی باید جداگانه بررسی شوند.');
+      if(result.unlinkedExpenseLines)result.issues.push('ردیف هزینه بدون شناسه منبع: '+result.unlinkedExpenseLines+' ردیف؛ این مورد لزوماً به معنی هزینه بدون پرداخت نیست.');
+      if(result.expenseLinesMissingDescription)result.issues.push('ردیف هزینه بدون شرح: '+result.expenseLinesMissingDescription+' ردیف.');
+      if(result.invalidRevenueExpenseLines)result.issues.push('ردیف درآمد/هزینه/بهای تمام‌شده با مبلغ یا ساختار نامعتبر: '+result.invalidRevenueExpenseLines+' ردیف.');
+      result.issueCount=result.invoiceRevenueVoucherMissing+result.duplicateInvoiceRevenueVouchers+result.unlinkedRevenueLines+result.unlinkedExpenseLines+result.expenseLinesMissingDescription+result.invalidRevenueExpenseLines+result.duplicateExpenseEntries;
+      result.issues=[...new Set(result.issues)].slice(0,30);return result;
+    }
+
     function buildTreasurySettlementAuditSummary() {
       const txs = (Array.isArray(state.treasuryTxs) ? state.treasuryTxs : []).filter(tx =>
         !['bank_transfer','party_credit','party_credit_refund'].includes(String(tx.kind || '')) &&
@@ -9993,6 +10039,7 @@
        const cashBalances = getCashAccountBookBalances();
        const transferAudit = buildBankTransferAuditSummary();
        const treasuryAudit = buildTreasuryBankCashAuditSummary();
+       const revenueExpenseAudit = buildRevenueExpenseAuditSummary();
        const bankGrid = document.getElementById('bank-accounts-grid');
        bankGrid.innerHTML = `
         <div class="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
@@ -10059,6 +10106,18 @@
           ${treasuryAudit.settlementAudit.issues.length ? '<details class="rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="cursor-pointer text-[11px] font-bold">جزئیات مغایرت اسناد دریافت/پرداخت (' + faNum(treasuryAudit.settlementAudit.issues.length) + ' مورد)</summary><ul class="mt-2 list-disc pr-5 space-y-1 text-[10px]">' + treasuryAudit.settlementAudit.issues.map(issue => '<li>' + window.escapeBankReconcileText(issue) + '</li>').join('') + '</ul></details>' : ''}
           <p class="text-[10px] text-slate-500">در ساختار فعلی تراکنش دریافت/پرداخت، تاریخ ارزش بانکی به‌صورت مستقل ذخیره نمی‌شود؛ بنابراین فقط اختلاف تاریخ ارزش در رکوردهایی کنترل می‌شود که این فیلد را داشته باشند. تعداد فاقد اطلاعات تاریخ ارزش: ${faNum(treasuryAudit.settlementAudit.missingValueDateMetadata)} (اطلاع‌رسانی، نه مغایرت).</p>
           <p class="text-[10px] text-slate-500">مقایسه صورتحساب فقط بر اساس ردیف‌های CSV موجود و بازه اولین تا آخرین تاریخ واردشده است؛ کامل بودن فایل و مانده ابتدا/انتهای صورتحساب باید با فایل رسمی بانک کنترل شود. این گزارش فقط‌خواندنی است و هیچ سند، چک، مانده یا گردش خزانه را تغییر نمی‌دهد.</p>
+        </div>
+        <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2"><strong class="text-sm">ممیزی درآمدها و هزینه‌ها</strong><b class="text-xs ${revenueExpenseAudit.issueCount ? 'text-amber-700' : 'text-emerald-700'}">${faNum(revenueExpenseAudit.issueCount)} مورد نیازمند بررسی</b></div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+            <span>اسناد دارای درآمد: <b>${faNum(revenueExpenseAudit.revenueVoucherCount)}</b></span><span>اسناد دارای هزینه: <b>${faNum(revenueExpenseAudit.expenseVoucherCount)}</b></span>
+            <span>بستانکار درآمد: <b>${money(revenueExpenseAudit.revenueCredit)}</b></span><span>بدهکار هزینه: <b>${money(revenueExpenseAudit.expenseDebit)}</b></span>
+            <span>بهای تمام‌شده فروش: <b>${money(revenueExpenseAudit.cogsDebit)}</b></span><span>فاکتور فروش بدون سند: <b>${faNum(revenueExpenseAudit.invoiceRevenueVoucherMissing)}</b></span>
+            <span>ردیف درآمد بدون اتصال فاکتور: <b>${faNum(revenueExpenseAudit.unlinkedRevenueLines)}</b></span><span>هزینه بدون شناسه منبع: <b>${faNum(revenueExpenseAudit.unlinkedExpenseLines)}</b></span>
+            <span>احتمال هزینه تکراری: <b>${faNum(revenueExpenseAudit.duplicateExpenseEntries)}</b></span><span>شرح هزینه مفقود: <b>${faNum(revenueExpenseAudit.expenseLinesMissingDescription)}</b></span>
+          </div>
+          ${revenueExpenseAudit.issues.length ? '<details class="rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="cursor-pointer text-[11px] font-bold">جزئیات یافته‌های درآمد و هزینه (' + faNum(revenueExpenseAudit.issues.length) + ' مورد)</summary><ul class="mt-2 list-disc pr-5 space-y-1 text-[10px]">' + revenueExpenseAudit.issues.map(issue => '<li>' + window.escapeBankReconcileText(issue) + '</li>').join('') + '</ul></details>' : '<p class="text-[10px] text-emerald-700">در داده‌های بررسی‌شده، موردی با قواعد فعلی شناسایی نشد.</p>'}
+          <p class="text-[10px] text-slate-500">نبود شناسه منبع یا اتصال مستقیم پرداخت به‌تنهایی اثبات‌کننده هزینه پرداخت‌نشده یا ثبت اشتباه نیست؛ هزینه‌های تعهدی و درآمدهای غیرعملیاتی نیازمند بررسی اسناد پشتیبان هستند. گزارش فقط‌خواندنی است و هیچ سند یا گردش مالی را تغییر نمی‌دهد.</p>
         </div>
         <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2"><strong class="text-sm">حسابرسی انتقال بین حساب‌های بانکی</strong><span class="text-[10px] font-bold">${faNum(transferAudit.transfers)} انتقال بررسی‌شده • ${transferAudit.issueCount ? faNum(transferAudit.issueCount) + ' هشدار' : 'بدون مغایرت شناسایی‌شده'}</span></div>
