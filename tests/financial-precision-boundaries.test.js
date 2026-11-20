@@ -58,7 +58,11 @@ const dateOrdinal = () => 1;
 }
 {
   const state = structuredClone(baseState);
-  state.invoices[0].netSubtotal = Number.MAX_SAFE_INTEGER;
+  state.invoices[0].items = [
+    { productId: 'P1', kg: 1, price: 5e15, disc: 0, total: 5e15, costOfGoodsSold: 1 },
+    { productId: 'P2', kg: 1, price: 5e15, disc: 0, total: 5e15, costOfGoodsSold: 1 }
+  ];
+  state.invoices[0].netSubtotal = 1e16;
   state.invoices[0].vatRate = 100;
   state.invoices[0].vatAmount = 0;
   state.invoices[0].grandTotal = 0;
