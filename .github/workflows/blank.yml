@@ -38,6 +38,10 @@ jobs:
           node tests/actual-cash-flow.test.js
           node tests/accounting-reports-cross-validation.test.js
           node tests/trial-balance-print.test.js
+          node tests/trial-balance.test.js
+          node tests/party-control-reconciliation.test.js
+          node tests/subsidiary-ledger-audit-integrity.test.js
+          node tests/party-ledger-identity-ambiguity.test.js
           node tests/import-dashboard.test.js
           node tests/import-domain.test.js
           node tests/fx-commitment.test.js
