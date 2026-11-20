@@ -11342,6 +11342,172 @@
       };
     }
 
+    function buildSettlementIntegrityAudit() {
+      const invoices = (state.invoices || []).filter(inv => inv && ['sale','purchase'].includes(String(inv.type)) && inv.status !== 'cancelled');
+      const txs = Array.isArray(state.treasuryTxs) ? state.treasuryTxs : [];
+      const checks = Array.isArray(state.checks) ? state.checks : [];
+      const credits = txs.filter(tx => tx && tx.kind === 'party_credit');
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const issues = [];
+      const counts = {
+        transactionsChecked: 0, checksChecked: 0, creditsChecked: credits.length,
+        missingTreasuryVouchers: 0, duplicateTreasuryVouchers: 0, orphanTreasuryVouchers: 0,
+        missingChecks: 0, orphanChecks: 0, missingCheckVouchers: 0, duplicateCheckVouchers: 0,
+        invalidTransactionAmounts: 0, invalidTransactionDates: 0, invalidParties: 0, invalidAccounts: 0,
+        duplicateTransactionIds: 0, invalidAllocations: 0, overAllocatedInvoices: 0,
+        paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0,
+        duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0
+      };
+      const add = (type, message, detail) => issues.push({ type, message, detail: String(detail || '') });
+      const finite = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value));
+      const near = (a,b) => Math.abs(Number(a)-Number(b)) <= 1;
+      const invoiceById = new Map(invoices.map(inv => [String(inv.id),inv]));
+      const voucherGroups = (type,event) => {
+        const map = new Map();
+        vouchers.filter(v => v && v.sourceType === type && (event === null || (v.sourceEvent || 'default') === event)).forEach(v => {
+          const key = String(v.sourceId || '');
+          if (!map.has(key)) map.set(key,[]);
+          map.get(key).push(v);
+        });
+        return map;
+      };
+      const treasuryVoucherMap = voucherGroups('treasury','posted');
+      const checkVoucherMap = voucherGroups('check','issued');
+      const creditVoucherMap = new Map();
+      vouchers.filter(v => v && v.sourceType === 'party_credit_apply').forEach(v => {
+        const key = String(v.sourceId || '') + '|' + String(v.sourceEvent || 'default');
+        if (!creditVoucherMap.has(key)) creditVoucherMap.set(key,[]);
+        creditVoucherMap.get(key).push(v);
+      });
+      const allocationTotals = new Map();
+      const addAllocations = (owner, allocations, ownerAmount, expectedType) => {
+        const rows = Array.isArray(allocations) ? allocations : [];
+        let total = 0;
+        rows.forEach((a,index) => {
+          const amount = Number(a?.amount);
+          const inv = invoiceById.get(String(a?.invoiceId));
+          if (!finite(a?.amount) || amount <= 0 || !inv || (expectedType && inv.type !== expectedType) ||
+              String(inv.partyId) !== String(owner.partyId)) {
+            counts.invalidAllocations++;
+            add('allocation-invalid','تخصیص دریافت/پرداخت به فاکتور نامعتبر است.', 'تراکنش/چک: '+String(owner.id)+' | ردیف: '+(index+1)+' | فاکتور: '+String(a?.invoiceId ?? '—')+' | مبلغ: '+String(a?.amount ?? '—'));
+            return;
+          }
+          total += amount;
+          allocationTotals.set(String(inv.id),(allocationTotals.get(String(inv.id)) || 0)+amount);
+        });
+        if (rows.length && finite(ownerAmount) && total > Number(ownerAmount)+1) {
+          counts.invalidAllocations++;
+          add('allocation-exceeds-transaction','جمع تخصیص‌ها از مبلغ دریافت/پرداخت بیشتر است.','شناسه: '+String(owner.id)+' | مبلغ تراکنش: '+String(ownerAmount)+' | جمع تخصیص: '+total);
+        }
+      };
+      const txIds = new Set();
+      txs.filter(tx => tx && tx.kind !== 'party_credit').forEach(tx => {
+        counts.transactionsChecked++;
+        const id = String(tx.id || '');
+        if (!id || txIds.has(id)) { counts.duplicateTransactionIds++; add('transaction-id','شناسه گردش خزانه خالی یا تکراری است.','شناسه: '+(id || 'خالی')); }
+        txIds.add(id);
+        if (!finite(tx.amount) || Number(tx.amount) <= 0) { counts.invalidTransactionAmounts++; add('transaction-amount','مبلغ گردش خزانه نامعتبر است.','شناسه: '+id+' | مبلغ: '+String(tx.amount)); }
+        if (jalaliDateOrdinal(tx.date) === null) { counts.invalidTransactionDates++; add('transaction-date','تاریخ گردش خزانه نامعتبر است.','شناسه: '+id+' | تاریخ: '+String(tx.date ?? 'خالی')); }
+        const party = (state.parties || []).find(p => String(p.id) === String(tx.partyId));
+        if (!party) { counts.invalidParties++; add('transaction-party','طرف حساب گردش خزانه پیدا نشد.','شناسه: '+id+' | طرف حساب: '+String(tx.partyId ?? 'خالی')); }
+        const isCheckTx = tx.method === 'چک صیادی';
+        const expectedType = tx.dir === 'receive' ? 'sale' : tx.dir === 'pay' ? 'purchase' : null;
+        if (!expectedType) add('transaction-direction','جهت دریافت/پرداخت گردش خزانه نامعتبر است.','شناسه: '+id+' | جهت: '+String(tx.dir));
+        if (isCheckTx) {
+          const check = checks.find(c => String(c.sourceTxId || '') === id);
+          if (!check) { counts.missingChecks++; add('check-link-missing','گردش خزانه چک بدون رکورد چک متناظر است.','گردش: '+id); }
+        } else {
+          const linked = treasuryVoucherMap.get(id) || [];
+          if (!linked.length) { counts.missingTreasuryVouchers++; add('treasury-voucher-missing','برای دریافت/پرداخت نقدی یا بانکی سند حسابداری پیدا نشد.','گردش: '+id); }
+          if (linked.length > 1) { counts.duplicateTreasuryVouchers++; add('treasury-voucher-duplicate','برای یک گردش خزانه چند سند حسابداری ثبت شده است.','گردش: '+id+' | اسناد: '+linked.map(v=>v.id).join(', ')); }
+          if (linked.length === 1) {
+            const v=linked[0], lines=Array.isArray(v.lines)?v.lines:[];
+            const accountCode=tx.method==='صندوق نقدی'?'1101':tx.method==='حواله بانکی'?'1102':null;
+            const amountLine=lines.filter(l=>String(l.code)===accountCode);
+            const partyCode=tx.dir==='receive'?'1103':'2101';
+            const partyLines=lines.filter(l=>String(l.code)===partyCode && String(l.partyId||'')===String(tx.partyId));
+            const accountAmount=amountLine.reduce((sum,l)=>sum+Number(l.debit||0)+Number(l.credit||0),0);
+            const partyAmount=partyLines.reduce((sum,l)=>sum+Number(l.debit||0)+Number(l.credit||0),0);
+            const expectedDebit=tx.dir==='receive'?Number(tx.amount):0;
+            const expectedCredit=tx.dir==='pay'?Number(tx.amount):0;
+            const accountSide=amountLine.reduce((sum,l)=>sum+(tx.dir==='receive'?Number(l.debit||0):Number(l.credit||0)),0);
+            const partySide=partyLines.reduce((sum,l)=>sum+(tx.dir==='receive'?Number(l.credit||0):Number(l.debit||0)),0);
+            const accountId=tx.bankAccountId||tx.cashAccountId||'';
+            const validAccount=(state.bankAccounts||[]).some(a=>String(a.id)===String(accountId) && a.type===(tx.method==='صندوق نقدی'?'cash':'bank'));
+            if (!accountCode || !validAccount) { counts.invalidAccounts++; add('transaction-account','حساب صندوق/بانک گردش خزانه نامعتبر است.','گردش: '+id+' | حساب: '+String(accountId||'ثبت‌نشده')); }
+            if (!near(accountAmount,tx.amount) || !near(partyAmount,tx.amount) || !near(accountSide,tx.amount) || !near(partySide,tx.amount) ||
+                (tx.dir==='receive' && (expectedDebit<=0 || lines.some(l=>String(l.code)===accountCode && l.credit>0))) ||
+                (tx.dir==='pay' && (expectedCredit<=0 || lines.some(l=>String(l.code)===accountCode && l.debit>0))) ||
+                !near(lines.reduce((sum,l)=>sum+Number(l.debit||0),0),lines.reduce((sum,l)=>sum+Number(l.credit||0),0))) {
+              counts.ledgerAmountMismatches++; add('transaction-ledger-mismatch','مبلغ یا جهت سند دریافت/پرداخت با گردش خزانه تطبیق ندارد.','گردش: '+id+' | مبلغ گردش: '+String(tx.amount)+' | مبلغ حساب: '+accountAmount+' | مبلغ طرف حساب: '+partyAmount);
+            }
+            if (String(v.date||'')!==String(tx.date||'')) add('transaction-date-mismatch','تاریخ سند خزانه با تاریخ گردش یکسان نیست.','گردش: '+id+' | تاریخ گردش: '+String(tx.date)+' | تاریخ سند: '+String(v.date));
+          }
+        }
+        addAllocations(tx,tx.allocations || (Number(tx.allocInvId)>0?[{invoiceId:tx.allocInvId,amount:tx.amount}]:[]),tx.amount,expectedType);
+      });
+      checks.forEach(check => {
+        counts.checksChecked++;
+        const released=!!check.allocationsReleasedAt || ['bounced','voided'].includes(String(check.status));
+        const linkedTx=txs.find(tx=>tx.kind!=='party_credit' && String(tx.id)===String(check.sourceTxId) && tx.method==='چک صیادی');
+        if (!linkedTx) { counts.orphanChecks++; add('check-tx-orphan','رکورد چک بدون گردش خزانه متناظر است.','چک: '+String(check.id)+' | گردش: '+String(check.sourceTxId||'خالی')); }
+        if (linkedTx && (String(linkedTx.partyId)!==String(check.partyId) || String(linkedTx.dir)!==String(check.dir) || !near(linkedTx.amount,check.amount))) {
+          counts.invalidAllocations++; add('check-tx-mismatch','اطلاعات چک با گردش خزانه متناظر مغایرت دارد.','چک: '+String(check.id)+' | گردش: '+String(check.sourceTxId));
+        }
+        const linked=checkVoucherMap.get(String(check.id))||[];
+        if (!linked.length) { counts.missingCheckVouchers++; add('check-voucher-missing','سند صدور چک پیدا نشد.','چک: '+String(check.id)); }
+        if (linked.length>1) { counts.duplicateCheckVouchers++; add('check-voucher-duplicate','برای چک بیش از یک سند صدور ثبت شده است.','چک: '+String(check.id)+' | اسناد: '+linked.map(v=>v.id).join(', ')); }
+        if (!released) addAllocations(check,check.allocations,check.amount,check.dir==='receive'?'sale':check.dir==='pay'?'purchase':null);
+      });
+      const seenApplications=new Set();
+      credits.forEach(credit=>{
+        (credit.applications||[]).forEach(app=>{
+          const key=String(credit.id)+'|'+String(app.id||'');
+          if (!app.id || seenApplications.has(key)) { counts.duplicateCreditApplicationIds++; add('credit-application-duplicate','شناسه اعمال اعتبار خالی یا تکراری است.','اعتبار: '+String(credit.id)+' | اعمال: '+String(app.id||'خالی')); }
+          seenApplications.add(key);
+          const linked=creditVoucherMap.get(key)||[];
+          if (!linked.length) { counts.missingCreditApplicationVouchers++; add('credit-application-voucher-missing','سند حسابداری اعمال اعتبار پیدا نشد.','اعتبار: '+String(credit.id)+' | اعمال: '+String(app.id)); }
+          if (linked.length>1) { counts.duplicateCreditApplicationIds++; add('credit-application-voucher-duplicate','برای اعمال اعتبار چند سند ثبت شده است.','اعتبار: '+String(credit.id)+' | اعمال: '+String(app.id)); }
+          const inv=invoiceById.get(String(app.invoiceId));
+          const amount=Number(app.amount);
+          if (!inv || String(inv.partyId)!==String(credit.partyId) || inv.type!==credit.creditDirection || !finite(amount) || amount<=0) {
+            counts.invalidAllocations++; add('credit-application-invalid','اعمال اعتبار به فاکتور یا مبلغ نامعتبر متصل است.','اعتبار: '+String(credit.id)+' | فاکتور: '+String(app.invoiceId)+' | مبلغ: '+String(app.amount));
+          } else allocationTotals.set(String(inv.id),(allocationTotals.get(String(inv.id))||0)+amount);
+        });
+      });
+      vouchers.filter(v=>v && v.sourceType==='treasury' && (v.sourceEvent||'default')==='posted').forEach(v=>{
+        if (!txs.some(tx=>tx.kind!=='party_credit' && String(tx.id)===String(v.sourceId) && tx.method!=='چک صیادی')) {
+          counts.orphanTreasuryVouchers++; add('treasury-voucher-orphan','سند خزانه بدون گردش دریافت/پرداخت متناظر است.','سند: '+String(v.id)+' | منبع: '+String(v.sourceId));
+        }
+      });
+      vouchers.filter(v=>v && v.sourceType==='check' && (v.sourceEvent||'default')==='issued').forEach(v=>{
+        if (!checks.some(c=>String(c.id)===String(v.sourceId))) { counts.orphanChecks++; add('check-voucher-orphan','سند صدور چک بدون رکورد چک است.','سند: '+String(v.id)+' | چک: '+String(v.sourceId)); }
+      });
+      vouchers.filter(v=>v && v.sourceType==='party_credit_apply').forEach(v=>{
+        const key=String(v.sourceId||'')+'|'+String(v.sourceEvent||'default');
+        if (!creditVoucherMap.has(key) || !credits.some(c=>String(c.id)===String(v.sourceId) && (c.applications||[]).some(a=>String(a.id)===String(v.sourceEvent||'default')))) {
+          counts.orphanCreditVouchers++; add('credit-voucher-orphan','سند اعمال اعتبار بدون تخصیص متناظر است.','سند: '+String(v.id)+' | منبع: '+key);
+        }
+      });
+      invoices.forEach(inv=>{
+        const id=String(inv.id), allocated=allocationTotals.get(id)||0;
+        const openingPaid=inv.payMethod && inv.payMethod!=='credit' ? Number(inv.grandTotal||0) : 0;
+        const recorded=Number(inv.paidAmount||0);
+        const returned=(inv.returnRefs||[]).reduce((sum,r)=>sum+Math.max(0,Number(r.amount||0)),0);
+        const effectivePaid=openingPaid+allocated;
+        const maxPayable=Math.max(0,Number(inv.grandTotal||0)-returned);
+        if (!Number.isFinite(recorded) || recorded<0 || effectivePaid>maxPayable+1 || recorded>maxPayable+1) {
+          counts.overAllocatedInvoices++; add('invoice-overpaid','مجموع تسویه از مبلغ قابل تسویه فاکتور بیشتر است.','فاکتور: '+id+' | ثبت‌شده: '+recorded+' | محاسبه‌شده: '+effectivePaid+' | سقف پس از برگشت: '+maxPayable);
+        }
+        if (Number.isFinite(recorded) && Math.abs(recorded-effectivePaid)>1) {
+          counts.paidAmountMismatches++; add('invoice-paid-mismatch','مانده تسویه ثبت‌شده فاکتور با دریافت‌ها، پرداخت‌ها و اعمال اعتبار تطبیق ندارد.','فاکتور: '+id+' | paidAmount: '+recorded+' | محاسبه‌شده: '+effectivePaid+' | تخصیص‌ها: '+allocated+' | پرداخت اولیه فاکتور: '+openingPaid);
+        }
+      });
+      const duplicateVoucherKeys=new Set();
+      [treasuryVoucherMap,checkVoucherMap,creditVoucherMap].forEach(map=>map.forEach((rows,key)=>{if(rows.length>1)duplicateVoucherKeys.add(key);}));
+      return {...counts,issueCount:issues.length,issues};
+    }
+
     function buildInvoiceDocumentIntegrityAudit() {
       const invoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(inv => inv && ['sale','purchase'].includes(String(inv.type)));
       const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
@@ -11701,6 +11867,15 @@
         ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>' +
         (inventoryValuationIntegrity.issues.length ? '<div class="space-y-1 max-h-72 overflow-y-auto">'+inventoryValuationIntegrity.issues.slice(0,40).map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.productName)+' ('+escapeLedgerText(item.productId)+')</b> — '+escapeLedgerText(item.message)+'<p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">موردی برای بررسی در این کنترل پیدا نشد.</p>')+
         '<p class="text-[10px] text-slate-500">مقادیر با بهای صفر به‌تنهایی خطا محسوب نمی‌شوند. گزارش فقط‌خواندنی است و موجودی یا بهای کالا را خودکار تغییر نمی‌دهد.</p></div>';
+      const settlementAudit = buildSettlementIntegrityAudit();
+      const settlementAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی دریافت، پرداخت و تسویه فاکتورها</strong><b class="block">'+(settlementAudit.issueCount ? faNum(settlementAudit.issueCount)+' مورد نیازمند بررسی' : 'گردش‌های خزانه، چک‌ها و تخصیص‌ها تطبیق دارند')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[
+        ['گردش‌های بررسی‌شده',settlementAudit.transactionsChecked],['چک‌های بررسی‌شده',settlementAudit.checksChecked],['اعتبارهای طرف حساب',settlementAudit.creditsChecked],
+        ['سند دریافت/پرداخت مفقود',settlementAudit.missingTreasuryVouchers],['سند دریافت/پرداخت تکراری',settlementAudit.duplicateTreasuryVouchers],['سند خزانه بدون گردش',settlementAudit.orphanTreasuryVouchers],
+        ['چک بدون گردش',settlementAudit.orphanChecks],['سند صدور چک مفقود',settlementAudit.missingCheckVouchers],['سند صدور چک تکراری',settlementAudit.duplicateCheckVouchers],
+        ['مبلغ/تاریخ/طرف حساب نامعتبر',settlementAudit.invalidTransactionAmounts+settlementAudit.invalidTransactionDates+settlementAudit.invalidParties],['حساب نامعتبر',settlementAudit.invalidAccounts],['شناسه گردش تکراری',settlementAudit.duplicateTransactionIds],
+        ['تخصیص نامعتبر',settlementAudit.invalidAllocations],['فاکتور بیش‌تسویه',settlementAudit.overAllocatedInvoices],['مغایرت paidAmount',settlementAudit.paidAmountMismatches],
+        ['سند اعمال اعتبار مفقود',settlementAudit.missingCreditApplicationVouchers],['سند اعتبار بدون تخصیص',settlementAudit.orphanCreditVouchers],['مغایرت دفترکل',settlementAudit.ledgerAmountMismatches]
+      ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(settlementAudit.issues.length?'<div class="space-y-1 max-h-80 overflow-y-auto">'+settlementAudit.issues.slice(0,120).map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.message)+'</b><p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>':'<p class="text-xs text-emerald-700">موردی برای بررسی در گردش‌های تسویه پیدا نشد.</p>')+'<p class="text-[10px] text-slate-500">این ممیزی فقط‌خواندنی است؛ هیچ تراکنش، تخصیص، چک، مانده یا سندی را تغییر نمی‌دهد.</p></div>';
       const invoiceDocumentAudit = buildInvoiceDocumentIntegrityAudit();
       const invoiceDocumentAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی کامل فاکتورهای خرید و فروش</strong><b class="block">'+(invoiceDocumentAudit.issueCount ? faNum(invoiceDocumentAudit.issueCount)+' مورد نیازمند بررسی' : 'فاکتورها، ردیف‌ها و اسناد حسابداری تطبیق دارند')+'</b>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[
@@ -11777,7 +11952,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuationIntegrityPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
