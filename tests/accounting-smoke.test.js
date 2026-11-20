@@ -414,5 +414,50 @@ test('FIFO warehouse transfer reconciliation values transferred layers from dest
   assert.equal(row.status, 'matched');
 });
 
+test('inventory valuation integrity reports negative stock, historical negative balances and missing or negative average costs', () => {
+  const source = section('function buildInventoryValuationIntegrityAudit()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildInventoryValuationIntegrityAudit', {
+    state: {
+      costingMethod: 'AVG',
+      products: [
+        { id: 'NEG', name: 'موجودی منفی', stock: -2, buyPrice: 10, kardex: [{ date: '1405/01/01', bal: -2, doc: 'فروش' }] },
+        { id: 'MISS', name: 'بهای نامشخص', stock: 5, kardex: [] },
+        { id: 'BAD', name: 'بهای منفی', stock: 3, buyPrice: -4, kardex: [] },
+        { id: 'ZERO', name: 'بهای صفر معتبر', stock: 2, buyPrice: 0, kardex: [] },
+        { id: 'INVALID', name: 'موجودی نامعتبر', stock: 'bad', buyPrice: 10, kardex: [] }
+      ]
+    }
+  });
+  const result = build();
+  assert.equal(result.productsChecked, 5);
+  assert.equal(result.negativeCurrentStock, 1);
+  assert.equal(result.negativeKardexBalances, 1);
+  assert.equal(result.invalidStockValues, 1);
+  assert.equal(result.missingUnitCosts, 1);
+  assert.equal(result.invalidUnitCosts, 1);
+  assert.equal(result.issueCount, 5);
+  assert.ok(result.issues.some(issue => issue.productId === 'NEG' && issue.type === 'negative-stock'));
+  assert.ok(!result.issues.some(issue => issue.productId === 'ZERO'));
+});
+
+test('FIFO valuation integrity checks active batch costs and remaining quantities', () => {
+  const source = section('function buildInventoryValuationIntegrityAudit()', 'function renderTrialBalanceReport()');
+  const build = loadFunction(source, 'buildInventoryValuationIntegrityAudit', {
+    state: {
+      costingMethod: 'FIFO',
+      products: [
+        { id: 'FIFO1', name: 'سری بدون بها', stock: 4, batches: [{ id: 'B1', remainingQty: 4, unitCost: null }] },
+        { id: 'FIFO2', name: 'سری با مقدار منفی', stock: 1, batches: [{ id: 'B2', remainingQty: -1, unitCost: 10 }] },
+        { id: 'FIFO3', name: 'سری با بهای صفر', stock: 2, batches: [{ id: 'B3', remainingQty: 2, unitCost: 0 }] }
+      ]
+    }
+  });
+  const result = build();
+  assert.equal(result.missingUnitCosts, 1);
+  assert.equal(result.invalidBatchCosts, 1);
+  assert.equal(result.invalidBatchQuantities, 1);
+  assert.ok(!result.issues.some(issue => issue.productId === 'FIFO3'));
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
