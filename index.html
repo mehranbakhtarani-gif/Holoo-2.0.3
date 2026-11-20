@@ -11457,6 +11457,18 @@
         const linked=checkVoucherMap.get(String(check.id))||[];
         if (!linked.length) { counts.missingCheckVouchers++; add('check-voucher-missing','سند صدور چک پیدا نشد.','چک: '+String(check.id)); }
         if (linked.length>1) { counts.duplicateCheckVouchers++; add('check-voucher-duplicate','برای چک بیش از یک سند صدور ثبت شده است.','چک: '+String(check.id)+' | اسناد: '+linked.map(v=>v.id).join(', ')); }
+        if (jalaliDateOrdinal(check.dueDate) === null) { counts.invalidTransactionDates++; add('check-due-date','تاریخ سررسید چک نامعتبر است.','چک: '+String(check.id)+' | سررسید: '+String(check.dueDate ?? 'خالی')); }
+        if (!(state.bankAccounts||[]).some(a=>String(a.id)===String(check.bankAccountId) && a.type==='bank')) { counts.invalidAccounts++; add('check-bank-account','حساب بانکی چک معتبر نیست.','چک: '+String(check.id)+' | حساب: '+String(check.bankAccountId||'خالی')); }
+        if (linked.length===1) {
+          const v=linked[0], lines=Array.isArray(v.lines)?v.lines:[];
+          const debitCode=check.dir==='receive'?'1104':'2101', creditCode=check.dir==='receive'?'1103':'2102';
+          const debit=lines.filter(l=>String(l.code)===debitCode && String(l.partyId||'')===String(check.partyId)).reduce((sum,l)=>sum+Number(l.debit||0),0);
+          const credit=lines.filter(l=>String(l.code)===creditCode && String(l.partyId||'')===String(check.partyId)).reduce((sum,l)=>sum+Number(l.credit||0),0);
+          const totalDebit=lines.reduce((sum,l)=>sum+Number(l.debit||0),0), totalCredit=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+          if (!near(debit,check.amount) || !near(credit,check.amount) || !near(totalDebit,totalCredit) || String(v.date||'')!==String(linkedTx?.date||check.issueDate||'')) {
+            counts.ledgerAmountMismatches++; add('check-ledger-mismatch','مبلغ، توازن یا تاریخ سند صدور چک با اطلاعات چک تطبیق ندارد.','چک: '+String(check.id)+' | مبلغ چک: '+String(check.amount)+' | بدهکار: '+debit+' | بستانکار: '+credit);
+          }
+        }
         if (!released) addAllocations(check,check.allocations,check.amount,check.dir==='receive'?'sale':check.dir==='pay'?'purchase':null);
       });
       const seenApplications=new Set();
