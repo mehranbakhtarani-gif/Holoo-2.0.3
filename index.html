@@ -6769,7 +6769,7 @@
         return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : null;
       };
       const safeInventoryAverageCost = (existingQty, existingUnitCost, incomingQty, incomingTotalCost) => {
-        const q = safeInventoryDecimalUnits(existingQty), c = safeInventoryDecimalUnits(existingUnitCost, 9);
+        const q = safeInventoryDecimalUnits(existingQty), c = safeInventoryDecimalUnits(existingUnitCost, 9, true);
         const add = safeInventoryDecimalUnits(incomingQty);
         if (q === null || c === null || add === null || !Number.isSafeInteger(incomingTotalCost) || incomingTotalCost < 0) return null;
         const totalQty = q + add;
