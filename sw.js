@@ -1,9 +1,10 @@
-const CACHE_NAME = 'holoo-pwa-shell-v31';
+const CACHE_NAME = 'holoo-pwa-shell-v32';
 const APP_SHELL = [
   './',
   './index.html',
   './import-domain.js',
   './warehouse-audit-domain.js',
+  './inventory-cost-audit-domain.js',
   './invoice-audit-domain.js',
   './warehouse-assignment-domain.js',
   './operational-tools.js',
