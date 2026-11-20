@@ -729,7 +729,7 @@ test('subledger audit includes custom party control codes and reports invalid ma
   const audit=loadFunction(source,'buildSubsidiaryInvoiceAuditSummary',{
     state,
     isSupplierParty(party){return String(party?.role||'').includes('تأمین')||String(party?.role||'').includes('تامین');},
-    jalaliDateOrdinal(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||''))?1:null;}
+    jalaliDateOrdinal(value){return /^\d{4}\/\d{2}\/\d{2}$/.test(String(value||''))?1:null;}
   })();
   assert.equal(audit.partyBalanceDifference,0);
   assert.equal(audit.mappingMismatchLines,1);
