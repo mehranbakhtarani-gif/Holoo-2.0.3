@@ -12636,10 +12636,10 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
       });
       groups.forEach(group => checkParent(group, generals.filter(node =>
         String(node.parentId ?? '') === String(group.id) &&
-        String(node.code || '').startsWith(String(group.code || '')), 'group'));
+        String(node.code || '').startsWith(String(group.code || ''))), 'group'));
       generals.forEach(general => checkParent(general, subsidiaries.filter(node =>
         String(node.parentId ?? '') === String(general.id) &&
-        String(node.code || '').startsWith(String(general.code || '')), 'general'));
+        String(node.code || '').startsWith(String(general.code || ''))), 'general'));
       const catalogCodes = new Set(catalog.map(node => String(node.code || '').trim()));
       const unmappedPostingCodes = rows.filter(row => {
         const code = String(row.code || '').trim();
