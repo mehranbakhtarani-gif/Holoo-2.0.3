@@ -11159,6 +11159,28 @@
       showToast('خروجی تراز آزمایشی دانلود شد.');
     }
 
+    function exportGeneralLedgerAuditDetailsCSV() {
+      const audit = buildGeneralLedgerAuditSummary();
+      const cell = value => {
+        let raw = String(value == null ? '' : value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(raw)) raw = "'" + raw;
+        return '"' + raw.replace(/"/g, '""') + '"';
+      };
+      const rows = [
+        ['نوع مغایرت','شرح مغایرت','تاریخ سند','شماره سند','شناسه سند','نوع منبع','شناسه منبع','شماره ردیف','کد حساب','نام حساب','شناسه طرف حساب','نام طرف حساب','بدهکار','بستانکار'],
+        ...audit.details.map(item => [item.category,item.message,item.date,item.voucherNumber,item.voucherId,item.sourceType,item.sourceId,item.lineNumber,item.accountCode,item.accountName,item.partyId,item.partyName,item.debit,item.credit])
+      ];
+      const csv = '\uFEFF' + [['گزارش جزئی ممیزی دفترکل','تعداد جزئیات',audit.detailsTotal,'جزئیات نگهداری‌شده',audit.details.length], ...rows]
+        .map(row => row.map(cell).join(',')).join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'Holoo_General_Ledger_Audit_Details.csv';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast(audit.detailsTruncated ? 'خروجی ۵۰۰ جزئیات اول دانلود شد؛ گزارش کامل‌تر از سقف نمایش است.' : 'خروجی جزئیات ممیزی دفترکل دانلود شد.');
+    }
+
     function printTrialBalanceReport() {
       const from = document.getElementById('trial-from')?.value || trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = document.getElementById('trial-to')?.value || trialBalanceToDate || getTodayJalaliDate();
@@ -11217,11 +11239,99 @@
     if (typeof window !== 'undefined') window.runTrialBalanceReport = runTrialBalanceReport;
 
     function buildGeneralLedgerAuditSummary() {
-      const vs=Array.isArray(state.vouchers)?state.vouchers:[],ids=new Map(),src=new Map(),nums=new Map(),known=new Set([...(CHART_ACCOUNTS||[]),...(state.accountCatalog||[])].map(a=>String(a.code)));
-      const r={total:vs.length,duplicateIds:0,duplicateSources:0,duplicateNumbers:0,missingAccounts:0,missingParties:0,invalidDates:0,invalidAmounts:0,invalidStructure:0,unbalanced:0,issues:[]};
-      vs.forEach(v=>{const id=String(v.id??'');if(id)ids.set(id,(ids.get(id)||0)+1);if(v.sourceType&&v.sourceId!=null){const k=[v.sourceType,v.sourceId,v.sourceEvent||'default'].join('|');src.set(k,(src.get(k)||0)+1);}const no=String(v.number||v.voucherNumber||'');if(no)nums.set(no,(nums.get(no)||0)+1);if(jalaliDateOrdinal(v.date||v.operationDate)===null)r.invalidDates++;const z=inspectTrialBalanceVoucher(v);r.invalidAmounts+=z.invalidLines||0;if(z.invalidStructure)r.invalidStructure++;if(z.unbalanced)r.unbalanced++;(v.lines||[]).forEach(l=>{if(!String(l.code||'').trim()||!known.has(String(l.code)))r.missingAccounts++;if(l.partyId!=null&&!(state.parties||[]).some(p=>String(p.id)===String(l.partyId)))r.missingParties++;});});
-      const extra=m=>[...m.values()].reduce((n,c)=>n+Math.max(0,c-1),0);r.duplicateIds=extra(ids);r.duplicateSources=extra(src);r.duplicateNumbers=extra(nums);
-      [['شناسه تکراری',r.duplicateIds],['رویداد منبع تکراری',r.duplicateSources],['شماره تکراری',r.duplicateNumbers],['کد حساب نامعتبر',r.missingAccounts],['طرف حساب نامعتبر',r.missingParties],['تاریخ نامعتبر',r.invalidDates],['مبلغ نامعتبر',r.invalidAmounts],['سند با ساختار ناقص',r.invalidStructure],['سند نامتوازن',r.unbalanced]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0);return r;
+      const vs = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const parties = Array.isArray(state.parties) ? state.parties : [];
+      const accounts = [...(CHART_ACCOUNTS || []), ...(Array.isArray(state.accountCatalog) ? state.accountCatalog : [])];
+      const known = new Set(accounts.map(a => String(a.code)));
+      const accountNames = new Map(accounts.map(a => [String(a.code), String(a.name || '')]));
+      const partyNames = new Map(parties.map(p => [String(p.id), String(p.name || p.title || '')]));
+      const ids = new Map(), sources = new Map(), numbers = new Map();
+      const r = { total: vs.length, duplicateIds: 0, duplicateSources: 0, duplicateNumbers: 0,
+        missingAccounts: 0, missingParties: 0, invalidDates: 0, invalidAmounts: 0,
+        invalidStructure: 0, unbalanced: 0, issues: [], details: [], detailsTotal: 0, detailsTruncated: false };
+      const addGroup = (map, key, voucher) => {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(voucher);
+      };
+      const addDetail = (voucher, category, message, line, lineIndex) => {
+        r.detailsTotal++;
+        if (r.details.length >= 500) { r.detailsTruncated = true; return; }
+        const code = line && line.code != null ? String(line.code) : '';
+        const partyId = line && line.partyId != null ? String(line.partyId) : '';
+        r.details.push({
+          category, message,
+          voucherId: String(voucher && voucher.id != null ? voucher.id : ''),
+          voucherNumber: String(voucher && (voucher.number || voucher.voucherNumber) || ''),
+          date: String(voucher && (voucher.date || voucher.operationDate) || ''),
+          sourceType: String(voucher && voucher.sourceType || ''),
+          sourceId: String(voucher && voucher.sourceId != null ? voucher.sourceId : ''),
+          lineNumber: Number.isInteger(lineIndex) ? lineIndex + 1 : '',
+          accountCode: code, accountName: accountNames.get(code) || '',
+          partyId, partyName: partyNames.get(partyId) || '',
+          debit: line && line.debit != null ? line.debit : '',
+          credit: line && line.credit != null ? line.credit : ''
+        });
+      };
+      vs.forEach(v => {
+        const id = String(v && v.id != null ? v.id : '');
+        if (id) addGroup(ids, id, v);
+        if (v && v.sourceType && v.sourceId != null) addGroup(sources, [v.sourceType, v.sourceId, v.sourceEvent || 'default'].join('|'), v);
+        const number = String(v && (v.number || v.voucherNumber) || '');
+        if (number) addGroup(numbers, number, v);
+        const rawDate = v && (v.date || v.operationDate);
+        if (jalaliDateOrdinal(rawDate) === null) {
+          r.invalidDates++;
+          addDetail(v, 'invalid-date', 'تاریخ سند نامعتبر است.', null, null);
+        }
+        const lines = Array.isArray(v && v.lines) ? v.lines : [];
+        const check = inspectTrialBalanceVoucher(v);
+        r.invalidAmounts += check.invalidLines || 0;
+        if (check.invalidStructure) {
+          r.invalidStructure++;
+          addDetail(v, 'invalid-structure', 'سند کمتر از دو ردیف دارد یا ساختار ردیف‌های آن ناقص است.', null, null);
+        }
+        if (check.unbalanced) {
+          r.unbalanced++;
+          addDetail(v, 'unbalanced', 'جمع بدهکار و بستانکار سند برابر نیست.', null, null);
+        }
+        lines.forEach((line, index) => {
+          const code = String(line && line.code != null ? line.code : '').trim();
+          if (!code || !known.has(code)) {
+            r.missingAccounts++;
+            addDetail(v, 'missing-account', 'کد حساب ردیف در فهرست حساب‌ها یافت نشد.', line, index);
+          }
+          if (line && line.partyId != null && !partyNames.has(String(line.partyId))) {
+            r.missingParties++;
+            addDetail(v, 'missing-party', 'شناسه طرف حساب ردیف در فهرست اشخاص یافت نشد.', line, index);
+          }
+          const debitPresent = line && line.debit !== null && line.debit !== undefined && String(line.debit).trim() !== '';
+          const creditPresent = line && line.credit !== null && line.credit !== undefined && String(line.credit).trim() !== '';
+          const debit = Number(line && line.debit), credit = Number(line && line.credit);
+          if (!code || !debitPresent || !creditPresent || !Number.isFinite(debit) || !Number.isFinite(credit) ||
+              debit < 0 || credit < 0 || (debit > 0 && credit > 0) || (debit === 0 && credit === 0)) {
+            addDetail(v, 'invalid-amount', 'مبلغ یا ساختار بدهکار/بستانکار ردیف نامعتبر است.', line, index);
+          }
+        });
+      });
+      const extra = map => [...map.values()].reduce((n, rows) => n + Math.max(0, rows.length - 1), 0);
+      r.duplicateIds = extra(ids);
+      r.duplicateSources = extra(sources);
+      r.duplicateNumbers = extra(numbers);
+      const addDuplicateDetails = (map, category, label) => map.forEach((rows, key) => {
+        if (rows.length > 1) rows.forEach(v => addDetail(v, category, label + '؛ مقدار «' + key + '» ' + rows.length + ' بار ثبت شده است.', null, null));
+      });
+      addDuplicateDetails(ids, 'duplicate-id', 'شناسه سند تکراری');
+      addDuplicateDetails(sources, 'duplicate-source', 'رویداد منبع سند تکراری');
+      addDuplicateDetails(numbers, 'duplicate-number', 'شماره سند تکراری');
+      [
+        ['شناسه تکراری', r.duplicateIds], ['رویداد منبع تکراری', r.duplicateSources],
+        ['شماره تکراری', r.duplicateNumbers], ['کد حساب نامعتبر', r.missingAccounts],
+        ['طرف حساب نامعتبر', r.missingParties], ['تاریخ نامعتبر', r.invalidDates],
+        ['مبلغ نامعتبر', r.invalidAmounts], ['سند با ساختار ناقص', r.invalidStructure],
+        ['سند نامتوازن', r.unbalanced]
+      ].forEach(item => { if (item[1]) r.issues.push(item[0] + ': ' + item[1]); });
+      r.issueCount = r.issues.reduce((n, item) => n + Number((item.match(/: (\d+)$/) || [])[1] || 0), 0);
+      return r;
     }
 
     function buildFiscalOpeningClosingAuditSummary() {
@@ -12524,6 +12634,21 @@
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['ردیف مبلغ نامعتبر',subledgerAudit.invalidControlLines],['تاریخ سند کنترلی نامعتبر',subledgerAudit.invalidControlDates],['کد حساب ناسازگار',subledgerAudit.mappingMismatchLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
       const fiscalAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>کنترل اسناد افتتاحیه و اختتامیه</strong><b class="block">'+(fiscalAudit.issueCount?faNum(fiscalAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['اسناد افتتاحیه',fiscalAudit.openingCount],['اسناد اختتامیه',fiscalAudit.closingCount],['سال افتتاحیه تکراری',fiscalAudit.duplicateOpeningYears],['سال اختتامیه تکراری',fiscalAudit.duplicateClosingYears],['افتتاحیه نامعتبر',fiscalAudit.invalidOpening],['اختتامیه نامعتبر',fiscalAudit.invalidClosing],['ردیف نتیجه‌ای در افتتاحیه',fiscalAudit.openingResultAccounts],['ردیف غیرنتیجه‌ای در اختتامیه',fiscalAudit.closingNonResultAccounts],['سابقه بستن بدون سند',fiscalAudit.missingCloseRecords]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(fiscalAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+fiscalAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های افتتاحیه و اختتامیه بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش صرفاً خواندنی است؛ اسناد یا سوابق مالی را تغییر نمی‌دهد.</p></div>';
+      const auditDetailRows = audit.details.slice(0, 100).map((item, index) =>
+        '<tr class="border-t align-top"><td class="p-2">' + faNum(index + 1) + '</td>' +
+        '<td class="p-2 whitespace-nowrap">' + escapeLedgerText(item.date) + '</td>' +
+        '<td class="p-2"><b>' + escapeLedgerText(item.voucherNumber || '—') + '</b><div class="text-[10px] text-slate-500">' + escapeLedgerText(item.voucherId || 'شناسه ثبت نشده') + '</div></td>' +
+        '<td class="p-2">' + escapeLedgerText(item.message) + (item.lineNumber ? '<div class="text-[10px] text-slate-500">ردیف ' + faNum(item.lineNumber) + '</div>' : '') + '</td>' +
+        '<td class="p-2">' + escapeLedgerText(item.accountCode) + ' ' + escapeLedgerText(item.accountName) + '</td>' +
+        '<td class="p-2">' + escapeLedgerText(item.partyName || item.partyId) + '</td>' +
+        '<td class="p-2 text-left whitespace-nowrap">' + (item.debit === '' ? '—' : money(Number(item.debit) || 0)) + '</td>' +
+        '<td class="p-2 text-left whitespace-nowrap">' + (item.credit === '' ? '—' : money(Number(item.credit) || 0)) + '</td>' +
+        '<td class="p-2">' + (item.voucherId ? '<button onclick=\\'openVoucherFromLedger(' + escapeLedgerText(JSON.stringify(item.voucherId)) + ')\\' class="text-holoo-700 font-bold underline whitespace-nowrap">مشاهده سند</button>' : '—') + '</td></tr>'
+      ).join('');
+      const auditDetailsPanel = '<div class="rounded-xl border p-3 space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><strong>جزئیات قابل پیگیری مغایرت‌های دفترکل</strong><button onclick="exportGeneralLedgerAuditDetailsCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 py-2 text-xs font-bold">خروجی CSV جزئیات</button></div>' +
+        '<p class="text-[10px] text-slate-500">جزئیات ثبت‌شده: ' + faNum(audit.detailsTotal) + ' مورد؛ حداکثر ۱۰۰ ردیف در صفحه نمایش داده می‌شود.' + (audit.detailsTruncated ? ' برای جلوگیری از سنگین شدن گزارش، جزئیات در حافظه به ۵۰۰ مورد اول محدود شده است.' : '') + '</p>' +
+        (auditDetailRows ? '<div class="overflow-x-auto max-h-96 overflow-y-auto"><table class="w-full text-[10px] text-right min-w-[900px]"><thead class="sticky top-0 bg-slate-100"><tr><th class="p-2">ردیف</th><th class="p-2">تاریخ</th><th class="p-2">شماره / شناسه سند</th><th class="p-2">شرح مغایرت</th><th class="p-2">حساب</th><th class="p-2">طرف حساب</th><th class="p-2">بدهکار</th><th class="p-2">بستانکار</th><th class="p-2">پیگیری</th></tr></thead><tbody>' + auditDetailRows + '</tbody></table></div>' : '<p class="text-xs text-emerald-700">جزئیات مغایرتی برای نمایش وجود ندارد.</p>') +
+        '<p class="text-[10px] text-slate-500">این گزارش فقط‌خواندنی است؛ مشاهده سند صرفاً برای پیگیری است و هیچ سند یا مانده‌ای را تغییر نمی‌دهد.</p></div>';
       const auditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی جامع دفترکل</strong><b class="block">'+(audit.issueCount?faNum(audit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کل اسناد',audit.total],['شناسه تکراری',audit.duplicateIds],['منبع تکراری',audit.duplicateSources],['شماره تکراری',audit.duplicateNumbers],['حساب نامعتبر',audit.missingAccounts],['طرف حساب نامعتبر',audit.missingParties],['تاریخ نامعتبر',audit.invalidDates],['مبلغ نامعتبر',audit.invalidAmounts],['نامتوازن',audit.unbalanced]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(audit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+audit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های دفترکل بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش فقط خواندنی است.</p></div>';
       const warnings = [];
       if (report.movementDifference !== 0) warnings.push('گردش بدهکار و بستانکار در بازه انتخابی برابر نیست: ' + money(report.movementDifference));
@@ -12536,7 +12661,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + auditPanel + auditDetailsPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
