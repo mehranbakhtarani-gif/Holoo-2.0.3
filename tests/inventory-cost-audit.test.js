@@ -17,6 +17,7 @@ test('detects current stock differing from last Kardex balance',()=>{const r=aud
 test('detects remaining batch quantity differing from current stock',()=>{const r=audit({products:[{id:'K1',stock:8,batches:[{id:'B1',quantity:10,remainingQty:6,unitCost:100}]}]});assert.equal(r.batchStockMismatches,1);});
 test('accepts matching stock, last Kardex balance and batch remaining quantity',()=>{const r=audit({products:[{id:'K1',stock:8,kardex:[{inQty:10,outQty:2,bal:8}],batches:[{id:'B1',quantity:10,remainingQty:8,unitCost:100}]}]});assert.equal(r.kardexStockMismatches,0);assert.equal(r.batchStockMismatches,0);assert.equal(r.unverifiedStockTrace,0);});
 test('marks positive stock without Kardex or batch trace as unverified',()=>{const r=audit({products:[{id:'K1',stock:4}]});assert.equal(r.unverifiedStockTrace,1);});
+test('accepts a valid Kardex trace when batch detail is unavailable',()=>{const r=audit({products:[{id:'K1',stock:8,kardex:[{inQty:10,outQty:2,bal:8}]}]});assert.equal(r.kardexStockMismatches,0);assert.equal(r.kardexSequenceMismatches,0);assert.equal(r.unverifiedStockTrace,0);});
 
 console.log('PASS inventory cost audit suite');
 
