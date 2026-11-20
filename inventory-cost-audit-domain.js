@@ -34,9 +34,20 @@ function buildInventoryCostAudit(state){
    details.push({invoiceId:id,returnId:rid,voucherId:String(ret.id??''),returnInventoryCost:returnInventory,returnCogs:amount(ref.costOfGoodsSold)});
   });
  });
+ let kardexStockMismatches=0,batchStockMismatches=0,unverifiedStockTrace=0;
+ products.forEach(product=>{
+  const stock=amount(product&&product.stock);let unverified=false;
+  const kardex=Array.isArray(product&&product.kardex)?product.kardex:[];
+  if(kardex.length){const last=kardex[kardex.length-1],balance=amount(last&&last.bal);if(stock===null||balance===null)unverified=true;else if(Math.abs(stock-balance)>0.000001){kardexStockMismatches++;add('kardex-stock-mismatch',String(product.id??''),'موجودی فعلی کالا با مانده آخرین ردیف کاردکس برابر نیست.','موجودی کالا: '+stock+' | مانده آخر کاردکس: '+balance+' | تاریخ: '+String(last.date||'—')+' | شرح: '+String(last.doc||'—'));}}
+  else if(stock!==null&&stock>0)unverified=true;
+  const batches=Array.isArray(product&&product.batches)?product.batches:[];
+  if(batches.length){let total=0,valid=true;batches.forEach(batch=>{const qty=amount(batch&&(batch.remainingQty??batch.quantity));if(qty===null)valid=false;else total+=qty;});if(!valid||stock===null)unverified=true;else if(Math.abs(stock-total)>0.000001){batchStockMismatches++;add('batch-stock-mismatch',String(product.id??''),'جمع مقدار باقی‌مانده سری‌های ساخت با موجودی کالا برابر نیست.','موجودی کالا: '+stock+' | جمع سری ساخت: '+total);}}
+  else if(stock!==null&&stock>0)unverified=true;
+  if(unverified){unverifiedStockTrace++;add('stock-trace-unverified',String(product.id??''),'ردیابی مقداری کالا به دلیل نبود یا نامعتبر بودن سابقه کاردکس/سری ساخت کامل نیست.','موجودی ثبت‌شده: '+String((product&&product.stock)??'خالی'));}
+ });
  const knownReturns=new Set();invoices.forEach(inv=>(Array.isArray(inv&&inv.returnRefs)?inv.returnRefs:[]).forEach(r=>knownReturns.add(String((r&&r.id)??''))));
  vouchers.filter(v=>v&&v.sourceType==='invoice_return').forEach(v=>{if(!knownReturns.has(String(v.sourceId??''))){orphanReturnVouchers++;add('return-voucher-orphan',String(v.sourceEvent??''),'سند برگشت به سابقه برگشت فاکتور متصل نیست.','شناسه برگشت: '+String(v.sourceId??''));}});
- return{salesChecked,purchasesChecked,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,issueCount:issues.length,issues,details};
+ return{salesChecked,purchasesChecked,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,kardexStockMismatches,batchStockMismatches,unverifiedStockTrace,issueCount:issues.length,issues,details};
 }
 root.HolooInventoryCostAudit={buildInventoryCostAudit};if(typeof module!=='undefined'&&module.exports)module.exports=root.HolooInventoryCostAudit;
 })(typeof globalThis!=='undefined'?globalThis:this);
