@@ -11710,7 +11710,7 @@
             if (String(v.date||'')!==String(tx.date||'')) add('transaction-date-mismatch','تاریخ سند خزانه با تاریخ گردش یکسان نیست.','گردش: '+id+' | تاریخ گردش: '+String(tx.date)+' | تاریخ سند: '+String(v.date));
           }
         }
-        if (!isCheckTx) addAllocations(tx,tx.allocations || (Number(tx.allocInvId)>0?[{invoiceId:tx.allocInvId,amount:tx.amount}]:[]),tx.amount,expectedType);
+        if (!isCheckTx) addAllocations(tx,(Array.isArray(tx.allocations) && tx.allocations.length ? tx.allocations : (Number(tx.allocInvId)>0?[{invoiceId:tx.allocInvId,amount:tx.amount}]:[])),tx.amount,expectedType);
       });
       const checksBySourceTx = new Map();
       checks.forEach(check => {
