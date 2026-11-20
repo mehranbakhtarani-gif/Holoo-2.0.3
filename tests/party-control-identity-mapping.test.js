@@ -88,3 +88,30 @@ function run(state) {
 console.log('PASS: duplicate party IDs are treated as ambiguous, not attributed arbitrarily');
 console.log('PASS: control-account mapping mismatches include voucher and party details');
 console.log('PASS: party control reconciliation remains read-only');
+
+{
+  const state = {
+    parties:[{ id:'C1', name:'مشتری معتبر', role:'مشتری', ledgerAccountCode:'1103' }],
+    vouchers:[{
+      id:'V-IDENTITY-GAPS', date:'1405/01/04', desc:'ردیف‌های فاقد هویت معتبر',
+      lines:[
+        { code:'1103', debit:40, credit:0 },
+        { code:'1103', partyId:'MISSING-PARTY', debit:60, credit:0 }
+      ]
+    }]
+  };
+  const before=JSON.stringify(state);
+  const result=run(state);
+  assert.equal(result.unassignedLines,2,
+    'missing and unknown party identities must both remain unassigned instead of being silently aggregated');
+  assert.equal(result.unassignedDetails.length,2,
+    'each unassigned control-account line must retain an auditable diagnostic');
+  assert.ok(result.unassignedDetails.every(item=>item.voucherId==='V-IDENTITY-GAPS'),
+    'identity diagnostics must preserve the originating voucher reference');
+  assert.equal(result.totals.absoluteClosingDifference,100,
+    'unassigned subledger movement must remain visible as a control-account difference');
+  assert.equal(JSON.stringify(state),before,
+    'missing and unknown party identity diagnostics must not mutate accounting data');
+}
+
+console.log('PASS: missing and unknown party identities remain unassigned and auditable');
