@@ -99,5 +99,15 @@ const dateOrdinal = () => 1;
   const result = buildInventoryCostAudit(state);
   assert.equal(result.inventoryCounterpartMismatches, 0, 'recoverable input VAT must remain outside inventory carrying value');
 }
+{
+  const result = buildInventoryCostAudit({
+    invoices: [{ id: 'BALANCE-OVERFLOW', type: 'sale', items: [{ productId: 'P1', kg: 1, costOfGoodsSold: 10 }] }],
+    vouchers: [{ id: 'V-OVERFLOW', sourceType: 'invoice', sourceId: 'BALANCE-OVERFLOW', lines: [
+      { code: '5101', debit: 5e15, credit: 0 }, { code: '5101', debit: 5e15, credit: 0 },
+      { code: '1105', debit: 0, credit: 5e15 }, { code: '1105', debit: 0, credit: 5e15 }
+    ] }]
+  });
+  assert.ok(result.issues.some(x => x.type === 'voucher-unbalanced'), 'overflowing debit/credit totals must not compare as balanced');
+}
 console.log('PASS: invoice and inventory audits reject unsafe monetary magnitudes and aggregation overflow');
 console.log('PASS: recoverable input VAT remains separate from inventory control value');
