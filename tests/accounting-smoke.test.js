@@ -950,6 +950,45 @@ test('subledger audit includes custom party control codes and reports invalid ma
   assert.equal(JSON.stringify(state),before,'audit must not mutate accounting data');
 });
 
+test('subledger audit rejects ambiguous party IDs and malformed control amounts without mutating data',()=>{
+  const state={
+    parties:[
+      {id:'DUP',name:'مشتری تکراری اول',role:'مشتری',ledgerAccountCode:'1103'},
+      {id:'DUP',name:'تأمین‌کننده تکراری دوم',role:'تأمین‌کننده',ledgerAccountCode:'2101'},
+      {id:'C1',name:'مشتری معتبر',role:'مشتری',ledgerAccountCode:'1103'}
+    ],
+    accountCatalog:[],invoices:[],
+    vouchers:[
+      {id:'V-DUP',date:'1405/01/01',lines:[{code:'1103',partyId:'DUP',debit:100,credit:0}]},
+      {id:'V-VALID',date:'1405/01/02',lines:[{code:'1103',partyId:'C1',debit:0,credit:50}]},
+      {id:'V-MISSING-DEBIT',date:'1405/01/03',lines:[{code:'1103',partyId:'C1',credit:10}]},
+      {id:'V-ZERO',date:'1405/01/04',lines:[{code:'1103',partyId:'C1',debit:0,credit:0}]},
+      {id:'V-BAD-DATE',date:'1405/13/01',lines:[{code:'1103',partyId:'C1',debit:500,credit:0}]}
+    ]
+  };
+  const before=JSON.stringify(state);
+  const source=section('function buildSubsidiaryInvoiceAuditSummary()', 'function buildInventoryAccountingAuditSummary()');
+  const audit=loadFunction(source,'buildSubsidiaryInvoiceAuditSummary',{
+    state,
+    isSupplierParty(party){return String(party?.role||'').includes('تأمین')||String(party?.role||'').includes('تامین');},
+    jalaliDateOrdinal(value){
+      const match=String(value||'').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      if(!match)return null;
+      const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+      return month>=1&&month<=12&&day>=1&&day<=(month<=6?31:month<=11?30:29)?year*10000+month*100+day:null;
+    }
+  })();
+  assert.equal(audit.duplicatePartyIds,1);
+  assert.equal(audit.unassignedControlLines,1);
+  assert.equal(audit.invalidInvoiceLinks,1);
+  assert.equal(audit.invalidControlLines,2);
+  assert.equal(audit.invalidControlDates,1);
+  assert.equal(audit.subledgerAccounts,1);
+  assert.equal(audit.partyBalanceDifference,1);
+  assert.ok(audit.issues.some(issue=>issue.startsWith('شناسه تکراری طرف حساب: 1')));
+  assert.equal(JSON.stringify(state),before,'audit must not mutate accounting records');
+});
+ 
 // 13. Fiscal-year closing preview must block premature close and unresolved prior years.
 function fiscalCloseContext(state, today) {
   return {

@@ -11253,7 +11253,11 @@
       r.duplicateSubsidiaryCodes=Array.from(codeCounts.values()).reduce((n,c)=>n+Math.max(0,c-1),0);
       const byId=new Map(catalog.map(a=>[String(a.id),a]));
       subs.forEach(a=>{const parent=byId.get(String(a.parentId));if(!parent||parent.level!=='general'||String(parent.code)!==String(a.code).slice(0,2))r.hierarchyIssues++;});
-      const partyById=new Map(parties.map(p=>[String(p.id),p]));
+      const partyIdCounts=new Map();
+      parties.forEach(p=>{const id=String(p?.id??'').trim();if(id)partyIdCounts.set(id,(partyIdCounts.get(id)||0)+1);});
+      const ambiguousPartyIds=new Set([...partyIdCounts.entries()].filter(([,count])=>count>1).map(([id])=>id));
+      r.duplicatePartyIds=ambiguousPartyIds.size;
+      const partyById=new Map(parties.filter(p=>{const id=String(p?.id??'').trim();return id&&partyIdCounts.get(id)===1;}).map(p=>[String(p.id),p]));
       const controlCodes=new Set(['1103','2101','1107']);
       const allowedByParty=new Map();
       parties.forEach(p=>{
@@ -11270,13 +11274,19 @@
         const lines=Array.isArray(v?.lines)?v.lines:[];
         const relevant=lines.filter(line=>controlCodes.has(String(line?.code||'').trim()));
         if(!relevant.length)return;
-        if(jalaliDateOrdinal(v?.date||v?.operationDate)===null)r.invalidControlDates++;
+        const validVoucherDate=jalaliDateOrdinal(v?.date||v?.operationDate)!==null;
+        if(!validVoucherDate)r.invalidControlDates++;
         relevant.forEach(line=>{
           const code=String(line?.code||'').trim();
-          const debit=Number(line?.debit??0),credit=Number(line?.credit??0);
-          if(!Number.isFinite(debit)||!Number.isFinite(credit)||debit<0||credit<0||(debit>0&&credit>0)){
+          const rawDebit=line?.debit,rawCredit=line?.credit;
+          const debitPresent=rawDebit!==null&&rawDebit!==undefined&&String(rawDebit).trim()!=='';
+          const creditPresent=rawCredit!==null&&rawCredit!==undefined&&String(rawCredit).trim()!=='';
+          const debit=Number(rawDebit),credit=Number(rawCredit);
+          if(!debitPresent||!creditPresent||!Number.isFinite(debit)||!Number.isFinite(credit)||
+             debit<0||credit<0||(debit>0&&credit>0)||(debit===0&&credit===0)){
             r.invalidControlLines++;return;
           }
+          if(!validVoucherDate)return;
           const net=debit-credit;
           controlNet.set(code,(controlNet.get(code)||0)+net);
           const partyId=line?.partyId==null?'':String(line.partyId).trim();
@@ -11334,6 +11344,7 @@
       [
         ['ساختار حساب معین و حساب کل',r.hierarchyIssues],
         ['کد معین تکراری',r.duplicateSubsidiaryCodes],
+        ['شناسه تکراری طرف حساب',r.duplicatePartyIds],
         ['ردیف کنترلی بدون تفصیلی معتبر',r.unassignedControlLines],
         ['ردیف کنترلی با مبلغ نامعتبر',r.invalidControlLines],
         ['سند کنترلی با تاریخ نامعتبر',r.invalidControlDates],
@@ -11344,7 +11355,7 @@
         ['مغایرت مبلغ فاکتور و سند',r.invoiceAmountMismatches],
         ['ارتباط نامعتبر طرف حساب',r.invalidInvoiceLinks]
       ].forEach(([label,count])=>{if(count)r.issues.push(label+': '+count);});
-      r.issueCount=[r.hierarchyIssues,r.duplicateSubsidiaryCodes,r.unassignedControlLines,r.invalidControlLines,r.invalidControlDates,r.mappingMismatchLines,r.partyBalanceDifference,r.missingInvoiceVouchers,r.duplicateInvoiceVouchers,r.invoiceAmountMismatches,r.invalidInvoiceLinks].reduce((sum,count)=>sum+count,0);
+      r.issueCount=[r.hierarchyIssues,r.duplicateSubsidiaryCodes,r.duplicatePartyIds,r.unassignedControlLines,r.invalidControlLines,r.invalidControlDates,r.mappingMismatchLines,r.partyBalanceDifference,r.missingInvoiceVouchers,r.duplicateInvoiceVouchers,r.invoiceAmountMismatches,r.invalidInvoiceLinks].reduce((sum,count)=>sum+count,0);
       return r;
     }
     function buildInventoryAccountingAuditSummary() {
