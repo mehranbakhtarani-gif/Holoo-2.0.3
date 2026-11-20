@@ -9820,7 +9820,6 @@
           const oppositeSide = dir === 'receive' ? 'credit' : 'debit';
           const assetAmount = assetLines.reduce((sum,line)=>sum+Number(line[expectedSide] || 0),0);
           const wrongAssetAmount = assetLines.reduce((sum,line)=>sum+Number(line[oppositeSide] || 0),0);
-          const assetAccountIds = [...new Set(assetLines.map(line => String(accountType === 'bank' ? (line.bankAccountId || '') : (line.cashAccountId || '')).filter(Boolean))];
           if (!assetLines.length) {
             result.missingAssetLine++;
             result.issues.push(label + ': ردیف حساب بانک/صندوق در سند خزانه وجود ندارد.');
@@ -10043,11 +10042,22 @@
             <span>ردیف با حساب ناشناخته: <b>${faNum(treasuryAudit.unknownStatementRows)}</b></span>
             <span>چک با سررسید نامعتبر: <b>${faNum(treasuryAudit.outstanding.invalidDueDate)}</b></span>
             <span>مغایرت‌های ساختاری چک: <b>${faNum(treasuryAudit.checkAudit.issueCount)}</b></span>
+            <span>سند دریافت/پرداخت مفقود: <b>${faNum(treasuryAudit.settlementAudit.missingVoucher)}</b></span>
+            <span>سند تکراری/یتیم: <b>${faNum(treasuryAudit.settlementAudit.duplicateVoucher + treasuryAudit.settlementAudit.orphanVoucher)}</b></span>
+            <span>مغایرت مبلغ یا جهت سند: <b>${faNum(treasuryAudit.settlementAudit.amountDirectionMismatch)}</b></span>
+            <span>مغایرت معین طرف حساب: <b>${faNum(treasuryAudit.settlementAudit.partyLedgerMismatch)}</b></span>
+            <span>مغایرت تاریخ سند و خزانه: <b>${faNum(treasuryAudit.settlementAudit.dateMismatch)}</b></span>
+            <span>مغایرت کارمزد: <b>${faNum(treasuryAudit.settlementAudit.feeMismatch + treasuryAudit.settlementAudit.undocumentedFeeLines)}</b></span>
+            <span>اختلاف تاریخ ارزش: <b>${faNum(treasuryAudit.settlementAudit.valueDateDifferences + treasuryAudit.settlementAudit.invalidValueDates)}</b></span>
+            <span>تخصیص فاکتور نامعتبر: <b>${faNum(treasuryAudit.settlementAudit.allocationIssues)}</b></span>
             <span>ردیف صندوق بدون شناسه: <b>${faNum(treasuryAudit.cashBalances.unassignedLines.length)}</b></span>
             <span>ردیف صندوق با شناسه ناشناخته: <b>${faNum(treasuryAudit.cashBalances.unknownLines.length)}</b></span>
             <span>ردیف بانکی با مبلغ نامعتبر: <b>${faNum(treasuryAudit.bankBalances.invalidBankLines)}</b></span>
             <span>ردیف صندوق با مبلغ نامعتبر: <b>${faNum(treasuryAudit.cashBalances.invalidLines)}</b></span>
           </div>
+
+          ${treasuryAudit.settlementAudit.issues.length ? '<details class="rounded-lg border border-amber-200 bg-amber-50 p-2"><summary class="cursor-pointer text-[11px] font-bold">جزئیات مغایرت اسناد دریافت/پرداخت (' + faNum(treasuryAudit.settlementAudit.issues.length) + ' مورد)</summary><ul class="mt-2 list-disc pr-5 space-y-1 text-[10px]">' + treasuryAudit.settlementAudit.issues.map(issue => '<li>' + window.escapeBankReconcileText(issue) + '</li>').join('') + '</ul></details>' : ''}
+          <p class="text-[10px] text-slate-500">در ساختار فعلی تراکنش دریافت/پرداخت، تاریخ ارزش بانکی به‌صورت مستقل ذخیره نمی‌شود؛ بنابراین فقط اختلاف تاریخ ارزش در رکوردهایی کنترل می‌شود که این فیلد را داشته باشند. تعداد فاقد اطلاعات تاریخ ارزش: ${faNum(treasuryAudit.settlementAudit.missingValueDateMetadata)} (اطلاع‌رسانی، نه مغایرت).</p>
           <p class="text-[10px] text-slate-500">مقایسه صورتحساب فقط بر اساس ردیف‌های CSV موجود و بازه اولین تا آخرین تاریخ واردشده است؛ کامل بودن فایل و مانده ابتدا/انتهای صورتحساب باید با فایل رسمی بانک کنترل شود. این گزارش فقط‌خواندنی است و هیچ سند، چک، مانده یا گردش خزانه را تغییر نمی‌دهد.</p>
         </div>
         <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
