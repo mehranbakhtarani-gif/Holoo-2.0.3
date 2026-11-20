@@ -681,7 +681,7 @@ test('settlement audit reconciles cheque allocations and party credit applicatio
 test('settlement audit detects invoice over-allocation and paid amount mismatch',()=>{
   const state={
     parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],
-    invoices:[{id:9,type:'purchase',status:'active',partyId:'P1',payMethod:'credit',grandTotal:100,paidAmount:120,returnRefs:[]}],
+    invoices:[{id:9,type:'purchase',status:'active',partyId:'P1',payMethod:'credit',grandTotal:100,paidAmount:110,returnRefs:[]}],
     treasuryTxs:[{id:'TR9',date:'1405/01/01',dir:'pay',partyId:'P1',method:'حواله بانکی',bankAccountId:'B1',amount:120,allocations:[{invoiceId:9,amount:120}]}],
     checks:[],vouchers:[{id:19,sourceType:'treasury',sourceId:'TR9',sourceEvent:'posted',date:'1405/01/01',lines:[{code:'2101',partyId:'P1',debit:120,credit:0},{code:'1102',bankAccountId:'B1',debit:0,credit:120}]}]
   };
