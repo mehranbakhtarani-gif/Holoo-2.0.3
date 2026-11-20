@@ -6073,7 +6073,7 @@
       const codes = new Set(['1103', '2101', '1107']);
       (state.parties || []).forEach(p => getPartyLedgerControlCodes(p).forEach(code => codes.add(code)));
       const stats = new Map();
-      codes.forEach(code => stats.set(code, { code, glOpening: 0, glPeriod: 0, subOpening: 0, subPeriod: 0 }));
+      codes.forEach(code => stats.set(code, { code, glOpening: 0, glPeriod: 0, subOpening: 0, subPeriod: 0, glOpeningDebit: 0, glOpeningCredit: 0, glPeriodDebit: 0, glPeriodCredit: 0, subOpeningDebit: 0, subOpeningCredit: 0, subPeriodDebit: 0, subPeriodCredit: 0 }));
       let invalidDateVouchers = 0, invalidAmountVouchers = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0, includedVouchers = 0, unassignedLines = 0, mappingMismatchLines = 0;
       const unassignedDetails = [], mappingMismatchDetails = [];
       (state.vouchers || []).forEach(voucher => {
@@ -6096,6 +6096,8 @@
           const net = debit - credit, bucket = dateKey < from ? 'Opening' : 'Period';
           const item = stats.get(code);
           item['gl' + bucket] += net;
+          item['gl' + bucket + 'Debit'] += debit;
+          item['gl' + bucket + 'Credit'] += credit;
           const partyId = line.partyId == null ? '' : String(line.partyId).trim();
           const party = partyId ? partyById.get(partyId) : null;
           if (!party) {
@@ -6135,6 +6137,8 @@
             });
           }
           item['sub' + bucket] += net;
+          item['sub' + bucket + 'Debit'] += debit;
+          item['sub' + bucket + 'Credit'] += credit;
         });
       });
       const rows = Array.from(stats.values()).map(item => {
