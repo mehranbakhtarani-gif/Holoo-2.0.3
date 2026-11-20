@@ -12568,7 +12568,111 @@
       };
     }
 
-    function renderTrialBalanceReport() {
+function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
+      const report = buildTrialBalanceReport(fromDate, toDate);
+      const sourceCatalog = Array.isArray(state.accountCatalog) && state.accountCatalog.length
+        ? state.accountCatalog : (typeof buildAccountCatalog === 'function' ? buildAccountCatalog() : []);
+      const catalog = sourceCatalog.filter(node => node && node.active !== false);
+      const rows = Array.isArray(report.rows) ? report.rows : [];
+      const byCode = new Map(rows.map(row => [String(row.code || '').trim(), row]));
+      const idCounts = new Map();
+      catalog.forEach(node => {
+        const id = String(node.id ?? '').trim();
+        if (id) idCounts.set(id, (idCounts.get(id) || 0) + 1);
+      });
+      const uniqueById = new Map(catalog.filter(node => {
+        const id = String(node.id ?? '').trim();
+        return id && idCounts.get(id) === 1;
+      }).map(node => [String(node.id), node]));
+      const groups = catalog.filter(node => node.level === 'group');
+      const generals = catalog.filter(node => node.level === 'general');
+      const subsidiaries = catalog.filter(node => node.level === 'subsidiary');
+      const totals = list => list.reduce((sum, row) => ({
+        periodDebit: sum.periodDebit + Number(row.periodDebit || 0),
+        periodCredit: sum.periodCredit + Number(row.periodCredit || 0),
+        closingNet: sum.closingNet + Number(row.closingBalanceDebit || 0) - Number(row.closingBalanceCredit || 0)
+      }), { periodDebit: 0, periodCredit: 0, closingNet: 0 });
+      const prefixTotals = prefix => totals(rows.filter(row => String(row.code || '').startsWith(prefix)));
+      const exactTotals = code => totals(rows.filter(row => String(row.code || '') === code));
+      const details = [];
+      let hierarchyIssues = 0, groupResiduals = 0, generalResiduals = 0;
+      const checkParent = (parent, children, level) => {
+        const code = String(parent.code || '').trim();
+        const direct = exactTotals(code);
+        const descendants = children.map(child => {
+          const childCode = String(child.code || '').trim();
+          return level === 'group' ? prefixTotals(childCode) : exactTotals(childCode);
+        });
+        const childSum = totals(descendants);
+        const actual = prefixTotals(code);
+        const differences = {
+          periodDebitDifference: actual.periodDebit - direct.periodDebit - childSum.periodDebit,
+          periodCreditDifference: actual.periodCredit - direct.periodCredit - childSum.periodCredit,
+          closingNetDifference: actual.closingNet - direct.closingNet - childSum.closingNet
+        };
+        if (Math.abs(differences.periodDebitDifference) > 0.5 ||
+            Math.abs(differences.periodCreditDifference) > 0.5 ||
+            Math.abs(differences.closingNetDifference) > 0.5) {
+          if (level === 'group') groupResiduals++; else generalResiduals++;
+          details.push({
+            level, code, name: String(parent.name || code),
+            childCount: children.length, ...differences
+          });
+        }
+      };
+      catalog.forEach(node => {
+        const code = String(node.code || '').trim();
+        const parentId = String(node.parentId ?? '').trim();
+        if (node.level === 'group') {
+          if (!/^\\d$/.test(code) || parentId) hierarchyIssues++;
+        } else if (node.level === 'general') {
+          const parent = uniqueById.get(parentId);
+          if (!/^\\d{2}$/.test(code) || !parent || parent.level !== 'group' ||
+              String(parent.code) !== code.slice(0, 1)) hierarchyIssues++;
+        } else if (node.level === 'subsidiary') {
+          const parent = uniqueById.get(parentId);
+          if (!/^\\d{4,8}$/.test(code) || !parent || parent.level !== 'general' ||
+              !code.startsWith(String(parent.code || ''))) hierarchyIssues++;
+        } else hierarchyIssues++;
+      });
+      groups.forEach(group => checkParent(group, generals.filter(node =>
+        String(node.parentId ?? '') === String(group.id) &&
+        String(node.code || '').startsWith(String(group.code || '')), 'group'));
+      generals.forEach(general => checkParent(general, subsidiaries.filter(node =>
+        String(node.parentId ?? '') === String(general.id) &&
+        String(node.code || '').startsWith(String(general.code || '')), 'general'));
+      const catalogCodes = new Set(catalog.map(node => String(node.code || '').trim()));
+      const unmappedPostingCodes = rows.filter(row => {
+        const code = String(row.code || '').trim();
+        return code && !catalogCodes.has(code) &&
+          !groups.some(node => String(node.code) === code) &&
+          !generals.some(node => String(node.code) === code);
+      }).map(row => String(row.code));
+      const duplicateAccountIds = [...idCounts.values()].filter(count => count > 1).length;
+      const duplicateCodes = [groups, generals, subsidiaries].reduce((sum, list) => {
+        const counts = new Map();
+        list.forEach(node => {
+          const code = String(node.code || '').trim();
+          if (code) counts.set(code, (counts.get(code) || 0) + 1);
+        });
+        return sum + [...counts.values()].reduce((n, count) => n + Math.max(0, count - 1), 0);
+      }, 0);
+      return {
+        groupCount: groups.length, generalCount: generals.length, subsidiaryCount: subsidiaries.length,
+        hierarchyIssues, duplicateAccountIds, duplicateCodes, groupResiduals, generalResiduals,
+        unmappedPostingCodes: unmappedPostingCodes.slice(0, 100),
+        unmappedPostingCodesTotal: unmappedPostingCodes.length,
+        details: details.slice(0, 100), detailsTruncated: details.length > 100,
+        issueCount: hierarchyIssues + duplicateAccountIds + duplicateCodes +
+          groupResiduals + generalResiduals + unmappedPostingCodes.length,
+        periodDebit: report.totals?.periodDebit || 0,
+        periodCredit: report.totals?.periodCredit || 0,
+        closingDebit: report.totals?.closingBalanceDebit || 0,
+        closingCredit: report.totals?.closingBalanceCredit || 0
+      };
+    }
+
+        function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
       let report;
@@ -12678,6 +12782,8 @@
         '<p class="text-[10px]">برای تطبیق قطعی هر کالا، شناسه کالا و شناسه سری ساخت باید در جزئیات سند و گردش انبار به‌صورت مشترک موجود باشد؛ گزارش از حدس‌زدن انتساب جلوگیری می‌کند.</p></div>';
       const trialBalanceLedgerAudit = buildTrialBalanceLedgerReconciliation(from, to);
       const trialBalanceLedgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق تراز آزمایشی با دفتر حساب هر کد</strong><b class="block">'+(trialBalanceLedgerAudit.unavailable ? 'امکان اجرای تطبیق دفتر حساب در این محیط فراهم نیست' : trialBalanceLedgerAudit.issueCount ? faNum(trialBalanceLedgerAudit.issueCount)+' مغایرت نیازمند بررسی' : 'گردش و مانده حساب‌ها با دفتر حساب تطبیق دارد')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]"><span>حساب‌های تطبیق‌شده: <b>'+faNum(trialBalanceLedgerAudit.checkedAccounts)+'</b></span><span>اختلاف گردش بدهکار: <b>'+money(trialBalanceLedgerAudit.periodDebitDifference)+'</b></span><span>اختلاف گردش بستانکار: <b>'+money(trialBalanceLedgerAudit.periodCreditDifference)+'</b></span><span>اختلاف خالص مانده: <b>'+money(trialBalanceLedgerAudit.closingNetDifference)+'</b></span></div>'+(trialBalanceLedgerAudit.details.length ? '<div class="max-h-56 overflow-y-auto space-y-1">'+trialBalanceLedgerAudit.details.map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.code)+' — '+escapeLedgerText(item.name)+'</b><span> | اختلاف بدهکار: '+money(item.periodDebitDifference)+' | اختلاف بستانکار: '+money(item.periodCreditDifference)+' | اختلاف مانده خالص: '+money(item.closingNetDifference)+'</span></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">برای حساب‌های دارای گردش یا مانده، اختلافی بین تراز آزمایشی و دفتر حساب پیدا نشد.</p>')+(trialBalanceLedgerAudit.detailsTruncated ? '<p class="text-[10px] text-amber-800">نمایش جزئیات به ۱۰۰ مورد اول محدود شده است.</p>' : '')+'<p class="text-[10px]">کنترل صرفاً خواندنی است و هیچ سند یا مانده‌ای را تغییر نمی‌دهد.</p></div>';
+      const accountHierarchyAudit = buildAccountHierarchyRollupReconciliation(from, to);
+      const accountHierarchyAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق سلسله‌مراتبی گروه، کل و معین</strong><b class="block">'+(accountHierarchyAudit.issueCount ? faNum(accountHierarchyAudit.issueCount)+' مورد نیازمند بررسی' : 'جمع سلسله‌مراتبی حساب‌ها تطبیق دارد')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['گروه حساب',accountHierarchyAudit.groupCount],['حساب کل',accountHierarchyAudit.generalCount],['حساب معین/تفصیلی',accountHierarchyAudit.subsidiaryCount],['ایراد ساختار والد/فرزند',accountHierarchyAudit.hierarchyIssues],['اختلاف جمع زیرگروه‌ها',accountHierarchyAudit.groupResiduals],['اختلاف جمع زیرحساب‌های کل',accountHierarchyAudit.generalResiduals],['شناسه تکراری',accountHierarchyAudit.duplicateAccountIds],['کد تکراری',accountHierarchyAudit.duplicateCodes],['کد گردش‌دار خارج از درخت',accountHierarchyAudit.unmappedPostingCodesTotal]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(accountHierarchyAudit.details.length ? '<div class="max-h-56 overflow-y-auto space-y-1">'+accountHierarchyAudit.details.map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.level==='group'?'گروه':'کل')+' '+escapeLedgerText(item.code)+' — '+escapeLedgerText(item.name)+'</b><span> | اختلاف بدهکار: '+money(item.periodDebitDifference)+' | اختلاف بستانکار: '+money(item.periodCreditDifference)+' | اختلاف مانده خالص: '+money(item.closingNetDifference)+'</span></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">جمع گردش و مانده حساب‌های فرزند با جمع حساب مادر، پس از کسر ثبت مستقیم در حساب مادر، تطبیق دارد.</p>')+(accountHierarchyAudit.unmappedPostingCodes.length ? '<p class="text-[10px] text-amber-800">کدهای دارای گردش خارج از درخت حساب: '+accountHierarchyAudit.unmappedPostingCodes.map(escapeLedgerText).join('، ')+'</p>' : '')+(accountHierarchyAudit.detailsTruncated ? '<p class="text-[10px] text-amber-800">جزئیات به ۱۰۰ مورد اول محدود شده است.</p>' : '')+'<p class="text-[10px]">مبالغ بر اساس اسناد معتبر تا پایان بازه انتخابی تجمیع شده‌اند. گزارش فقط‌خواندنی است و هیچ سند یا مانده‌ای را تغییر نمی‌دهد.</p></div>';
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['ردیف مبلغ نامعتبر',subledgerAudit.invalidControlLines],['تاریخ سند کنترلی نامعتبر',subledgerAudit.invalidControlDates],['کد حساب ناسازگار',subledgerAudit.mappingMismatchLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
@@ -12709,7 +12815,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + auditPanel + auditDetailsPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + trialBalanceLedgerAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuationIntegrityPanel + settlementAuditPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + auditPanel + auditDetailsPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + trialBalanceLedgerAuditPanel + accountHierarchyAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
