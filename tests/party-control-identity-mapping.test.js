@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
+for (const [i, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new vm.Script(match[1], { filename: 'index.html:inline-' + i });
 }
 const start = html.indexOf('function buildPartyControlReconciliation(');
@@ -18,10 +18,10 @@ function run(state) {
       return String(value || '').replace(/-/g, '/').replace(/[۰-۹٠-٩]/g, ch => {
         const fa='۰۱۲۳۴۵۶۷۸۹', ar='٠١٢٣٤٥٦٧٨٩';
         const fi=fa.indexOf(ch); return String(fi >= 0 ? fi : ar.indexOf(ch));
-      }).replace(/\\//g, '');
+      }).replace(/\//g, '');
     },
     jalaliDateOrdinal(value) {
-      const m=String(value || '').match(/^(\\d{4})\\/(\\d{2})\\/(\\d{2})$/);
+      const m=String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       if (!m) return null;
       const y=Number(m[1]), mo=Number(m[2]), d=Number(m[3]);
       return mo>=1 && mo<=12 && d>=1 && d<=(mo<=6?31:mo<=11?30:29) ? y*10000+mo*100+d : null;
