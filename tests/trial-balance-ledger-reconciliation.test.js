@@ -3,66 +3,63 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-function sliceBetween(startText, endText) {
-  const start = html.indexOf(startText), end = html.indexOf(endText, start);
-  assert.ok(start >= 0 && end > start, `missing source range: ${startText}`);
-  return html.slice(start, end);
-}
+const start = html.indexOf('function buildTrialBalanceLedgerReconciliation(');
+const end = html.indexOf('function renderTrialBalanceReport(', start);
+assert.ok(start >= 0 && end > start, 'reconciliation helper must exist in index.html');
+const helperSource = html.slice(start, end);
+
 const state = {
-  fiscalYear: '1405',
-  parties: [],
-  accountCatalog: [{ code: '300', name: 'حساب بدون گردش' }],
-  vouchers: [
-    { id: 'OPEN', date: '1404/12/29', lines: [
-      { code: '100', accountName: 'نقد', debit: 100, credit: 0 },
-      { code: '200', accountName: 'سرمایه', debit: 0, credit: 100 }
-    ] },
-    { id: 'PERIOD', date: '1405/01/02', lines: [
-      { code: '100', accountName: 'نقد', debit: 50, credit: 0 },
-      { code: '200', accountName: 'سرمایه', debit: 0, credit: 50 }
-    ] }
+  vouchers: [{ id: 'KEEP', date: '1405/01/02', lines: [
+    { code: '100', debit: 50, credit: 0 },
+    { code: '200', debit: 0, credit: 50 }
+  ] }]
+};
+const before = JSON.stringify(state);
+const trialBalance = {
+  rows: [
+    { code: '100', name: 'نقد', periodDebit: 50, periodCredit: 0, closingBalanceDebit: 150, closingBalanceCredit: 0 },
+    { code: '200', name: 'سرمایه', periodDebit: 0, periodCredit: 50, closingBalanceDebit: 0, closingBalanceCredit: 150 }
   ]
 };
-const CHART_ACCOUNTS = [
-  { code: '100', name: 'نقد' },
-  { code: '200', name: 'سرمایه' },
-  { code: '300', name: 'حساب بدون گردش' }
-];
+const ledgerResults = {
+  '100': { periodDebit: 50, periodCredit: 0, closingNet: 150 },
+  '200': { periodDebit: 0, periodCredit: 50, closingNet: -150 }
+};
 const sandbox = {
-  state, CHART_ACCOUNTS,
-  normalizeAccountingDate: value => String(value || '').trim().replace(/-/g, '/'),
-  getPartyName: () => '—'
+  state,
+  buildTrialBalanceReport: () => trialBalance,
+  buildAccountLedger: code => ledgerResults[String(code)]
 };
 vm.createContext(sandbox);
-vm.runInContext(sliceBetween('function jalaliDateOrdinal(', 'function setAccTab('), sandbox);
-vm.runInContext(
-  sliceBetween('let trialBalanceFromDate = null;', 'function renderAccountingModule()') +
-  '; this.buildTrialBalanceLedgerReconciliation = buildTrialBalanceLedgerReconciliation;',
-  sandbox
-);
+vm.runInContext(helperSource + '; this.reconcile = buildTrialBalanceLedgerReconciliation;', sandbox);
 
-const before = JSON.stringify(state);
-const report = sandbox.buildTrialBalanceLedgerReconciliation('1405/01/01', '1405/01/31');
-assert.equal(report.checkedAccounts, 2, 'only accounts with a balance or movement are checked');
-assert.equal(report.mismatches, 0, 'trial balance and account ledger must reconcile per account');
-assert.equal(report.periodDebitDifference, 0);
-assert.equal(report.periodCreditDifference, 0);
-assert.equal(report.closingNetDifference, 0);
-assert.equal(report.issueCount, 0);
-assert.equal(JSON.stringify(state), before, 'reconciliation must not mutate accounting records');
+const matched = sandbox.reconcile('1405/01/01', '1405/01/31');
+assert.equal(matched.checkedAccounts, 2);
+assert.equal(matched.mismatches, 0);
+assert.equal(matched.issueCount, 0);
+assert.equal(matched.periodDebitDifference, 0);
+assert.equal(matched.periodCreditDifference, 0);
+assert.equal(matched.closingNetDifference, 0);
+assert.equal(JSON.stringify(state), before, 'matching reconciliation must not mutate source records');
 
-sandbox.buildAccountLedger = () => ({
-  periodDebit: 999, periodCredit: 0, closingNet: 999
-});
-const mismatch = sandbox.buildTrialBalanceLedgerReconciliation('1405/01/01', '1405/01/31');
-assert.equal(mismatch.mismatches, 2, 'per-account differences must be surfaced');
-assert.equal(mismatch.details.length, 2);
-assert.ok(mismatch.details.every(item => item.periodDebitDifference !== 0 || item.periodCreditDifference !== 0 || item.closingNetDifference !== 0));
-assert.equal(JSON.stringify(state), before, 'mismatch reporting must remain read-only');
+ledgerResults['200'] = { periodDebit: 0, periodCredit: 45, closingNet: -140 };
+const mismatch = sandbox.reconcile('1405/01/01', '1405/01/31');
+assert.equal(mismatch.mismatches, 1);
+assert.equal(mismatch.details.length, 1);
+assert.equal(mismatch.details[0].code, '200');
+assert.equal(mismatch.details[0].periodCreditDifference, 5);
+assert.equal(mismatch.details[0].closingNetDifference, -10);
+assert.equal(JSON.stringify(state), before, 'mismatch reporting must not mutate source records');
+
+const unavailableSandbox = { buildTrialBalanceReport: () => trialBalance };
+vm.createContext(unavailableSandbox);
+vm.runInContext(helperSource + '; this.reconcile = buildTrialBalanceLedgerReconciliation;', unavailableSandbox);
+assert.equal(unavailableSandbox.reconcile('1405/01/01', '1405/01/31').unavailable, true);
 
 assert.match(html, /تطبیق تراز آزمایشی با دفتر حساب هر کد/);
 assert.ok(html.includes('buildTrialBalanceLedgerReconciliation(from, to)'), 'UI must invoke the reconciliation helper');
-console.log('PASS: trial balance rows reconcile to each account ledger for period movement and closing net');
-console.log('PASS: per-account mismatches are exposed with account code and debit/credit/net deltas');
-console.log('PASS: reconciliation leaves source accounting records unchanged');
-console.log('PASS: trial balance UI includes the read-only reconciliation panel');
+assert.ok(html.includes('امکان اجرای تطبیق دفتر حساب در این محیط فراهم نیست'), 'UI must not report a false clean result when unavailable');
+console.log('PASS: matching trial-balance and account-ledger totals are reconciled');
+console.log('PASS: per-account debit, credit and closing-net mismatches are exposed');
+console.log('PASS: unavailable ledger helper is reported as unavailable, not as a clean audit');
+console.log('PASS: reconciliation is read-only and the UI exposes its status');
