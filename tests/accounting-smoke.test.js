@@ -619,7 +619,7 @@ function settlementAuditContext(state) {
   return {
     state,
     jalaliDateOrdinal(value) {
-      const match=String(value||'').match(/^(\\d{4})\\/(\\d{2})\\/(\\d{2})$/);
+      const match=String(value||'').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       if(!match)return null;
       const y=Number(match[1]),m=Number(match[2]),d=Number(match[3]);
       return m>=1&&m<=12&&d>=1&&d<=(m<=6?31:m<=11?30:29)?y*10000+m*100+d:null;
