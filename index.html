@@ -11073,21 +11073,111 @@
       const parties = Array.isArray(state.parties) ? state.parties : [];
       const catalog = Array.isArray(state.accountCatalog) ? state.accountCatalog : [];
       const invoices = Array.isArray(state.invoices) ? state.invoices : [];
-      const r = { hierarchyIssues: 0, duplicateSubsidiaryCodes: 0, subledgerAccounts: 0, unassignedControlLines: 0, partyBalanceDifference: 0, invoicesChecked: 0, missingInvoiceVouchers: 0, duplicateInvoiceVouchers: 0, invoiceAmountMismatches: 0, invalidInvoiceLinks: 0, issues: [] };
-      const subs = catalog.filter(a => a.level === 'subsidiary' && a.active !== false);
-      const codeCounts = new Map(); subs.forEach(a => codeCounts.set(String(a.code || ''),(codeCounts.get(String(a.code || ''))||0)+1));
-      r.duplicateSubsidiaryCodes = Array.from(codeCounts.values()).reduce((n,c)=>n+Math.max(0,c-1),0);
-      const byId = new Map(catalog.map(a => [String(a.id),a]));
-      subs.forEach(a => { const p = byId.get(String(a.parentId)); if (!p || p.level !== 'general' || String(p.code) !== String(a.code).slice(0,2)) r.hierarchyIssues++; });
-      const controlCodes = ['1103','2101','1107']; const partyNet = new Map(); const controlNet = new Map();
-      controlCodes.forEach(code => { partyNet.set(code,0); controlNet.set(code,0); });
-      vouchers.forEach(v => (v.lines || []).forEach(line => { const code=String(line.code || ''); if (!controlNet.has(code)) return; const net=Number(line.debit || 0)-Number(line.credit || 0); controlNet.set(code,controlNet.get(code)+net); if (line.partyId === null || line.partyId === undefined || line.partyId === '') { if (Math.abs(net)>0.000001) r.unassignedControlLines++; return; } const party=parties.find(p=>String(p.id)===String(line.partyId)); if (!party) { r.invalidInvoiceLinks++; return; } const key=code+'|'+String(line.partyId); partyNet.set(key,(partyNet.get(key)||0)+net); }));
-      controlCodes.forEach(code => { const tagged=Array.from(partyNet.entries()).filter(([k])=>k.startsWith(code+'|')).reduce((n,[,v])=>n+v,0); const diff=controlNet.get(code)-tagged; if (Math.abs(diff)>0.5) r.partyBalanceDifference++; });
-      r.subledgerAccounts = controlCodes.length;
-      const invoiceVouchers = new Map(); vouchers.filter(v=>v.sourceType==='invoice').forEach(v=>{ const k=String(v.sourceId || ''); if(!invoiceVouchers.has(k)) invoiceVouchers.set(k,[]); invoiceVouchers.get(k).push(v); });
-      invoices.filter(inv=>inv.status==='active').forEach(inv=>{ r.invoicesChecked++; const matches=invoiceVouchers.get(String(inv.id))||[]; if(!matches.length){r.missingInvoiceVouchers++;return;} if(matches.length>1){r.duplicateInvoiceVouchers++;return;} const v=matches[0]; const lines=Array.isArray(v.lines)?v.lines:[]; const sum=(code,side)=>lines.filter(l=>String(l.code)===code).reduce((n,l)=>n+Number(l[side]||0),0); const grand=Number(inv.grandTotal||0); const vat=Number(inv.vatAmount||0); const net=Number(inv.netSubtotal!==undefined?inv.netSubtotal:inv.subtotal||0); if(![grand,vat,net].every(Number.isFinite)){r.invoiceAmountMismatches++;return;} const settlementCode=String(inv.type==='sale'?(inv.payMethod==='credit'?'1103':(inv.settlementAccountCode||'')):(inv.payMethod==='credit'?'2101':(inv.settlementAccountCode||''))); const partyLine=lines.filter(l=>String(l.code)===settlementCode); if(inv.payMethod==='credit' && !partyLine.some(l=>String(l.partyId)===String(inv.partyId))) r.invalidInvoiceLinks++; if(inv.type==='sale'){ if(Math.abs(sum(settlementCode,'debit')-sum(settlementCode,'credit')-grand)>1 || Math.abs(sum('4101','credit')-sum('4101','debit')-net)>1 || Math.abs(sum('2103','credit')-sum('2103','debit')-vat)>1) r.invoiceAmountMismatches++; } else if(inv.type==='purchase'){ if(Math.abs(sum(settlementCode,'credit')-sum(settlementCode,'debit')-grand)>1 || Math.abs(sum('1105','debit')-sum('1105','credit')-net)>1 || Math.abs(sum('1106','debit')-sum('1106','credit')-vat)>1) r.invoiceAmountMismatches++; } });
-      [['ساختار حساب معین و حساب کل',r.hierarchyIssues],['کد معین تکراری',r.duplicateSubsidiaryCodes],['ردیف کنترلی بدون تفصیلی',r.unassignedControlLines],['اختلاف مانده تفصیلی با کنترلی',r.partyBalanceDifference],['فاکتور بدون سند حسابداری',r.missingInvoiceVouchers],['سند تکراری فاکتور',r.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور و سند',r.invoiceAmountMismatches],['ارتباط نامعتبر طرف حساب',r.invalidInvoiceLinks]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});
-      r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0); return r;
+      const r = {
+        hierarchyIssues:0, duplicateSubsidiaryCodes:0, subledgerAccounts:0,
+        unassignedControlLines:0, invalidControlLines:0, invalidControlDates:0,
+        mappingMismatchLines:0, partyBalanceDifference:0,
+        invoicesChecked:0, missingInvoiceVouchers:0, duplicateInvoiceVouchers:0,
+        invoiceAmountMismatches:0, invalidInvoiceLinks:0, issues:[]
+      };
+      const subs = catalog.filter(a=>a && a.level==='subsidiary' && a.active!==false);
+      const codeCounts=new Map();
+      subs.forEach(a=>{const code=String(a.code||'').trim();codeCounts.set(code,(codeCounts.get(code)||0)+1);});
+      r.duplicateSubsidiaryCodes=Array.from(codeCounts.values()).reduce((n,c)=>n+Math.max(0,c-1),0);
+      const byId=new Map(catalog.map(a=>[String(a.id),a]));
+      subs.forEach(a=>{const parent=byId.get(String(a.parentId));if(!parent||parent.level!=='general'||String(parent.code)!==String(a.code).slice(0,2))r.hierarchyIssues++;});
+      const partyById=new Map(parties.map(p=>[String(p.id),p]));
+      const controlCodes=new Set(['1103','2101','1107']);
+      const allowedByParty=new Map();
+      parties.forEach(p=>{
+        const primary=String(p?.ledgerAccountCode||(p?.type==='supplier'||p?.category==='supplier'?'2101':'1103'));
+        const allowed=new Set([primary]);
+        if(p?.type==='supplier'||p?.category==='supplier'||p?.partyType==='supplier')allowed.add('1107');
+        allowedByParty.set(String(p.id),allowed);
+        allowed.forEach(code=>controlCodes.add(code));
+      });
+      const controlNet=new Map(),partyNet=new Map(),partiesWithBalances=new Set();
+      controlCodes.forEach(code=>controlNet.set(code,0));
+      vouchers.forEach(v=>{
+        const lines=Array.isArray(v?.lines)?v.lines:[];
+        const relevant=lines.filter(line=>controlCodes.has(String(line?.code||'').trim()));
+        if(!relevant.length)return;
+        if(jalaliDateOrdinal(v?.date||v?.operationDate)===null)r.invalidControlDates++;
+        relevant.forEach(line=>{
+          const code=String(line?.code||'').trim();
+          const debit=Number(line?.debit??0),credit=Number(line?.credit??0);
+          if(!Number.isFinite(debit)||!Number.isFinite(credit)||debit<0||credit<0||(debit>0&&credit>0)){
+            r.invalidControlLines++;return;
+          }
+          const net=debit-credit;
+          controlNet.set(code,(controlNet.get(code)||0)+net);
+          const partyId=line?.partyId==null?'':String(line.partyId).trim();
+          const party=partyId?partyById.get(partyId):null;
+          if(!party){
+            r.unassignedControlLines++;
+            if(partyId)r.invalidInvoiceLinks++;
+            return;
+          }
+          const allowed=allowedByParty.get(partyId)||new Set();
+          if(!allowed.has(code))r.mappingMismatchLines++;
+          const key=code+'|'+partyId;
+          partyNet.set(key,(partyNet.get(key)||0)+net);
+          partiesWithBalances.add(key);
+        });
+      });
+      r.subledgerAccounts=partiesWithBalances.size;
+      controlCodes.forEach(code=>{
+        const tagged=Array.from(partyNet.entries()).filter(([key])=>key.startsWith(code+'|')).reduce((sum,[,value])=>sum+value,0);
+        if(Math.abs((controlNet.get(code)||0)-tagged)>0.5)r.partyBalanceDifference++;
+      });
+      const invoiceVouchers=new Map();
+      vouchers.filter(v=>v&&v.sourceType==='invoice').forEach(v=>{
+        const key=String(v.sourceId||'');
+        if(!invoiceVouchers.has(key))invoiceVouchers.set(key,[]);
+        invoiceVouchers.get(key).push(v);
+      });
+      invoices.filter(inv=>inv&&inv.status==='active'&&['sale','purchase'].includes(inv.type)).forEach(inv=>{
+        r.invoicesChecked++;
+        const matches=invoiceVouchers.get(String(inv.id))||[];
+        if(!matches.length){r.missingInvoiceVouchers++;return;}
+        if(matches.length>1){r.duplicateInvoiceVouchers++;return;}
+        const voucher=matches[0],lines=Array.isArray(voucher.lines)?voucher.lines:[];
+        const sum=(code,side)=>lines.filter(line=>String(line?.code||'')===String(code)).reduce((total,line)=>{
+          const value=Number(line?.[side]??0);return total+(Number.isFinite(value)&&value>=0?value:0);
+        },0);
+        const grand=Number(inv.grandTotal),vat=Number(inv.vatAmount??0),net=Number(inv.netSubtotal!==undefined?inv.netSubtotal:inv.subtotal);
+        if(![grand,vat,net].every(Number.isFinite)||grand<0||vat<0||net<0){r.invoiceAmountMismatches++;return;}
+        const party=partyById.get(String(inv.partyId));
+        if(!party){r.invalidInvoiceLinks++;return;}
+        const customCode=String(party.ledgerAccountCode||(inv.type==='sale'?'1103':'2101'));
+        const settlementCode=inv.payMethod==='credit'?customCode:String(inv.settlementAccountCode||'');
+        const partyLines=lines.filter(line=>String(line?.code||'')===settlementCode);
+        if(inv.payMethod==='credit'&&!partyLines.some(line=>String(line?.partyId||'')===String(inv.partyId)))r.invalidInvoiceLinks++;
+        if(inv.type==='sale'){
+          if(Math.abs(sum(settlementCode,'debit')-sum(settlementCode,'credit')-grand)>1||
+             Math.abs(sum('4101','credit')-sum('4101','debit')-net)>1||
+             Math.abs(sum('2103','credit')-sum('2103','debit')-vat)>1)r.invoiceAmountMismatches++;
+        }else{
+          if(Math.abs(sum(settlementCode,'credit')-sum(settlementCode,'debit')-grand)>1||
+             Math.abs(sum('1105','debit')-sum('1105','credit')-net)>1||
+             Math.abs(sum('1106','debit')-sum('1106','credit')-vat)>1)r.invoiceAmountMismatches++;
+        }
+      });
+      [
+        ['ساختار حساب معین و حساب کل',r.hierarchyIssues],
+        ['کد معین تکراری',r.duplicateSubsidiaryCodes],
+        ['ردیف کنترلی بدون تفصیلی معتبر',r.unassignedControlLines],
+        ['ردیف کنترلی با مبلغ نامعتبر',r.invalidControlLines],
+        ['سند کنترلی با تاریخ نامعتبر',r.invalidControlDates],
+        ['کد حساب ناسازگار با تفصیلی',r.mappingMismatchLines],
+        ['اختلاف مانده تفصیلی با کنترلی',r.partyBalanceDifference],
+        ['فاکتور بدون سند حسابداری',r.missingInvoiceVouchers],
+        ['سند تکراری فاکتور',r.duplicateInvoiceVouchers],
+        ['مغایرت مبلغ فاکتور و سند',r.invoiceAmountMismatches],
+        ['ارتباط نامعتبر طرف حساب',r.invalidInvoiceLinks]
+      ].forEach(([label,count])=>{if(count)r.issues.push(label+': '+count);});
+      r.issueCount=r.issues.reduce((sum,item)=>sum+Number((item.match(/: (\\d+)$/)||[])[1]||0),0);
+      return r;
     }
     function buildInventoryAccountingAuditSummary() {
       const products = Array.isArray(state.products) ? state.products : [];
@@ -11984,7 +12074,7 @@
         ).join('') + '</div>' : '<p class="text-xs text-slate-500">گردش ثبت‌شده‌ای برای حساب ۱۱۰۵ پیدا نشد.</p>') +
         '<p class="text-[10px]">برای تطبیق قطعی هر کالا، شناسه کالا و شناسه سری ساخت باید در جزئیات سند و گردش انبار به‌صورت مشترک موجود باشد؛ گزارش از حدس‌زدن انتساب جلوگیری می‌کند.</p></div>';
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
-      const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
+      const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['ردیف مبلغ نامعتبر',subledgerAudit.invalidControlLines],['تاریخ سند کنترلی نامعتبر',subledgerAudit.invalidControlDates],['کد حساب ناسازگار',subledgerAudit.mappingMismatchLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
       const fiscalAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>کنترل اسناد افتتاحیه و اختتامیه</strong><b class="block">'+(fiscalAudit.issueCount?faNum(fiscalAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['اسناد افتتاحیه',fiscalAudit.openingCount],['اسناد اختتامیه',fiscalAudit.closingCount],['سال افتتاحیه تکراری',fiscalAudit.duplicateOpeningYears],['سال اختتامیه تکراری',fiscalAudit.duplicateClosingYears],['افتتاحیه نامعتبر',fiscalAudit.invalidOpening],['اختتامیه نامعتبر',fiscalAudit.invalidClosing],['ردیف نتیجه‌ای در افتتاحیه',fiscalAudit.openingResultAccounts],['ردیف غیرنتیجه‌ای در اختتامیه',fiscalAudit.closingNonResultAccounts],['سابقه بستن بدون سند',fiscalAudit.missingCloseRecords]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(fiscalAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+fiscalAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های افتتاحیه و اختتامیه بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش صرفاً خواندنی است؛ اسناد یا سوابق مالی را تغییر نمی‌دهد.</p></div>';
       const auditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی جامع دفترکل</strong><b class="block">'+(audit.issueCount?faNum(audit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کل اسناد',audit.total],['شناسه تکراری',audit.duplicateIds],['منبع تکراری',audit.duplicateSources],['شماره تکراری',audit.duplicateNumbers],['حساب نامعتبر',audit.missingAccounts],['طرف حساب نامعتبر',audit.missingParties],['تاریخ نامعتبر',audit.invalidDates],['مبلغ نامعتبر',audit.invalidAmounts],['نامتوازن',audit.unbalanced]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(audit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+audit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های دفترکل بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش فقط خواندنی است.</p></div>';
