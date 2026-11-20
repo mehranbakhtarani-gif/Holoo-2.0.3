@@ -11355,7 +11355,7 @@
         missingChecks: 0, orphanChecks: 0, missingCheckVouchers: 0, duplicateCheckVouchers: 0,
         invalidTransactionAmounts: 0, invalidTransactionDates: 0, invalidParties: 0, invalidAccounts: 0,
         duplicateTransactionIds: 0, invalidAllocations: 0, overAllocatedInvoices: 0,
-        paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0,
+        paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0, creditRefundsChecked: 0, missingCreditRefundVouchers: 0, duplicateCreditRefundVouchers: 0, orphanCreditRefundVouchers: 0,
         duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0
       };
       const add = (type, message, detail) => issues.push({ type, message, detail: String(detail || '') });
@@ -11480,6 +11480,16 @@
           const linked=creditVoucherMap.get(key)||[];
           if (!linked.length) { counts.missingCreditApplicationVouchers++; add('credit-application-voucher-missing','سند حسابداری اعمال اعتبار پیدا نشد.','اعتبار: '+String(credit.id)+' | اعمال: '+String(app.id)); }
           if (linked.length>1) { counts.duplicateCreditApplicationIds++; add('credit-application-voucher-duplicate','برای اعمال اعتبار چند سند ثبت شده است.','اعتبار: '+String(credit.id)+' | اعمال: '+String(app.id)); }
+          if (linked.length===1) {
+            const lines=Array.isArray(linked[0].lines)?linked[0].lines:[];
+            const debitCode='2101', creditCode=credit.creditDirection==='sale'?'1103':'1107';
+            const debit=lines.filter(l=>String(l.code)===debitCode && String(l.partyId||'')===String(credit.partyId)).reduce((sum,l)=>sum+Number(l.debit||0),0);
+            const creditAmount=lines.filter(l=>String(l.code)===creditCode && String(l.partyId||'')===String(credit.partyId)).reduce((sum,l)=>sum+Number(l.credit||0),0);
+            const totalDebit=lines.reduce((sum,l)=>sum+Number(l.debit||0),0), totalCredit=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+            if (!near(debit,app.amount) || !near(creditAmount,app.amount) || !near(totalDebit,totalCredit)) {
+              counts.ledgerAmountMismatches++; add('credit-application-ledger','مبلغ سند اعمال اعتبار با تخصیص ثبت‌شده تطبیق ندارد.','اعتبار: '+String(credit.id)+' | اعمال: '+String(app.id)+' | مبلغ: '+String(app.amount));
+            }
+          }
           const inv=invoiceById.get(String(app.invoiceId));
           const amount=Number(app.amount);
           if (!inv || String(inv.partyId)!==String(credit.partyId) || inv.type!==credit.creditDirection || !finite(amount) || amount<=0) {
@@ -11500,6 +11510,31 @@
         if (!creditVoucherMap.has(key) || !credits.some(c=>String(c.id)===String(v.sourceId) && (c.applications||[]).some(a=>String(a.id)===String(v.sourceEvent||'default')))) {
           counts.orphanCreditVouchers++; add('credit-voucher-orphan','سند اعمال اعتبار بدون تخصیص متناظر است.','سند: '+String(v.id)+' | منبع: '+key);
         }
+      });
+      const refunds=txs.filter(tx=>tx && tx.kind==='party_credit_refund');
+      refunds.forEach(refund=>{
+        counts.creditRefundsChecked++;
+        const credit=credits.find(c=>String(c.id)===String(refund.sourceCreditId));
+        const linked=credit ? vouchers.filter(v=>v && v.sourceType==='party_credit_refund' && String(v.sourceId)===String(credit.id) && String(v.sourceEvent||'default')===String(refund.id)) : [];
+        if (!credit) { counts.orphanCreditRefundVouchers++; add('credit-refund-source-missing','استرداد اعتبار به رکورد اعتبار مرجع متصل نیست.','استرداد: '+String(refund.id)+' | اعتبار: '+String(refund.sourceCreditId||'خالی')); }
+        if (!linked.length) { counts.missingCreditRefundVouchers++; add('credit-refund-voucher-missing','سند استرداد/تسویه اعتبار پیدا نشد.','استرداد: '+String(refund.id)); }
+        if (linked.length>1) { counts.duplicateCreditRefundVouchers++; add('credit-refund-voucher-duplicate','برای استرداد اعتبار چند سند ثبت شده است.','استرداد: '+String(refund.id)); }
+        if (linked.length===1 && credit) {
+          const lines=Array.isArray(linked[0].lines)?linked[0].lines:[];
+          const isCustomer=credit.creditDirection==='sale';
+          const accountCode=refund.method==='صندوق نقدی'?'1101':'1102';
+          const partyCode=isCustomer?'2101':'1107';
+          const accountSide=lines.filter(l=>String(l.code)===accountCode && String((l.bankAccountId||l.cashAccountId)||'')===String(refund.bankAccountId||refund.cashAccountId||'')).reduce((sum,l)=>sum+(isCustomer?Number(l.credit||0):Number(l.debit||0)),0);
+          const partySide=lines.filter(l=>String(l.code)===partyCode && String(l.partyId||'')===String(refund.partyId)).reduce((sum,l)=>sum+(isCustomer?Number(l.debit||0):Number(l.credit||0)),0);
+          const totalDebit=lines.reduce((sum,l)=>sum+Number(l.debit||0),0), totalCredit=lines.reduce((sum,l)=>sum+Number(l.credit||0),0);
+          if (!near(accountSide,refund.amount) || !near(partySide,refund.amount) || !near(totalDebit,totalCredit)) {
+            counts.ledgerAmountMismatches++; add('credit-refund-ledger','مبلغ سند تسویه اعتبار با گردش استرداد تطبیق ندارد.','استرداد: '+String(refund.id)+' | مبلغ: '+String(refund.amount));
+          }
+        }
+      });
+      vouchers.filter(v=>v && v.sourceType==='party_credit_refund').forEach(v=>{
+        const exists=refunds.some(r=>String(r.id)===String(v.sourceEvent||'default') && credits.some(c=>String(c.id)===String(v.sourceId)));
+        if (!exists) { counts.orphanCreditRefundVouchers++; add('credit-refund-voucher-orphan','سند استرداد اعتبار بدون گردش استرداد متناظر است.','سند: '+String(v.id)+' | اعتبار: '+String(v.sourceId)); }
       });
       invoices.forEach(inv=>{
         const id=String(inv.id), allocated=allocationTotals.get(id)||0;
@@ -11886,7 +11921,7 @@
         ['چک بدون گردش',settlementAudit.orphanChecks],['سند صدور چک مفقود',settlementAudit.missingCheckVouchers],['سند صدور چک تکراری',settlementAudit.duplicateCheckVouchers],
         ['مبلغ/تاریخ/طرف حساب نامعتبر',settlementAudit.invalidTransactionAmounts+settlementAudit.invalidTransactionDates+settlementAudit.invalidParties],['حساب نامعتبر',settlementAudit.invalidAccounts],['شناسه گردش تکراری',settlementAudit.duplicateTransactionIds],
         ['تخصیص نامعتبر',settlementAudit.invalidAllocations],['فاکتور بیش‌تسویه',settlementAudit.overAllocatedInvoices],['مغایرت paidAmount',settlementAudit.paidAmountMismatches],
-        ['سند اعمال اعتبار مفقود',settlementAudit.missingCreditApplicationVouchers],['سند اعتبار بدون تخصیص',settlementAudit.orphanCreditVouchers],['مغایرت دفترکل',settlementAudit.ledgerAmountMismatches]
+        ['سند اعمال اعتبار مفقود',settlementAudit.missingCreditApplicationVouchers],['سند اعتبار بدون تخصیص',settlementAudit.orphanCreditVouchers],['استردادهای اعتبار',settlementAudit.creditRefundsChecked],['سند استرداد مفقود/تکراری',settlementAudit.missingCreditRefundVouchers+settlementAudit.duplicateCreditRefundVouchers],['سند استرداد یتیم',settlementAudit.orphanCreditRefundVouchers],['مغایرت دفترکل',settlementAudit.ledgerAmountMismatches]
       ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(settlementAudit.issues.length?'<div class="space-y-1 max-h-80 overflow-y-auto">'+settlementAudit.issues.slice(0,120).map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.message)+'</b><p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>':'<p class="text-xs text-emerald-700">موردی برای بررسی در گردش‌های تسویه پیدا نشد.</p>')+'<p class="text-[10px] text-slate-500">این ممیزی فقط‌خواندنی است؛ هیچ تراکنش، تخصیص، چک، مانده یا سندی را تغییر نمی‌دهد.</p></div>';
       const invoiceDocumentAudit = buildInvoiceDocumentIntegrityAudit();
       const invoiceDocumentAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی کامل فاکتورهای خرید و فروش</strong><b class="block">'+(invoiceDocumentAudit.issueCount ? faNum(invoiceDocumentAudit.issueCount)+' مورد نیازمند بررسی' : 'فاکتورها، ردیف‌ها و اسناد حسابداری تطبیق دارند')+'</b>' +
