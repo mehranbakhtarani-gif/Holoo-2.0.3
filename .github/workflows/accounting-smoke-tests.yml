@@ -39,6 +39,7 @@ jobs:
           node tests/cheque-maturity-atomicity.test.js
           node tests/treasury-check-atomicity.test.js
           node tests/cheque-outcome-voucher-integrity.test.js
+          node tests/returned-cheque-allocation-reconciliation.test.js
           for test_file in tests/bank*.test.js tests/account-ledger.test.js tests/accounting-reports-cross-validation.test.js tests/accounting-smoke.test.js tests/fiscal-year-close.test.js; do
             echo "::group::${test_file}"
             node "${test_file}"
