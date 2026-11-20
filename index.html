@@ -12643,7 +12643,7 @@
         '<td class="p-2">' + escapeLedgerText(item.partyName || item.partyId) + '</td>' +
         '<td class="p-2 text-left whitespace-nowrap">' + (item.debit === '' ? '—' : money(Number(item.debit) || 0)) + '</td>' +
         '<td class="p-2 text-left whitespace-nowrap">' + (item.credit === '' ? '—' : money(Number(item.credit) || 0)) + '</td>' +
-        '<td class="p-2">' + (item.voucherId ? '<button onclick=\\'openVoucherFromLedger(' + escapeLedgerText(JSON.stringify(item.voucherId)) + ')\\' class="text-holoo-700 font-bold underline whitespace-nowrap">مشاهده سند</button>' : '—') + '</td></tr>'
+        '<td class="p-2">' + (item.voucherId ? '<button onclick="openVoucherFromLedger(' + escapeLedgerText(JSON.stringify(item.voucherId)) + ')" class="text-holoo-700 font-bold underline whitespace-nowrap">مشاهده سند</button>' : '—') + '</td></tr>'
       ).join('');
       const auditDetailsPanel = '<div class="rounded-xl border p-3 space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><strong>جزئیات قابل پیگیری مغایرت‌های دفترکل</strong><button onclick="exportGeneralLedgerAuditDetailsCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 py-2 text-xs font-bold">خروجی CSV جزئیات</button></div>' +
         '<p class="text-[10px] text-slate-500">جزئیات ثبت‌شده: ' + faNum(audit.detailsTotal) + ' مورد؛ حداکثر ۱۰۰ ردیف در صفحه نمایش داده می‌شود.' + (audit.detailsTruncated ? ' برای جلوگیری از سنگین شدن گزارش، جزئیات در حافظه به ۵۰۰ مورد اول محدود شده است.' : '') + '</p>' +
