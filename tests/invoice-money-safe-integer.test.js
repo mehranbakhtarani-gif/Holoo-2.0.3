@@ -26,9 +26,9 @@ function extractFunction(name) {
   }
   throw new Error('unterminated function ' + name);
 }
-const helpers = ['safeMoneyInteger','safeMoneySum','safePercentAmount','safeProportionalAmount']
-  .map(extractFunction).join('\n');
-const money = new Function(helpers + '\nreturn {' + helpers.map(name => name + ':' + name).join(',') + '};')();
+const helperNames = ['safeMoneyInteger','safeMoneySum','safePercentAmount','safeProportionalAmount'];
+const helperSource = helperNames.map(extractFunction).join('\n');
+const money = new Function(helperSource + '\nreturn {' + helperNames.map(name => name + ':' + name).join(',') + '};')();
 
 assert.equal(money.safeMoneyInteger(100.4), 100);
 assert.equal(money.safeMoneyInteger(100.5), 101);

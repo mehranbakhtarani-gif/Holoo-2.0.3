@@ -6666,6 +6666,47 @@
     }
 
     function submitInvoice() {
+      // Keep posting self-contained for isolated transaction tests and callers
+      // that execute this function without the surrounding page helper scope.
+      function safeMoneyInteger(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const number = Number(value);
+        if (!Number.isFinite(number) || Math.abs(number) > Number.MAX_SAFE_INTEGER) return null;
+        const rounded = Math.round(number);
+        return Number.isSafeInteger(rounded) ? rounded : null;
+      }
+      function safeMoneySum(values) {
+        if (!Array.isArray(values)) return null;
+        let total = 0n;
+        for (const value of values) {
+          const amount = safeMoneyInteger(value);
+          if (amount === null) return null;
+          total += BigInt(amount);
+        }
+        const limit = BigInt(Number.MAX_SAFE_INTEGER);
+        return total > limit || total < -limit ? null : Number(total);
+      }
+      function safePercentAmount(amount, rate) {
+        const base = safeMoneyInteger(amount), percent = Number(rate);
+        if (base === null || !Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+        const scaledRate = Math.round(percent * 1000000);
+        if (!Number.isSafeInteger(scaledRate)) return null;
+        const numerator = BigInt(base) * BigInt(scaledRate);
+        const rounded = (numerator + 50000000n) / 100000000n;
+        const limit = BigInt(Number.MAX_SAFE_INTEGER);
+        return rounded > limit || rounded < -limit ? null : Number(rounded);
+      }
+      function safeProportionalAmount(totalAmount, cumulativeBase, totalBase) {
+        const total = safeMoneyInteger(totalAmount);
+        const cumulative = safeMoneyInteger(cumulativeBase);
+        const denominator = safeMoneyInteger(totalBase);
+        if (total === null || cumulative === null || denominator === null || denominator <= 0) return null;
+        const numerator = BigInt(total) * BigInt(cumulative);
+        const divisor = BigInt(denominator);
+        const rounded = (numerator + divisor / 2n) / divisor;
+        const limit = BigInt(Number.MAX_SAFE_INTEGER);
+        return rounded > limit || rounded < -limit ? null : Number(rounded);
+      }
       if (!invDraft.lines.length) { showToast('حداقل یک کالا اضافه کنید.', 'error'); return; }
       const type = invDraft.type;
       const pendingSourceOrderId = invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? String(invDraft.sourceOrderId) : null;
