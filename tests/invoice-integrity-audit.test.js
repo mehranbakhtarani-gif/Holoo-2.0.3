@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { auditInvoices } = require('../invoice-audit-domain.js');
 
 const validSale = {
-  id: 1001, type: 'sale', date: '1405/08/29', dueDate: '1405/09/01',
+  id: 1001, voucherId: 1, type: 'sale', date: '1405/08/29', dueDate: '1405/09/01',
   partyId: 'C1', warehouseId: 'W1', payMethod: 'credit',
   subtotal: 200, netSubtotal: 180, discount: 20, vatRate: 10,
   vatAmount: 18, grandTotal: 198, commAmount: 0,
@@ -67,6 +67,21 @@ const ordinal = value => value === '1405/08/29' ? 1 : value === '1405/09/01' ? 2
   const result = auditInvoices(broken, { dateOrdinal: ordinal });
   assert.ok(result.findings.some(item => item.code === 'invoice-id-duplicate'));
 }
+{
+  const broken = structuredClone(baseState);
+  broken.invoices[0].voucherId = 9999;
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'journal-backlink-mismatch'),
+    'invoice voucherId must point to the same voucher linked by sourceType/sourceId');
+}
+{
+  const legacy = structuredClone(baseState);
+  delete legacy.invoices[0].voucherId;
+  const result = auditInvoices(legacy, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'journal-backlink-missing'),
+    'missing invoice-side voucher reference must be visible without mutating the record');
+}
+
 {
   const before = JSON.stringify(baseState);
   auditInvoices(baseState, { dateOrdinal: ordinal });

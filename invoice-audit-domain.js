@@ -121,6 +121,11 @@
         addFinding(findings, invoice, 'error', 'journal-duplicate', 'بیش از یک سند حسابداری به این فاکتور متصل است.');
       } else {
         const voucher = linkedVouchers[0];
+        if (invoice?.voucherId === undefined || invoice?.voucherId === null || String(invoice.voucherId).trim() === '') {
+          addFinding(findings, invoice, 'warning', 'journal-backlink-missing', 'شناسه سند حسابداری در خود فاکتور ثبت نشده است؛ پیوند دوطرفه کامل نیست.');
+        } else if (String(invoice.voucherId) !== String(voucher.id)) {
+          addFinding(findings, invoice, 'error', 'journal-backlink-mismatch', 'شناسه سند ثبت‌شده در فاکتور با سند متصل به همان فاکتور یکسان نیست.');
+        }
         const voucherLines = Array.isArray(voucher.lines) ? voucher.lines : [];
         if (!voucherLines.length) {
           addFinding(findings, invoice, 'error', 'journal-lines-missing', 'سند حسابداری فاکتور فاقد ردیف است.');
