@@ -70,7 +70,7 @@ assert.equal(report.missingParties, 1);
 assert.equal(report.invalidDates, 1);
 assert.equal(report.invalidAmounts, 1);
 assert.equal(report.invalidStructure, 1);
-assert.equal(report.unbalanced, 1);
+assert.equal(report.unbalanced, 2, 'the one-sided incomplete voucher and the unequal two-line voucher are both unbalanced');
 for (const category of ['duplicate-id','duplicate-source','duplicate-number','missing-account','missing-party','invalid-date','invalid-amount','invalid-structure','unbalanced']) {
   assert.ok(categories.has(category), 'Missing detail category: ' + category);
 }
