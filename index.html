@@ -9752,8 +9752,8 @@
       const fingerprints=new Map();
       vouchers.forEach(v=>{
         const lines=Array.isArray(v.lines)?v.lines:[];
-        const revenue=lines.filter(line=>/^4\\d{3}$/.test(String(line?.code||'')));
-        const expenses=lines.filter(line=>/^6\\d{3}$/.test(String(line?.code||'')));
+        const revenue=lines.filter(line=>/^4\d{3}$/.test(String(line?.code||'')));
+        const expenses=lines.filter(line=>/^6\d{3}$/.test(String(line?.code||'')));
         if(revenue.length)result.revenueVoucherCount++;
         if(expenses.length)result.expenseVoucherCount++;
         revenue.forEach(line=>{
@@ -9769,7 +9769,7 @@
           if(!String(line.desc||'').trim()&&!String(v.description||v.title||'').trim())result.expenseLinesMissingDescription++;
           if(!v.sourceType||!v.sourceId)result.unlinkedExpenseLines++;
           const date=String(v.date||v.operationDate||''),party=String(line.partyId||'');
-          const desc=String(line.desc||v.description||v.title||'').normalize('NFKC').replace(/[\\sـ]+/g,'').trim().toLocaleLowerCase('fa');
+          const desc=String(line.desc||v.description||v.title||'').normalize('NFKC').replace(/[\sـ]+/g,'').trim().toLocaleLowerCase('fa');
           const amount=Math.round((debit-credit)*100)/100;
           const fingerprint=[date,String(line.code),amount,party,desc].join('|');
           if(fingerprints.has(fingerprint)){result.duplicateExpenseEntries++;if(result.issues.length<30)result.issues.push('احتمال ثبت تکراری هزینه: سندهای '+fingerprints.get(fingerprint)+' و '+String(v.id||'بدون شماره')+'، حساب '+String(line.code)+'، مبلغ '+amount);}
