@@ -11090,7 +11090,8 @@
       const controlCodes=new Set(['1103','2101','1107']);
       const allowedByParty=new Map();
       parties.forEach(p=>{
-        const supplier=isSupplierParty(p);\n        const primary=String(p?.ledgerAccountCode||(supplier?'2101':'1103'));
+        const supplier=isSupplierParty(p);
+        const primary=String(p?.ledgerAccountCode||(supplier?'2101':'1103'));
         const allowed=new Set([primary]);
         if(supplier)allowed.add('1107');
         allowedByParty.set(String(p.id),allowed);
