@@ -61,7 +61,7 @@ assert.ok(mismatch.details.every(item => item.periodDebitDifference !== 0 || ite
 assert.equal(JSON.stringify(state), before, 'mismatch reporting must remain read-only');
 
 assert.match(html, /تطبیق تراز آزمایشی با دفتر حساب هر کد/);
-assert.match(html, /buildTrialBalanceLedgerReconciliation\\(from, to\\)/);
+assert.ok(html.includes('buildTrialBalanceLedgerReconciliation(from, to)'), 'UI must invoke the reconciliation helper');
 console.log('PASS: trial balance rows reconcile to each account ledger for period movement and closing net');
 console.log('PASS: per-account mismatches are exposed with account code and debit/credit/net deltas');
 console.log('PASS: reconciliation leaves source accounting records unchanged');
