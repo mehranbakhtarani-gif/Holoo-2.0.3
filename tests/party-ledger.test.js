@@ -40,6 +40,7 @@ const source =
   sliceBetween('    function jalaliDateOrdinal(', '    function currentJalaliOrdinal()') +
   sliceBetween('    function normalizeLedgerDate(', '    function buildAccountLedger(') +
   sliceBetween('    function countInvalidReportVoucherLines(', '    function buildAccountLedger(') +
+  sliceBetween('    function isSupplierParty(party)', '    function normalizePartyIdentity(') +
   sliceBetween('    function buildPartyLedger(', '    function openPartyLedger(');
 vm.runInContext(source + '; this.buildPartyLedger = buildPartyLedger;', sandbox);
 

@@ -2,7 +2,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const html=fs.readFileSync('index.html','utf8');
-for(const [i,m] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries())if(m[1].trim())new vm.Script(m[1],{filename:'index.html:inline-'+i});
+for(const [i,m] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries())if(m[1].trim())new vm.Script(m[1],{filename:'index.html:inline-'+i});
 const start=html.indexOf('function buildRevenueExpenseAuditSummary()');
 const end=html.indexOf('function buildTreasurySettlementAuditSummary()',start);
 assert.ok(start>=0&&end>start,'revenue/expense audit function exists');
