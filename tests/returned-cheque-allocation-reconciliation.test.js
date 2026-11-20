@@ -8,21 +8,21 @@ const end = html.indexOf('function buildInvoiceDocumentIntegrityAudit()', start)
 assert.ok(start >= 0 && end > start, 'settlement integrity audit must exist');
 const source = html.slice(start, end) + '; this.audit = buildSettlementIntegrityAudit;';
 
-function runAudit({ status = 'bounced', released = true, paidAmount = 20 }) {
+function runAudit({ status = 'bounced', released = true, paidAmount = 20, dir = 'receive' }) {
   const check = {
-    id: 'CHK-RETURNED', sourceTxId: 'T-CHECK', dir: 'receive', partyId: 'P1',
+    id: 'CHK-RETURNED', sourceTxId: 'T-CHECK', dir, partyId: 'P1',
     amount: 40, issueDate: '1405/09/02', dueDate: '1405/09/20',
     bankAccountId: 'B1', status, allocations: [{ invoiceId: 101, amount: 40 }],
     ...(released ? { allocationsReleasedAt: '2026-11-20T10:00:00.000Z' } : {})
   };
   const state = {
     invoices: [{
-      id: 101, type: 'sale', status: 'active', partyId: 'P1',
+      id: 101, type: dir === 'receive' ? 'sale' : 'purchase', status: 'active', partyId: 'P1',
       payMethod: 'credit', grandTotal: 100, paidAmount, returnRefs: []
     }],
     treasuryTxs: [
-      { id: 'T-CHECK', dir: 'receive', method: 'چک صیادی', amount: 40, date: '1405/09/02', partyId: 'P1' },
-      { id: 'T-CASH', dir: 'receive', method: 'صندوق نقدی', amount: 20, date: '1405/09/02', partyId: 'P1', cashAccountId: 'C1', allocations: [{ invoiceId: 101, amount: 20 }] }
+      { id: 'T-CHECK', dir, method: 'چک صیادی', amount: 40, date: '1405/09/02', partyId: 'P1' },
+      { id: 'T-CASH', dir, method: 'صندوق نقدی', amount: 20, date: '1405/09/02', partyId: 'P1', cashAccountId: 'C1', allocations: [{ invoiceId: 101, amount: 20 }] }
     ],
     checks: [check],
     parties: [{ id: 'P1' }],
@@ -31,26 +31,23 @@ function runAudit({ status = 'bounced', released = true, paidAmount = 20 }) {
       {
         id: 'V-CHECK-ISSUED', date: '1405/09/02', sourceType: 'check',
         sourceEvent: 'issued', sourceId: check.id,
-        lines: [
-          { code: '1104', partyId: 'P1', debit: 40, credit: 0 },
-          { code: '1103', partyId: 'P1', debit: 0, credit: 40 }
-        ]
+        lines: dir === 'receive'
+          ? [{ code: '1104', partyId: 'P1', debit: 40, credit: 0 }, { code: '1103', partyId: 'P1', debit: 0, credit: 40 }]
+          : [{ code: '2101', partyId: 'P1', debit: 40, credit: 0 }, { code: '2102', partyId: 'P1', debit: 0, credit: 40 }]
       },
       {
         id: 'V-CHECK-OUTCOME', date: '1405/09/02', sourceType: 'check',
         sourceEvent: status, sourceId: check.id,
-        lines: [
-          { code: '1103', partyId: 'P1', debit: 40, credit: 0 },
-          { code: '1104', partyId: 'P1', debit: 0, credit: 40 }
-        ]
+        lines: dir === 'receive'
+          ? [{ code: '1103', partyId: 'P1', debit: 40, credit: 0 }, { code: '1104', partyId: 'P1', debit: 0, credit: 40 }]
+          : [{ code: '2102', partyId: 'P1', debit: 40, credit: 0 }, { code: '2101', partyId: 'P1', debit: 0, credit: 40 }]
       },
       {
         id: 'V-CASH', date: '1405/09/02', sourceType: 'treasury',
         sourceEvent: 'posted', sourceId: 'T-CASH',
-        lines: [
-          { code: '1101', cashAccountId: 'C1', debit: 20, credit: 0 },
-          { code: '1103', partyId: 'P1', debit: 0, credit: 20 }
-        ]
+        lines: dir === 'receive'
+          ? [{ code: '1101', cashAccountId: 'C1', debit: 20, credit: 0 }, { code: '1103', partyId: 'P1', debit: 0, credit: 20 }]
+          : [{ code: '2101', partyId: 'P1', debit: 20, credit: 0 }, { code: '1101', cashAccountId: 'C1', debit: 0, credit: 20 }]
       }
     ]
   };
@@ -68,29 +65,29 @@ function runAudit({ status = 'bounced', released = true, paidAmount = 20 }) {
   return result;
 }
 
-for (const status of ['bounced', 'voided']) {
-  const correct = runAudit({ status, released: true, paidAmount: 20 });
-  assert.equal(correct.paidAmountMismatches, 0,
-    status + ' cheque must be excluded after its exact allocation is released');
-  assert.equal(correct.overAllocatedInvoices, 0);
-  assert.equal(correct.ledgerAmountMismatches, 0);
+for (const dir of ['receive', 'pay']) {
+  for (const status of ['bounced', 'voided']) {
+    const correct = runAudit({ status, released: true, paidAmount: 20, dir });
+    assert.equal(correct.paidAmountMismatches, 0,
+      dir + ' ' + status + ' cheque must be excluded after its exact allocation is released');
+    assert.equal(correct.overAllocatedInvoices, 0);
+    assert.equal(correct.ledgerAmountMismatches, 0);
 
-  const notReleased = runAudit({ status, released: true, paidAmount: 60 });
-  assert.equal(notReleased.paidAmountMismatches, 1,
-    status + ' cheque allocation left in paidAmount must be detected');
+    const notReleased = runAudit({ status, released: true, paidAmount: 60, dir });
+    assert.equal(notReleased.paidAmountMismatches, 1,
+      dir + ' ' + status + ' cheque allocation left in paidAmount must be detected');
 
-  const overReleased = runAudit({ status, released: true, paidAmount: 0 });
-  assert.equal(overReleased.paidAmountMismatches, 1,
-    status + ' cheque release must not erase unrelated receipt allocations');
-}
+    const overReleased = runAudit({ status, released: true, paidAmount: 0, dir });
+    assert.equal(overReleased.paidAmountMismatches, 1,
+      dir + ' ' + status + ' cheque release must not erase unrelated receipt/payment allocations');
+  }
 
-{
-  const active = runAudit({ status: 'in_progress', released: false, paidAmount: 60 });
+  const active = runAudit({ status: 'in_progress', released: false, paidAmount: 60, dir });
   assert.equal(active.paidAmountMismatches, 0,
-    'active cheque allocation must continue contributing to invoice paidAmount');
+    dir + ' active cheque allocation must continue contributing to invoice paidAmount');
 }
 
 console.log('PASS: bounced and voided cheque allocations are reconciled after release');
-console.log('PASS: unrelated receipt allocations remain in invoice paidAmount');
+console.log('PASS: unrelated cash receipt/payment allocations remain in invoice paidAmount');
 console.log('PASS: active cheque allocations remain included');
 console.log('PASS: returned-cheque allocation audit remains read-only');
