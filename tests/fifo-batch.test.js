@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const start = html.indexOf('    function inspectProductBatchReconciliation(');
+const start = html.indexOf('    function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {');
 const end = html.indexOf('    // =========================================================================\n    // 7. MODULE 3:', start);
 assert.notEqual(start, -1, 'batch helpers must exist');
 assert.notEqual(end, -1, 'batch helper section must have an end');
