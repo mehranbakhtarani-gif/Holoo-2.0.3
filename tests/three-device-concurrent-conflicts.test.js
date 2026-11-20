@@ -27,7 +27,7 @@ assert.match(push, /await acknowledgeOperations\(\[operation\.operationId\]/,
 const state = {
   version: 1,
   entities: { products: { p1: { price: 10 } }, parties: { c1: { name: 'A' } } },
-  log: []
+  log: [{ id: 'baseline-checkpoint', writer: 'bootstrap', version: 1, changes: [], root: [] }]
 };
 function apply({ id, writer, baseline, changes, root = [] }) {
   if (state.log.some(x => x.id === id)) return { status: 'already_applied' };
