@@ -714,7 +714,7 @@ test('check lifecycle audit detects missing final event journals and unreleased 
   const before=JSON.stringify(state);
   const audit=loadFunction(section('function buildCheckAuditSummary()', 'function buildBankTransferAuditSummary()'),'buildCheckAuditSummary',{
     state, normalizeSayadId(value){return String(value||'');}, isValidSayadId(){return true;},
-    jalaliDateOrdinal(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||''))?1:null;},
+    jalaliDateOrdinal(value){return String(value||'').split('/').length===3?1:null;},
     inspectTrialBalanceVoucher(){return {invalidLines:0,invalidStructure:false,unbalanced:false};}
   })();
   assert.equal(audit.missingStatusVoucher,1);
@@ -735,7 +735,7 @@ test('check lifecycle audit accepts balanced bounced journal with released alloc
   };
   const audit=loadFunction(section('function buildCheckAuditSummary()', 'function buildBankTransferAuditSummary()'),'buildCheckAuditSummary',{
     state, normalizeSayadId(value){return String(value||'');}, isValidSayadId(){return true;},
-    jalaliDateOrdinal(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||''))?1:null;},
+    jalaliDateOrdinal(value){return String(value||'').split('/').length===3?1:null;},
     inspectTrialBalanceVoucher(){return {invalidLines:0,invalidStructure:false,unbalanced:false};}
   })();
   assert.equal(audit.missingStatusVoucher,0);
