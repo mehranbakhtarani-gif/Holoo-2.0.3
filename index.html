@@ -11608,6 +11608,7 @@
         duplicateTransactionIds: 0, invalidAllocations: 0, duplicateAllocationRows: 0, overAllocatedInvoices: 0,
         paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0, creditRefundsChecked: 0, missingCreditRefundVouchers: 0, duplicateCreditRefundVouchers: 0, orphanCreditRefundVouchers: 0,
         duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0, invalidLedgerLines: 0, duplicateCheckTransactionLinks: 0,
+        creditRefundTransactionMismatches: 0, invalidCreditRefundTransactions: 0,
         missingCheckOutcomeVouchers: 0, duplicateCheckOutcomeVouchers: 0, orphanCheckOutcomeVouchers: 0,
         invalidCreditRecords: 0, creditBalanceMismatches: 0, missingCreditRefundRecords: 0, duplicateCreditIds: 0
       };
@@ -11858,10 +11859,43 @@
             counts.invalidCreditRecords++;
             add('credit-refund-record-duplicate','برای یک ردیف استرداد اعتبار چند گردش ثبت شده است.','اعتبار: '+id+' | استرداد: '+refundId);
           }
+          if (linkedRefund.length === 1) {
+            const refundTx = linkedRefund[0];
+            const refundAccountId = String(refund.bankAccountId || '');
+            const transactionAccountId = String(refundTx.bankAccountId || refundTx.cashAccountId || '');
+            const refundAccount = (state.bankAccounts || []).find(account => String(account.id) === refundAccountId);
+            const expectedMethod = refundAccount?.type === 'cash' ? 'صندوق نقدی' : refundAccount?.type === 'bank' ? 'حواله بانکی' : null;
+            const expectedDirection = credit.creditDirection === 'sale' ? 'pay' : credit.creditDirection === 'purchase' ? 'receive' : null;
+            const linkedVouchers = vouchers.filter(v => v && v.sourceType === 'party_credit_refund' &&
+              String(v.sourceId) === id && String(v.sourceEvent || 'default') === refundId);
+            const voucherReferenceMismatch = linkedVouchers.length === 1 &&
+              String(refund.voucherId || '') !== String(linkedVouchers[0].id || '');
+            if (!finite(refundTx.amount) || !near(refundTx.amount, refundAmount) ||
+                String(refundTx.partyId || '') !== String(credit.partyId || '') ||
+                String(refundTx.dir || '') !== String(refund.direction || '') ||
+                String(refundTx.dir || '') !== String(expectedDirection || '') ||
+                transactionAccountId !== refundAccountId || !refundAccount ||
+                refundTx.method !== expectedMethod || voucherReferenceMismatch) {
+              counts.creditRefundTransactionMismatches++;
+              add('credit-refund-transaction-mismatch','مبلغ، جهت، طرف حساب، صندوق/بانک یا شماره سند گردش استرداد با سابقه اعتبار تطبیق ندارد.','اعتبار: '+id+' | استرداد: '+refundId+' | مبلغ سابقه: '+String(refund.amount)+' | مبلغ گردش: '+String(refundTx.amount));
+            }
+          }
         });
       });
       refundTransactions.forEach(refund => {
         const credit = credits.find(item => String(item.id) === String(refund.sourceCreditId));
+        const refundAccountId = String(refund.bankAccountId || refund.cashAccountId || '');
+        const refundAccount = (state.bankAccounts || []).find(account => String(account.id) === refundAccountId);
+        const expectedAccountType = refund.method === 'صندوق نقدی' ? 'cash' : refund.method === 'حواله بانکی' ? 'bank' : null;
+        const expectedDirection = credit?.creditDirection === 'sale' ? 'pay' : credit?.creditDirection === 'purchase' ? 'receive' : null;
+        if (!finite(refund.amount) || Number(refund.amount) <= 0 ||
+            !['receive','pay'].includes(String(refund.dir || '')) ||
+            !refundAccount || refundAccount.type !== expectedAccountType ||
+            !credit || String(refund.partyId || '') !== String(credit.partyId || '') ||
+            String(refund.dir || '') !== String(expectedDirection || '')) {
+          counts.invalidCreditRefundTransactions++;
+          add('credit-refund-transaction-invalid','مبلغ، جهت، طرف حساب یا حساب صندوق/بانک گردش استرداد اعتبار نامعتبر است.','استرداد: '+String(refund.id)+' | اعتبار: '+String(refund.sourceCreditId||'خالی'));
+        }
         if (credit && !(credit.refunds || []).some(item => String(item.id) === String(refund.id))) {
           counts.missingCreditRefundRecords++;
           add('credit-refund-history-missing','گردش استرداد ثبت شده اما در سابقه استرداد اعتبار مرجع ثبت نشده است.','اعتبار: '+String(credit.id)+' | استرداد: '+String(refund.id));
