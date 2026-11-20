@@ -34,6 +34,46 @@ function buildInventoryCostAudit(state){
    details.push({invoiceId:id,returnId:rid,voucherId:String(ret.id??''),returnInventoryCost:returnInventory,returnCogs:amount(ref.costOfGoodsSold)});
   });
  });
+
+ let returnKardexMovementMismatches=0,returnKardexDirectionMismatches=0,returnKardexDuplicateMovements=0,returnKardexCostMismatches=0,returnKardexUnverified=0;
+ const legacyReturnGroups=new Map();
+ active.forEach(inv=>{
+  const invoiceId=String(inv.id??''),isSale=inv.type==='sale';
+  (Array.isArray(inv.returnRefs)?inv.returnRefs:[]).forEach(ref=>{
+   const returnId=String(ref&&ref.id??'').trim();
+   (Array.isArray(ref&&ref.items)?ref.items:[]).forEach(item=>{
+    const productId=String(item&&item.productId??'').trim(),qty=amount(item&&item.qty),cost=amount(item&&item.inventoryCost);
+    const product=products.find(p=>p&&String(p.id)===productId);
+    if(!product||!productId||qty===null||qty<=0||cost===null){
+     returnKardexUnverified++;add('return-kardex-unverified',invoiceId,'ردیف برگشت برای تطبیق با کاردکس، کالا، مقدار یا بهای دفتری معتبر ندارد.','برگشت: '+returnId+' | کالا: '+productId);
+     return;
+    }
+    const rows=(Array.isArray(product.kardex)?product.kardex:[]);
+    const exact=rows.filter(row=>row&&row.sourceType==='invoice_return'&&String(row.sourceRef??'')===returnId&&String(row.sourceEvent??'')===invoiceId&&Number(row.sourceLineIndex)===Number(item.lineIndex));
+    if(exact.length){
+     if(exact.length!==1){returnKardexDuplicateMovements++;add('return-kardex-duplicate',invoiceId,'برای یک ردیف برگشت بیش از یک گردش کاردکس با شناسه یکتا ثبت شده است.','برگشت: '+returnId+' | کالا: '+productId+' | تعداد: '+exact.length);}
+     const moved=sum(exact,isSale?'inQty':'outQty'),opposite=sum(exact,isSale?'outQty':'inQty'),bookCost=sum(exact,'inventoryCost');
+     if(moved===null||Math.abs(moved-qty)>0.000001){returnKardexMovementMismatches++;add('return-kardex-quantity-mismatch',invoiceId,'مقدار گردش کاردکس با ردیف برگشت یکتا برابر نیست.','برگشت: '+returnId+' | مقدار برگشت: '+qty+' | مقدار کاردکس: '+moved);}
+     if(opposite===null||opposite>0.000001){returnKardexDirectionMismatches++;add('return-kardex-direction-mismatch',invoiceId,'جهت گردش کاردکس با نوع برگشت سازگار نیست.','برگشت: '+returnId+' | نوع فاکتور: '+inv.type);}
+     if(bookCost===null||Math.abs(bookCost-cost)>TOLERANCE){returnKardexCostMismatches++;add('return-kardex-cost-mismatch',invoiceId,'بهای دفتری گردش کاردکس با ردیف برگشت برابر نیست.','برگشت: '+returnId+' | بهای برگشت: '+cost+' | بهای کاردکس: '+bookCost);}
+     return;
+    }
+    const key=invoiceId+'|'+productId;
+    const group=legacyReturnGroups.get(key)||{invoiceId,productId,isSale,qty:0,cost:0,count:0,valid:true};
+    group.qty+=qty;group.cost+=cost;group.count++;legacyReturnGroups.set(key,group);
+   });
+  });
+ });
+ legacyReturnGroups.forEach(group=>{
+  const product=products.find(p=>p&&String(p.id)===group.productId),rows=(Array.isArray(product&&product.kardex)?product.kardex:[]).filter(row=>row&&String(row.doc||'').trim()==='برگشت جزئی فاکتور #'+group.invoiceId&&!row.sourceRef&&!row.sourceType);
+  if(!rows.length){returnKardexMovementMismatches++;add('return-kardex-missing',group.invoiceId,'گردش کاردکس متناظر با برگشت ثبت نشده یا قابل ردیابی نیست.','کالا: '+group.productId+' | مقدار مورد انتظار: '+group.qty);return;}
+  const moved=sum(rows,group.isSale?'inQty':'outQty'),opposite=sum(rows,group.isSale?'outQty':'inQty'),bookCost=sum(rows,'inventoryCost');
+  if(rows.length!==group.count){returnKardexDuplicateMovements++;add('return-kardex-count-mismatch',group.invoiceId,'تعداد ردیف‌های کاردکس قدیمی با تعداد ردیف‌های برگشت تطبیق ندارد.','کالا: '+group.productId+' | ردیف مورد انتظار: '+group.count+' | کاردکس: '+rows.length);}
+  if(moved===null||Math.abs(moved-group.qty)>0.000001){returnKardexMovementMismatches++;add('return-kardex-quantity-mismatch',group.invoiceId,'مجموع مقدار کاردکس برگشت با مقدار برگشت‌های فاکتور برابر نیست.','کالا: '+group.productId+' | مقدار برگشت: '+group.qty+' | مقدار کاردکس: '+moved);}
+  if(opposite===null||opposite>0.000001){returnKardexDirectionMismatches++;add('return-kardex-direction-mismatch',group.invoiceId,'جهت گردش کاردکس برگشت با نوع فاکتور سازگار نیست.','کالا: '+group.productId+' | نوع فاکتور: '+(group.isSale?'sale':'purchase'));}
+  if(bookCost===null||Math.abs(bookCost-group.cost)>TOLERANCE){returnKardexCostMismatches++;add('return-kardex-cost-mismatch',group.invoiceId,'مجموع بهای دفتری کاردکس برگشت با بهای ردیف‌های برگشت برابر نیست.','کالا: '+group.productId+' | بهای برگشت: '+group.cost+' | بهای کاردکس: '+bookCost);}
+ });
+
  let kardexStockMismatches=0,batchStockMismatches=0,unverifiedStockTrace=0,kardexSequenceMismatches=0,invalidKardexRows=0,negativeKardexBalances=0;
  products.forEach(product=>{
   const stock=amount(product&&product.stock);let unverified=false;
@@ -67,7 +107,7 @@ function buildInventoryCostAudit(state){
  });
  const knownReturns=new Set();invoices.forEach(inv=>(Array.isArray(inv&&inv.returnRefs)?inv.returnRefs:[]).forEach(r=>knownReturns.add(String((r&&r.id)??''))));
  vouchers.filter(v=>v&&v.sourceType==='invoice_return').forEach(v=>{if(!knownReturns.has(String(v.sourceId??''))){orphanReturnVouchers++;add('return-voucher-orphan',String(v.sourceEvent??''),'سند برگشت به سابقه برگشت فاکتور متصل نیست.','شناسه برگشت: '+String(v.sourceId??''));}});
- return{salesChecked,purchasesChecked,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,kardexStockMismatches,batchStockMismatches,unverifiedStockTrace,kardexSequenceMismatches,invalidKardexRows,negativeKardexBalances,issueCount:issues.length,issues,details};
+ return{salesChecked,purchasesChecked,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,returnKardexMovementMismatches,returnKardexDirectionMismatches,returnKardexDuplicateMovements,returnKardexCostMismatches,returnKardexUnverified,kardexStockMismatches,batchStockMismatches,unverifiedStockTrace,kardexSequenceMismatches,invalidKardexRows,negativeKardexBalances,issueCount:issues.length,issues,details};
 }
 root.HolooInventoryCostAudit={buildInventoryCostAudit};if(typeof module!=='undefined'&&module.exports)module.exports=root.HolooInventoryCostAudit;
 })(typeof globalThis!=='undefined'?globalThis:this);

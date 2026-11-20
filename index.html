@@ -7458,6 +7458,7 @@
           inQty: inv.type === 'sale' ? q : 0, outQty: inv.type === 'sale' ? 0 : q,
           bal: entry.balanceAfter, price: it.price, inventoryCost: entry.inventoryCost,
           costingMethod: state.costingMethod,
+          sourceType: 'invoice_return', sourceRef: returnId, sourceEvent: String(invId), sourceLineIndex: entry.lineIndex,
           batchAllocations: entry.returnedBatchAllocations || entry.purchaseReturnAllocations || []
         });
       }
