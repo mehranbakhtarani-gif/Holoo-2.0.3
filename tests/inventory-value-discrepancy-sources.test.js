@@ -59,4 +59,12 @@ test('does not mutate vouchers, invoices or products', () => {
   assert.equal(JSON.stringify({ vouchers, invoices, products }), before);
 });
 
+
+test('resolves invoice cancellation by sourceId, not sourceEvent', () => {
+  const [row] = run([v(7, { sourceType: 'invoice_cancel', sourceId: 'I7', sourceEvent: 'cancel' })], [{ id: 'I7', type: 'sale' }]);
+  assert.equal(row.invoiceId, 'I7');
+  assert.equal(row.invoiceType, 'sale');
+  assert.ok(!row.issues.includes('cancelled-invoice-link-missing'));
+});
+
 console.log('PASS: inventory value source audit classifies missing links and preserves source records');
