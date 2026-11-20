@@ -40,6 +40,7 @@ jobs:
           node tests/trial-balance-print.test.js
           node tests/trial-balance.test.js
           node tests/general-ledger-audit-summary.test.js
+          node tests/general-ledger-audit-details.test.js
           node tests/party-control-reconciliation.test.js
           node tests/subsidiary-ledger-audit-integrity.test.js
           node tests/party-ledger-identity-ambiguity.test.js
