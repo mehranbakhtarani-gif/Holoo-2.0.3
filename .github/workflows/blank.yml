@@ -75,6 +75,7 @@ jobs:
           node tests/multi-device-rpc-contract.test.js
           node tests/multi-device-concurrency.test.js
           node tests/three-device-sync-scenarios.test.js
+          node tests/three-device-restart-recovery.test.js
           node tests/editability-controls.test.js
           node tests/invoice-correction.test.js
           node tests/treasury-check-correction.test.js
