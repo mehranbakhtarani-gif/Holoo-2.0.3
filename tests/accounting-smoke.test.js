@@ -614,5 +614,80 @@ test('invoice document audit detects invalid dates, incomplete rows, totals and 
   assert.ok(result.invalidPartyLinks >= 1);
   assert.ok(result.invalidProductLinks >= 1);
 });
+// 11. Read-only treasury, cheque and settlement allocation audit.
+function settlementAuditContext(state) {
+  return {
+    state,
+    jalaliDateOrdinal(value) {
+      const match=String(value||'').match(/^(\\d{4})\\/(\\d{2})\\/(\\d{2})$/);
+      if(!match)return null;
+      const y=Number(match[1]),m=Number(match[2]),d=Number(match[3]);
+      return m>=1&&m<=12&&d>=1&&d<=(m<=6?31:m<=11?30:29)?y*10000+m*100+d:null;
+    }
+  };
+}
+function runSettlementAudit(state) {
+  const source=section('function buildSettlementIntegrityAudit()', 'function buildInvoiceDocumentIntegrityAudit()');
+  return loadFunction(source,'buildSettlementIntegrityAudit',settlementAuditContext(state))();
+}
+test('settlement audit accepts a bank receipt allocated to a valid sales invoice',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],invoices:[{id:1,type:'sale',status:'active',partyId:'P1',payMethod:'credit',grandTotal:100,paidAmount:50,returnRefs:[]}],
+    treasuryTxs:[{id:'TR1',date:'1405/01/05',dir:'receive',partyId:'P1',method:'حواله بانکی',bankAccountId:'B1',amount:50,allocations:[{invoiceId:1,amount:50}]}],
+    checks:[],vouchers:[{id:10,sourceType:'treasury',sourceId:'TR1',sourceEvent:'posted',date:'1405/01/05',lines:[{code:'1102',bankAccountId:'B1',debit:50,credit:0},{code:'1103',partyId:'P1',debit:0,credit:50}]}]
+  };
+  const before=JSON.stringify(state);
+  const result=runSettlementAudit(state);
+  assert.equal(result.issueCount,0);
+  assert.equal(result.transactionsChecked,1);
+  assert.equal(JSON.stringify(state),before,'audit must not mutate accounting data');
+});
+test('settlement audit detects missing, duplicate and orphan treasury journals',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],invoices:[],checks:[],
+    treasuryTxs:[
+      {id:'TR-MISSING',date:'1405/01/01',dir:'receive',partyId:'P1',method:'حواله بانکی',bankAccountId:'B1',amount:10,allocations:[]},
+      {id:'TR-DUP',date:'1405/01/02',dir:'pay',partyId:'P1',method:'حواله بانکی',bankAccountId:'B1',amount:20,allocations:[]}
+    ],
+    vouchers:[
+      {id:1,sourceType:'treasury',sourceId:'TR-DUP',sourceEvent:'posted',date:'1405/01/02',lines:[{code:'2101',partyId:'P1',debit:20,credit:0},{code:'1102',bankAccountId:'B1',debit:0,credit:20}]},
+      {id:2,sourceType:'treasury',sourceId:'TR-DUP',sourceEvent:'posted',date:'1405/01/02',lines:[{code:'2101',partyId:'P1',debit:20,credit:0},{code:'1102',bankAccountId:'B1',debit:0,credit:20}]},
+      {id:3,sourceType:'treasury',sourceId:'ORPHAN',sourceEvent:'posted',date:'1405/01/02',lines:[]}
+    ]
+  };
+  const result=runSettlementAudit(state);
+  assert.equal(result.missingTreasuryVouchers,1);
+  assert.equal(result.duplicateTreasuryVouchers,1);
+  assert.equal(result.orphanTreasuryVouchers,1);
+});
+test('settlement audit reconciles cheque allocations and party credit applications without double counting',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],
+    invoices:[{id:7,type:'sale',status:'active',partyId:'P1',payMethod:'credit',grandTotal:100,paidAmount:50,returnRefs:[]}],
+    treasuryTxs:[
+      {id:'TR-CHECK',date:'1405/01/03',dir:'receive',partyId:'P1',method:'چک صیادی',amount:40,allocations:[{invoiceId:7,amount:40}]},
+      {id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:10,remainingAmount:0,applications:[{id:'AP1',invoiceId:7,amount:10}]}
+    ],
+    checks:[{id:'CHK1',sourceTxId:'TR-CHECK',dir:'receive',partyId:'P1',amount:40,status:'in_progress',bankAccountId:'B1',allocations:[{invoiceId:7,amount:40}]}],
+    vouchers:[
+      {id:11,sourceType:'check',sourceId:'CHK1',sourceEvent:'issued',date:'1405/01/03',lines:[{code:'1104',partyId:'P1',debit:40,credit:0},{code:'1103',partyId:'P1',debit:0,credit:40}]},
+      {id:12,sourceType:'party_credit_apply',sourceId:'CR1',sourceEvent:'AP1',date:'1405/01/03',lines:[{code:'2101',partyId:'P1',debit:10,credit:0},{code:'1103',partyId:'P1',debit:0,credit:10}]}
+    ]
+  };
+  const result=runSettlementAudit(state);
+  assert.equal(result.issueCount,0);
+  assert.equal(result.checksChecked,1);
+});
+test('settlement audit detects invoice over-allocation and paid amount mismatch',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],
+    invoices:[{id:9,type:'purchase',status:'active',partyId:'P1',payMethod:'credit',grandTotal:100,paidAmount:120,returnRefs:[]}],
+    treasuryTxs:[{id:'TR9',date:'1405/01/01',dir:'pay',partyId:'P1',method:'حواله بانکی',bankAccountId:'B1',amount:120,allocations:[{invoiceId:9,amount:120}]}],
+    checks:[],vouchers:[{id:19,sourceType:'treasury',sourceId:'TR9',sourceEvent:'posted',date:'1405/01/01',lines:[{code:'2101',partyId:'P1',debit:120,credit:0},{code:'1102',bankAccountId:'B1',debit:0,credit:120}]}]
+  };
+  const result=runSettlementAudit(state);
+  assert.ok(result.overAllocatedInvoices>=1);
+  assert.ok(result.paidAmountMismatches>=1);
+});
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
