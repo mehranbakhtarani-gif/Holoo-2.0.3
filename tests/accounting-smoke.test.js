@@ -541,5 +541,78 @@ test('invoice return audit flags duplicate IDs, excessive quantities and missing
   assert.ok(result.issueCount >= 5);
 });
 
+// 10. Read-only invoice integrity audit covers purchase/sales journals and source links.
+function invoiceAuditContext(state) {
+  return {
+    state,
+    jalaliDateOrdinal(value) {
+      const match = String(value || '').match(/^(\\d{4})\\/(\\d{2})\\/(\\d{2})$/);
+      if (!match) return null;
+      const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+      if (month < 1 || month > 12 || day < 1 || day > (month <= 6 ? 31 : month <= 11 ? 30 : 29)) return null;
+      return year * 10000 + month * 100 + day;
+    }
+  };
+}
+function runInvoiceDocumentAudit(state) {
+  const source = section('function buildInvoiceDocumentIntegrityAudit()', 'function buildInvoiceReturnIntegrityAudit()');
+  return loadFunction(source, 'buildInvoiceDocumentIntegrityAudit', invoiceAuditContext(state))();
+}
+test('invoice document audit accepts a matched sale and purchase invoice with balanced source journals', () => {
+  const state = {
+    parties: [{id:'P1'}], warehouses: [{id:'W1'}], products: [{id:'PR1'}],
+    invoices: [
+      {id:1001,type:'sale',date:'1405/01/05',dueDate:'1405/02/05',partyId:'P1',warehouseId:'W1',payMethod:'credit',subtotal:200,discount:20,netSubtotal:180,vatRate:10,vatAmount:18,grandTotal:198,items:[{productId:'PR1',kg:2,price:100,disc:20,total:180,costOfGoodsSold:80}]},
+      {id:1002,type:'purchase',date:'1405/01/06',dueDate:'1405/02/06',partyId:'P1',warehouseId:'W1',payMethod:'credit',subtotal:300,discount:0,netSubtotal:300,vatRate:10,vatAmount:30,grandTotal:330,items:[{productId:'PR1',kg:3,price:100,disc:0,total:300}]}
+    ],
+    vouchers: [
+      {id:1,sourceType:'invoice',sourceId:'1001',date:'1405/01/05',lines:[{code:'1103',debit:198,credit:0},{code:'4101',debit:0,credit:180},{code:'2103',debit:0,credit:18},{code:'5101',debit:80,credit:0},{code:'1105',debit:0,credit:80}]},
+      {id:2,sourceType:'invoice',sourceId:'1002',date:'1405/01/06',lines:[{code:'1105',debit:300,credit:0},{code:'1106',debit:30,credit:0},{code:'2101',debit:0,credit:330}]}
+    ]
+  };
+  const before = JSON.stringify(state);
+  const result = runInvoiceDocumentAudit(state);
+  assert.equal(result.issueCount, 0);
+  assert.equal(result.saleInvoices, 1);
+  assert.equal(result.purchaseInvoices, 1);
+  assert.equal(JSON.stringify(state), before, 'audit must not mutate accounting data');
+});
+test('invoice document audit detects missing and duplicate journals and orphan invoice vouchers', () => {
+  const state = {
+    parties: [], warehouses: [], products: [],
+    invoices: [
+      {id:1,type:'sale',date:'1405/01/01',payMethod:'credit',subtotal:0,discount:0,netSubtotal:0,vatRate:0,vatAmount:0,grandTotal:0,items:[]},
+      {id:2,type:'purchase',date:'1405/01/02',payMethod:'credit',subtotal:0,discount:0,netSubtotal:0,vatRate:0,vatAmount:0,grandTotal:0,items:[]}
+    ],
+    vouchers: [
+      {id:10,sourceType:'invoice',sourceId:'2',date:'1405/01/02',lines:[]},
+      {id:11,sourceType:'invoice',sourceId:'2',date:'1405/01/02',lines:[]},
+      {id:12,sourceType:'invoice',sourceId:'999',date:'1405/01/02',lines:[]}
+    ]
+  };
+  const result = runInvoiceDocumentAudit(state);
+  assert.equal(result.missingVouchers, 1);
+  assert.equal(result.duplicateVouchers, 1);
+  assert.equal(result.orphanVouchers, 1);
+});
+test('invoice document audit detects invalid dates, incomplete rows, totals and ledger discrepancies', () => {
+  const state = {
+    parties: [{id:'P1'}], warehouses: [{id:'W1'}], products: [],
+    invoices: [{
+      id:77,type:'sale',date:'1405/13/40',dueDate:'1405/01/01',partyId:'MISSING',warehouseId:'W1',
+      payMethod:'credit',subtotal:100,discount:0,netSubtotal:100,vatRate:9,vatAmount:9,grandTotal:109,
+      items:[{productId:'MISSING-PRODUCT',kg:0,price:-5,disc:0,total:100}]
+    }],
+    vouchers: [{id:7,sourceType:'invoice',sourceId:'77',date:'invalid',lines:[{code:'1103',debit:1,credit:0},{code:'4101',debit:0,credit:2}]}]
+  };
+  const result = runInvoiceDocumentAudit(state);
+  assert.ok(result.invalidInvoiceDates >= 1);
+  assert.ok(result.invalidVoucherDates >= 1);
+  assert.ok(result.incompleteLines >= 1);
+  assert.ok(result.invalidInvoiceTotals >= 1);
+  assert.ok(result.ledgerAmountMismatches >= 1);
+  assert.ok(result.invalidPartyLinks >= 1);
+  assert.ok(result.invalidProductLinks >= 1);
+});
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
