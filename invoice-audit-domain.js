@@ -176,8 +176,15 @@
           }
         } else if (invoice.type === 'purchase') {
           const creditCode = invoice.payMethod === 'credit' ? '2101' : (invoice.payMethod === 'bank' ? '1102' : '1101');
-          expectedAccounts.push(['1105', 'debit', net, 'ورود موجودی در حساب کنترل ۱۱۰۵ با جمع خالص خرید مغایرت دارد.']);
-          expectedAccounts.push(['1106', 'debit', expectedVat, 'اعتبار مالیات خرید در سند با مبلغ محاسبه‌شده مغایرت دارد.']);
+          const nonRecoverablePurchaseVat = invoice.purchaseVatTreatment === 'non_recoverable';
+          expectedAccounts.push(['1105', 'debit', nonRecoverablePurchaseVat ? expectedGrand : net,
+            nonRecoverablePurchaseVat
+              ? 'بهای موجودی خرید باید شامل مالیات غیرقابل‌استرداد باشد.'
+              : 'ورود موجودی در حساب کنترل ۱۱۰۵ با جمع خالص خرید مغایرت دارد.']);
+          expectedAccounts.push(['1106', 'debit', nonRecoverablePurchaseVat ? 0 : expectedVat,
+            nonRecoverablePurchaseVat
+              ? 'مالیات غیرقابل‌استرداد نباید به‌عنوان اعتبار مالیاتی در حساب ۱۱۰۶ ثبت شود.'
+              : 'اعتبار مالیات خرید در سند با مبلغ محاسبه‌شده مغایرت دارد.']);
           expectedAccounts.push([creditCode, 'credit', expectedGrand, 'بستانکار حساب طرف‌حساب/صندوق/بانک با مبلغ نهایی خرید مغایرت دارد.']);
           if (invoice.payMethod === 'credit') {
             const payableLine = voucherLines.find(line => key(line?.code) === '2101' && amount(line?.credit) > 0);

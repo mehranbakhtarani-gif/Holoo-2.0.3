@@ -6671,7 +6671,20 @@
         showToast('برای ثبت پورسانت، بازاریاب باید دقیقاً از اشخاص ثبت‌شده انتخاب/تطبیق داده شود. نام واردشده با هیچ شخص فعالی یکسان نیست؛ فاکتور ثبت نشد.', 'error'); return;
       }
       const grandTotal = sub + vatAmount;
-      if (![sub, disc, grossSub, vatAmount, commAmount, grandTotal].every(Number.isFinite)) {
+      if (type === 'purchase' && sub > 0) {
+        let allocatedBase = 0, allocatedVat = 0;
+        invoiceLines.forEach(line => {
+          const lineBase = Number(line.total || 0);
+          const nextBase = allocatedBase + lineBase;
+          const nextVat = Math.round(nextBase * (vatAmount / sub));
+          line.nonRecoverableVatAmount = nextVat - allocatedVat;
+          line.inventoryCost = lineBase + line.nonRecoverableVatAmount;
+          allocatedBase = nextBase;
+          allocatedVat = nextVat;
+        });
+      }
+      if (![sub, disc, grossSub, vatAmount, commAmount, grandTotal].every(Number.isFinite) ||
+          (type === 'purchase' && invoiceLines.some(line => !Number.isFinite(line.inventoryCost) || line.inventoryCost < 0))) {
         showToast('جمع مبالغ فاکتور معتبر نیست؛ از ثبت جلوگیری شد.', 'error'); return;
       }
       const id = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
@@ -6696,6 +6709,7 @@
         payMethod, ...(settlementAccount ? { bankAccountId: settlementAccount.id } : {}),
         salesperson: salespersonName, salespersonPartyId: salespersonParty?.id || null, commRate, commAmount,
         subtotal: grossSub, netSubtotal: sub, discount: disc, vatRate, vatAmount, grandTotal,
+        ...(type === 'purchase' ? { purchaseVatTreatment: 'non_recoverable' } : {}),
         paidAmount: payMethod === 'credit' ? 0 : grandTotal,
         status: 'active', items: invoiceLines,
         ...(invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? { sourceOrderId: String(invDraft.sourceOrderId) } : {}),
@@ -6745,13 +6759,16 @@
             cogs += lineCost;
             productPlans.push({ product, simulated, line, quantity: Number(line.kg), type: 'sale' });
           } else {
+            const purchaseInventoryCost = Number(line.inventoryCost ?? line.total ?? 0);
             const receivedUnitCost = Number(line.kg) > 0
-              ? Math.max(0, Number(line.total || 0) / Number(line.kg))
+              ? Math.max(0, purchaseInventoryCost / Number(line.kg))
               : Number(line.price || 0);
             if (state.costingMethod === 'AVG') {
               const nextStock = Number(simulated.stock || 0) + Number(line.kg);
               if (!Number.isFinite(nextStock) || nextStock <= 0) throw new Error('موجودی برای محاسبه میانگین معتبر نیست.');
-              simulated.buyPrice = Math.round(((Number(simulated.stock || 0) * Number(simulated.buyPrice || 0)) + Number(line.total || 0)) / nextStock);
+              const nextInventoryValue = (Number(simulated.stock || 0) * Number(simulated.buyPrice || 0)) + purchaseInventoryCost;
+              if (!Number.isFinite(nextInventoryValue) || nextInventoryValue < 0) throw new Error('ارزش خرید شامل مالیات غیرقابل‌استرداد معتبر نیست.');
+              simulated.buyPrice = Math.round(nextInventoryValue / nextStock);
             }
             addStockBatch(simulated, {
               lot: line.lot || ('PUR-' + id + '-' + line.productId),
@@ -6785,8 +6802,7 @@
       } else {
         const purchaseCreditCode = settlementAccountCode || '2101';
         voucherLines = [
-          { code: '1105', partyId: null, desc: `ورود کالا #${id}`, debit: sub, credit: 0 },
-          { code: '1106', partyId: null, desc: `اعتبار ارزش افزوده #${id}`, debit: vatAmount, credit: 0 },
+          { code: '1105', partyId: null, desc: `ورود کالا با مالیات غیرقابل‌استرداد #${id}`, debit: grandTotal, credit: 0 },
           { code: purchaseCreditCode, partyId: payMethod === 'credit' ? partyId : null,
             desc: payMethod === 'credit' ? `بستانکار بابت خرید #${id}` : `پرداخت خرید از ${settlementAccount.name} #${id}`,
             debit: 0, credit: grandTotal }
@@ -7172,7 +7188,8 @@
       const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : 0;
       const returnInventoryCost = inv.type === 'purchase' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : returnCogs;
       if (!Number.isFinite(returnInventoryCost) || returnInventoryCost < 0) { showToast('ارزش دفتری برگشت کالا معتبر نیست؛ سند صادر نشد.', 'error'); return; }
-      const purchaseReturnVariance = inv.type === 'purchase' ? returnBaseTotal - returnInventoryCost : 0;
+      const purchaseReturnAmountForVariance = inv.type === 'purchase' && inv.purchaseVatTreatment === 'non_recoverable' ? retTotal : returnBaseTotal;
+      const purchaseReturnVariance = inv.type === 'purchase' ? purchaseReturnAmountForVariance - returnInventoryCost : 0;
       const returnVoucherLines = inv.type === 'sale'
         ? [
             { code: '4103', partyId: inv.partyId, desc: `برگشت از فروش #${invId}`, debit: returnBaseTotal, credit: 0 },
@@ -7186,7 +7203,7 @@
             { code: '1105', partyId: null, desc: 'خروج کالای مرجوعی به بهای دفتری', debit: 0, credit: returnInventoryCost },
             ...(purchaseReturnVariance > 0 ? [{ code: '4198', partyId: null, desc: `سود اختلاف بهای برگشت خرید #${invId}`, debit: 0, credit: purchaseReturnVariance }] : []),
             ...(purchaseReturnVariance < 0 ? [{ code: '6107', partyId: null, desc: `زیان اختلاف بهای برگشت خرید #${invId}`, debit: Math.abs(purchaseReturnVariance), credit: 0 }] : []),
-            ...(returnVatTotal > 0 ? [{ code: '1106', partyId: null, desc: `اصلاح اعتبار مالیات خرید بابت برگشت #${invId}`, debit: 0, credit: returnVatTotal }] : [])
+            ...(inv.purchaseVatTreatment === 'non_recoverable' ? [] : (returnVatTotal > 0 ? [{ code: '1106', partyId: null, desc: `اصلاح اعتبار مالیات خرید بابت برگشت #${invId}`, debit: 0, credit: returnVatTotal }] : []))
           ];
       if (inv.type === 'sale' && returnCogs > 0) returnVoucherLines.push(
         { code: '1105', partyId: null, desc: `بازگشت موجودی بابت برگشت فروش #${invId}`, debit: returnCogs, credit: 0 },
@@ -7377,12 +7394,12 @@
             ...(cancelAmount > 0 ? [
               { code: '2101', partyId: inv.partyId, desc: `ابطال مانده خرید #${invId}`, debit: cancelAmount, credit: 0 }
             ] : []),
-            ...(cancelBaseAmount > 0 ? [
-              { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار #${invId}`, debit: 0, credit: cancelBaseAmount }
+            ...((inv.purchaseVatTreatment === 'non_recoverable' ? cancelAmount : cancelBaseAmount) > 0 ? [
+              { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار #${invId}`, debit: 0, credit: inv.purchaseVatTreatment === 'non_recoverable' ? cancelAmount : cancelBaseAmount }
             ] : []),
-            ...(cancelVatAmount > 0 ? [
+            ...(inv.purchaseVatTreatment === 'non_recoverable' ? [] : (cancelVatAmount > 0 ? [
               { code: '1106', partyId: null, desc: `ابطال اعتبار مالیات خرید #${invId}`, debit: 0, credit: cancelVatAmount }
-            ] : [])
+            ] : []))
           ];
 
       if (inv.type === 'sale' && Number(inv.commAmount || 0) > 0) {

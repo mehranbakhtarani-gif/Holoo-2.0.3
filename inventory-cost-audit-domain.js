@@ -30,7 +30,7 @@ function buildInventoryCostAudit(state){
    const ret=rv[0];checkBalanced(ret,id);const retItems=Array.isArray(ref.items)?ref.items:[],returnInventory=retItems.reduce((n,x)=>n+(amount(x&&x.inventoryCost)??0),0);
    if(retItems.some(x=>amount(x&&x.inventoryCost)===null)){returnAmountMismatches++;add('return-cost-invalid',id,'بهای دفتری یکی از ردیف‌های برگشت نامعتبر است.','برگشت: '+rid);}
    if(isSale){const expected=amount(ref.costOfGoodsSold);if(expected===null){returnAmountMismatches++;add('return-cogs-invalid',id,'بهای تمام‌شده برگشت فروش ثبت نشده است.','برگشت: '+rid);}else{checkSide(ret,id,'5101','credit',expected,'debit','return-cogs','بستانکار حساب ۵۱۰۱ با بهای تمام‌شده برگشت فروش برابر نیست.');checkSide(ret,id,'1105','debit',expected,'credit','return-inventory','بدهکار حساب ۱۱۰۵ با بهای برگشت فروش برابر نیست.');}}
-   else checkSide(ret,id,'1105','credit',returnInventory,'debit','return-inventory','بستانکار حساب ۱۱۰۵ با بهای دفتری برگشت خرید برابر نیست.');
+   else {checkSide(ret,id,'1105','credit',returnInventory,'debit','return-inventory','بستانکار حساب ۱۱۰۵ با بهای دفتری برگشت خرید برابر نیست.');if(inv.purchaseVatTreatment==='non_recoverable')checkSide(ret,id,'1106','credit',0,'debit','return-inventory','برگشت خرید با مالیات غیرقابل‌استرداد نباید اعتبار مالیاتی حساب ۱۱۰۶ را اصلاح کند.');}
    details.push({invoiceId:id,returnId:rid,voucherId:String(ret.id??''),returnInventoryCost:returnInventory,returnCogs:amount(ref.costOfGoodsSold)});
   });
  });
