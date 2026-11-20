@@ -459,5 +459,87 @@ test('FIFO valuation integrity checks active batch costs and remaining quantitie
   assert.ok(!result.issues.some(issue => issue.productId === 'FIFO3'));
 });
 
+test('invoice return audit reconciles sale returns across source invoice, ledger, kardex and party credit', () => {
+  const source = section('function buildInvoiceReturnIntegrityAudit()', 'function renderTrialBalanceReport()');
+  const audit = loadFunction(source, 'buildInvoiceReturnIntegrityAudit', {
+    state: {
+      costingMethod: 'AVG',
+      invoices: [{
+        id: 100, type: 'sale', items: [{ productId: 'P1', kg: 10, returnedKg: 2 }],
+        returnRefs: [{
+          id: 'RET-100', amount: 220, costOfGoodsSold: 80, partyCreditAmount: 20,
+          items: [{ productId: 'P1', lineIndex: 0, qty: 2, baseAmount: 200, vatAmount: 20, amount: 220, inventoryCost: 80, batchAllocations: [] }]
+        }]
+      }],
+      products: [{ id: 'P1', kardex: [{ doc: 'برگشت جزئی فاکتور #100', inQty: 2, outQty: 0 }] }],
+      vouchers: [{
+        id: 500, sourceType: 'invoice_return', sourceId: 'RET-100', sourceEvent: '100',
+        lines: [
+          { code: '4103', debit: 200, credit: 0 },
+          { code: '2103', debit: 20, credit: 0 },
+          { code: '1103', debit: 0, credit: 200 },
+          { code: '2101', debit: 0, credit: 20 },
+          { code: '1105', debit: 80, credit: 0 },
+          { code: '5101', debit: 0, credit: 80 }
+        ]
+      }],
+      treasuryTxs: [{ sourceReturnId: 'RET-100', sourceInvoiceId: 100, amount: 20, remainingAmount: 20 }]
+    }
+  });
+  const result = audit();
+  assert.equal(result.invoicesChecked, 1);
+  assert.equal(result.returnsChecked, 1);
+  assert.equal(result.issueCount, 0);
+});
+
+test('invoice return audit reconciles purchase return inventory credit and detects missing or excessive return records', () => {
+  const source = section('function buildInvoiceReturnIntegrityAudit()', 'function renderTrialBalanceReport()');
+  const audit = loadFunction(source, 'buildInvoiceReturnIntegrityAudit', {
+    state: {
+      costingMethod: 'AVG',
+      invoices: [{
+        id: 200, type: 'purchase', items: [{ productId: 'P2', kg: 5, returnedKg: 1 }],
+        returnRefs: [{
+          id: 'RET-200', amount: 100, costOfGoodsSold: 0, partyCreditAmount: 0,
+          items: [{ productId: 'P2', lineIndex: 0, qty: 1, baseAmount: 100, vatAmount: 0, amount: 100, inventoryCost: 80, batchAllocations: [] }]
+        }]
+      }],
+      products: [{ id: 'P2', kardex: [{ doc: 'برگشت جزئی فاکتور #200', inQty: 0, outQty: 1 }] }],
+      vouchers: [{
+        id: 501, sourceType: 'invoice_return', sourceId: 'RET-200', sourceEvent: '200',
+        lines: [{ code: '2101', debit: 100, credit: 0 }, { code: '1105', debit: 0, credit: 80 }, { code: '4198', debit: 0, credit: 20 }]
+      }],
+      treasuryTxs: []
+    }
+  });
+  const result = audit();
+  assert.equal(result.issueCount, 0);
+});
+
+test('invoice return audit flags duplicate IDs, excessive quantities and missing linked voucher or kardex', () => {
+  const source = section('function buildInvoiceReturnIntegrityAudit()', 'function renderTrialBalanceReport()');
+  const audit = loadFunction(source, 'buildInvoiceReturnIntegrityAudit', {
+    state: {
+      costingMethod: 'AVG',
+      invoices: [{
+        id: 300, type: 'sale', items: [{ productId: 'P3', kg: 3, returnedKg: 5 }],
+        returnRefs: [
+          { id: 'RET-DUP', amount: 40, costOfGoodsSold: 10, partyCreditAmount: 0, items: [{ productId: 'P3', lineIndex: 0, qty: 4, baseAmount: 40, vatAmount: 0, amount: 40, inventoryCost: 10 }] },
+          { id: 'RET-DUP', amount: 10, costOfGoodsSold: 2, partyCreditAmount: 0, items: [{ productId: 'P3', lineIndex: 0, qty: 1, baseAmount: 10, vatAmount: 0, amount: 10, inventoryCost: 2 }] }
+        ]
+      }],
+      products: [{ id: 'P3', kardex: [] }],
+      vouchers: [],
+      treasuryTxs: []
+    }
+  });
+  const result = audit();
+  assert.ok(result.duplicateReturnIds >= 1);
+  assert.ok(result.quantityMismatches >= 1);
+  assert.equal(result.missingVouchers, 2);
+  assert.ok(result.missingKardex >= 1);
+  assert.ok(result.issueCount >= 5);
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);

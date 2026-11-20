@@ -11342,6 +11342,158 @@
       };
     }
 
+    function buildInvoiceReturnIntegrityAudit() {
+      const invoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(invoice => invoice && ['sale','purchase'].includes(invoice.type));
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const products = Array.isArray(state.products) ? state.products : [];
+      const treasuryTxs = Array.isArray(state.treasuryTxs) ? state.treasuryTxs : [];
+      const issues = [];
+      let invoicesChecked = 0, returnsChecked = 0, missingVouchers = 0, duplicateVouchers = 0;
+      let quantityMismatches = 0, amountMismatches = 0, ledgerMismatches = 0, missingKardex = 0, creditMismatches = 0, duplicateReturnIds = 0;
+      const add = (type, invoice, returnId, message, detail) => issues.push({
+        type, invoiceId: String(invoice?.id ?? ''), invoiceType: String(invoice?.type || ''),
+        returnId: String(returnId || ''), message, detail: String(detail || '')
+      });
+      const globalReturnIds = new Map();
+      invoices.forEach(invoice => {
+        invoicesChecked++;
+        const invoiceId = String(invoice.id);
+        const invoiceLines = Array.isArray(invoice.items) ? invoice.items : [];
+        const refs = Array.isArray(invoice.returnRefs) ? invoice.returnRefs : [];
+        const returnedByLine = new Map();
+        const kardexExpected = new Map();
+        refs.forEach(ref => {
+          returnsChecked++;
+          const returnId = String(ref?.id || '').trim();
+          if (!returnId) add('return-id', invoice, '', 'شناسه برگشت ثبت نشده است.', 'برگشت بدون شناسه یکتا');
+          else {
+            const owner = globalReturnIds.get(returnId);
+            if (owner) {
+              duplicateReturnIds++;
+              add('duplicate-return-id', invoice, returnId, 'شناسه برگشت بین فاکتورها یا در یک فاکتور تکراری است.', 'شناسه قبلاً برای فاکتور ' + owner + ' ثبت شده است.');
+            } else globalReturnIds.set(returnId, invoiceId);
+          }
+          const refItems = Array.isArray(ref?.items) ? ref.items : [];
+          if (!refItems.length) add('return-items', invoice, returnId, 'سابقه برگشت فاقد ردیف کالا است.', 'جزئیات ردیف‌های برگشتی ثبت نشده است.');
+          let refAmount = 0, refInventoryCost = 0, refBase = 0, refVat = 0;
+          refItems.forEach((line, itemIndex) => {
+            const qty = Number(line?.qty);
+            const amount = Number(line?.amount);
+            const base = Number(line?.baseAmount);
+            const vat = Number(line?.vatAmount);
+            const inventoryCost = Number(line?.inventoryCost);
+            let lineIndex = Number.isInteger(Number(line?.lineIndex)) ? Number(line.lineIndex) : -1;
+            if (lineIndex < 0 || lineIndex >= invoiceLines.length || String(invoiceLines[lineIndex]?.productId || '') !== String(line?.productId || '')) {
+              const matches = invoiceLines.map((original, index) => String(original?.productId || '') === String(line?.productId || '') ? index : -1).filter(index => index >= 0);
+              lineIndex = matches.length === 1 ? matches[0] : -1;
+            }
+            if (lineIndex < 0) {
+              add('return-product-link', invoice, returnId, 'ردیف برگشت به ردیف یکتای فاکتور اصلی متصل نیست.', 'ردیف برگشت ' + (itemIndex + 1) + ' | کالا: ' + String(line?.productId || 'بدون شناسه'));
+            } else if (Number.isFinite(qty) && qty > 0) {
+              const key = String(lineIndex);
+              returnedByLine.set(key, (returnedByLine.get(key) || 0) + qty);
+              const productId = String(line?.productId || '');
+              kardexExpected.set(productId, (kardexExpected.get(productId) || 0) + qty);
+              const originalQty = Number(invoiceLines[lineIndex]?.kg);
+              if (!Number.isFinite(originalQty) || originalQty <= 0 || (returnedByLine.get(key) || 0) > originalQty + 0.000001) {
+                quantityMismatches++;
+                add('return-quantity', invoice, returnId, 'مجموع مقدار برگشتی از مقدار اصلی ردیف فاکتور بیشتر است یا مقدار اصلی نامعتبر است.', 'ردیف فاکتور: ' + (lineIndex + 1) + ' | مقدار اصلی: ' + String(invoiceLines[lineIndex]?.kg) + ' | مقدار برگشتی تجمعی: ' + String(returnedByLine.get(key)));
+              }
+            }
+            if (!Number.isFinite(qty) || qty <= 0) {
+              quantityMismatches++;
+              add('return-quantity-invalid', invoice, returnId, 'مقدار برگشتی باید عدد مثبت و معتبر باشد.', 'ردیف برگشت ' + (itemIndex + 1) + ' | مقدار: ' + String(line?.qty));
+            }
+            if (!Number.isFinite(amount) || amount < 0 || !Number.isFinite(base) || base < 0 || !Number.isFinite(vat) || vat < 0 || !Number.isFinite(inventoryCost) || inventoryCost < 0) {
+              amountMismatches++;
+              add('return-value-invalid', invoice, returnId, 'مبلغ، مالیات یا ارزش دفتری برگشت نامعتبر است.', 'ردیف برگشت ' + (itemIndex + 1));
+            } else {
+              refAmount += amount; refBase += base; refVat += vat; refInventoryCost += inventoryCost;
+            }
+            const allocations = Array.isArray(line?.batchAllocations) ? line.batchAllocations : [];
+            if (state.costingMethod === 'FIFO' && qty > 0) {
+              const allocated = allocations.reduce((sum, allocation) => sum + Number(allocation?.quantity || 0), 0);
+              if (!allocations.length || allocations.some(allocation => !Number.isFinite(Number(allocation?.quantity)) || Number(allocation.quantity) <= 0) || Math.abs(allocated - qty) > 0.000001) {
+                add('return-batch-allocation', invoice, returnId, 'تخصیص سری ساخت برگشت با مقدار برگشتی در FIFO سازگار نیست.', 'ردیف برگشت ' + (itemIndex + 1) + ' | مقدار: ' + qty + ' | تخصیص: ' + allocated);
+              }
+            }
+          });
+          const recordedAmount = Number(ref?.amount);
+          if (!Number.isFinite(recordedAmount) || Math.abs(recordedAmount - refAmount) > 1) {
+            amountMismatches++;
+            add('return-amount', invoice, returnId, 'مبلغ سربرگ برگشت با مجموع ردیف‌های برگشتی برابر نیست.', 'سربرگ: ' + String(ref?.amount) + ' | ردیف‌ها: ' + refAmount);
+          }
+          if (invoice.type === 'sale') {
+            const recordedCogs = Number(ref?.costOfGoodsSold);
+            if (!Number.isFinite(recordedCogs) || Math.abs(recordedCogs - refInventoryCost) > 1) {
+              amountMismatches++;
+              add('return-cogs', invoice, returnId, 'بهای تمام‌شده برگشت فروش با مجموع ارزش دفتری ردیف‌ها برابر نیست.', 'سربرگ: ' + String(ref?.costOfGoodsSold) + ' | ردیف‌ها: ' + refInventoryCost);
+            }
+          }
+          const linkedVouchers = vouchers.filter(voucher => voucher && voucher.sourceType === 'invoice_return' &&
+            String(voucher.sourceId || '') === returnId && String(voucher.sourceEvent || '') === invoiceId);
+          if (linkedVouchers.length === 0) {
+            missingVouchers++;
+            add('return-voucher-missing', invoice, returnId, 'سند حسابداری متناظر برگشت پیدا نشد.', 'فاکتور: ' + invoiceId);
+          } else if (linkedVouchers.length !== 1) {
+            duplicateVouchers++;
+            add('return-voucher-duplicate', invoice, returnId, 'برای یک برگشت بیش از یک سند حسابداری ثبت شده است.', 'تعداد اسناد: ' + linkedVouchers.length);
+          } else {
+            const voucher = linkedVouchers[0];
+            const lines = Array.isArray(voucher.lines) ? voucher.lines : [];
+            let debit = 0, credit = 0, invalid = lines.length < 2;
+            lines.forEach(journalLine => {
+              const d = Number(journalLine?.debit ?? 0), c = Number(journalLine?.credit ?? 0);
+              if (!journalLine?.code || !Number.isFinite(d) || !Number.isFinite(c) || d < 0 || c < 0 || (d > 0 && c > 0)) invalid = true;
+              else { debit += d; credit += c; }
+            });
+            const inventoryDebit = lines.filter(line => String(line.code) === '1105').reduce((sum, line) => sum + Number(line.debit || 0), 0);
+            const inventoryCredit = lines.filter(line => String(line.code) === '1105').reduce((sum, line) => sum + Number(line.credit || 0), 0);
+            const expectedInventoryDebit = invoice.type === 'sale' ? refInventoryCost : 0;
+            const expectedInventoryCredit = invoice.type === 'purchase' ? refInventoryCost : 0;
+            if (invalid || Math.abs(debit - credit) > 1 || Math.abs(inventoryDebit - expectedInventoryDebit) > 1 || Math.abs(inventoryCredit - expectedInventoryCredit) > 1) {
+              ledgerMismatches++;
+              add('return-ledger', invoice, returnId, 'سند برگشت نامتوازن یا گردش حساب کنترل موجودی آن با ارزش دفتری ردیف‌ها ناسازگار است.', 'بدهکار: ' + debit + ' | بستانکار: ' + credit + ' | ۱۱۰۵ بدهکار: ' + inventoryDebit + ' | ۱۱۰۵ بستانکار: ' + inventoryCredit);
+            }
+          }
+          const expectedCredit = Number(ref?.partyCreditAmount || 0);
+          const linkedCredits = treasuryTxs.filter(tx => String(tx?.sourceReturnId || '') === returnId && String(tx?.sourceInvoiceId || '') === invoiceId);
+          if (expectedCredit > 0) {
+            if (linkedCredits.length !== 1 || Math.abs(Number(linkedCredits[0]?.amount || 0) - expectedCredit) > 1) {
+              creditMismatches++;
+              add('return-credit', invoice, returnId, 'اعتبار طرف‌حساب ناشی از برگشت با سابقه برگشت تطبیق ندارد.', 'اعتبار مورد انتظار: ' + expectedCredit + ' | تعداد رکوردها: ' + linkedCredits.length);
+            }
+          } else if (linkedCredits.length) {
+            creditMismatches++;
+            add('return-credit-duplicate', invoice, returnId, 'برای برگشتی بدون اعتبار، رکورد اعتبار طرف‌حساب وجود دارد.', 'تعداد رکوردها: ' + linkedCredits.length);
+          }
+        });
+        invoiceLines.forEach((line, index) => {
+          const expected = returnedByLine.get(String(index)) || 0;
+          const recorded = Number(line?.returnedKg || 0);
+          if (!Number.isFinite(recorded) || Math.abs(recorded - expected) > 0.000001) {
+            quantityMismatches++;
+            add('return-quantity-total', invoice, '', 'مقدار برگشتی ثبت‌شده در ردیف فاکتور با مجموع سوابق برگشت برابر نیست.', 'ردیف: ' + (index + 1) + ' | returnedKg: ' + String(line?.returnedKg ?? 0) + ' | سوابق برگشت: ' + expected);
+          }
+        });
+        kardexExpected.forEach((expectedQty, productId) => {
+          const product = products.find(item => String(item?.id || '') === productId);
+          const doc = 'برگشت جزئی فاکتور #' + invoiceId;
+          const movements = product ? (Array.isArray(product.kardex) ? product.kardex : []).filter(row => String(row?.doc || '').trim() === doc) : [];
+          const direction = invoice.type === 'sale' ? 'inQty' : 'outQty';
+          const opposite = invoice.type === 'sale' ? 'outQty' : 'inQty';
+          const actual = movements.reduce((sum, movement) => sum + Number(movement?.[direction] || 0), 0);
+          const wrongDirection = movements.some(movement => Number(movement?.[opposite] || 0) > 0);
+          if (!product || !movements.length || wrongDirection || Math.abs(actual - expectedQty) > 0.000001) {
+            missingKardex++;
+            add('return-kardex', invoice, '', 'گردش کاردکس برگشت با مقدار یا جهت برگشتی فاکتور سازگار نیست.', 'کالا: ' + productId + ' | انتظار: ' + expectedQty + ' | کاردکس: ' + actual + ' | ردیف‌ها: ' + movements.length);
+          }
+        });
+      });
+      return { invoicesChecked, returnsChecked, missingVouchers, duplicateVouchers, quantityMismatches, amountMismatches,
+        ledgerMismatches, missingKardex, creditMismatches, duplicateReturnIds, issueCount: issues.length, issues };
+    }
+
     function renderTrialBalanceReport() {
       const from = trialBalanceFromDate || String(state.fiscalYear || '1405') + '/01/01';
       const to = trialBalanceToDate || getTodayJalaliDate();
@@ -11379,6 +11531,17 @@
         ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>' +
         (inventoryValuationIntegrity.issues.length ? '<div class="space-y-1 max-h-72 overflow-y-auto">'+inventoryValuationIntegrity.issues.slice(0,40).map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.productName)+' ('+escapeLedgerText(item.productId)+')</b> — '+escapeLedgerText(item.message)+'<p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">موردی برای بررسی در این کنترل پیدا نشد.</p>')+
         '<p class="text-[10px] text-slate-500">مقادیر با بهای صفر به‌تنهایی خطا محسوب نمی‌شوند. گزارش فقط‌خواندنی است و موجودی یا بهای کالا را خودکار تغییر نمی‌دهد.</p></div>';
+      const invoiceReturnAudit = buildInvoiceReturnIntegrityAudit();
+      const invoiceReturnAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق برگشت خرید و فروش با فاکتور، انبار و دفترکل</strong><b class="block">'+(invoiceReturnAudit.issueCount ? faNum(invoiceReturnAudit.issueCount)+' مورد نیازمند بررسی' : 'سوابق برگشت با فاکتور، کاردکس و سند حسابداری سازگار است')+'</b>' +
+        '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[
+          ['فاکتورهای بررسی‌شده',invoiceReturnAudit.invoicesChecked],['برگشت‌های بررسی‌شده',invoiceReturnAudit.returnsChecked],
+          ['سند برگشت مفقود',invoiceReturnAudit.missingVouchers],['سند برگشت تکراری',invoiceReturnAudit.duplicateVouchers],
+          ['مغایرت مقدار برگشت',invoiceReturnAudit.quantityMismatches],['مغایرت مبلغ/بهای تمام‌شده',invoiceReturnAudit.amountMismatches],
+          ['مغایرت دفترکل',invoiceReturnAudit.ledgerMismatches],['مغایرت کاردکس',invoiceReturnAudit.missingKardex],
+          ['مغایرت اعتبار طرف‌حساب',invoiceReturnAudit.creditMismatches],['شناسه برگشت تکراری',invoiceReturnAudit.duplicateReturnIds]
+        ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>' +
+        (invoiceReturnAudit.issues.length ? '<div class="space-y-1 max-h-72 overflow-y-auto">'+invoiceReturnAudit.issues.slice(0,50).map(item=>'<div class="border-t pt-1 text-[10px]"><b>فاکتور '+escapeLedgerText(item.invoiceId)+' | برگشت '+escapeLedgerText(item.returnId || '—')+'</b> — '+escapeLedgerText(item.message)+'<p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">موردی برای بررسی در سوابق برگشت پیدا نشد.</p>')+
+        '<p class="text-[10px] text-slate-500">گزارش فقط‌خواندنی است؛ اصلاح سوابق برگشت، سند یا موجودی به‌صورت خودکار انجام نمی‌شود.</p></div>';
       const inventoryValueReconciliation = buildInventoryControlAccountReconciliation();
       const inventoryValuePanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق ارزش ریالی موجودی با حساب کنترل ۱۱۰۵</strong><b class="block">' +
         (inventoryValueReconciliation.status === 'matched' ? 'ارزش انبار و مانده دفترکل برابر است' :
@@ -11433,7 +11596,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuationIntegrityPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuationIntegrityPanel + invoiceReturnAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
