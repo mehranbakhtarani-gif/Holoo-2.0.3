@@ -63,7 +63,6 @@ function buildInventoryCostAudit(state){
   else if(stock!==null&&stock>0)unverified=true;
   const batches=Array.isArray(product&&product.batches)?product.batches:[];
   if(batches.length){let total=0,valid=true;batches.forEach(batch=>{const qty=amount(batch&&(batch.remainingQty??batch.quantity));if(qty===null)valid=false;else total+=qty;});if(!valid||stock===null)unverified=true;else if(Math.abs(stock-total)>0.000001){batchStockMismatches++;add('batch-stock-mismatch',String(product.id??''),'جمع مقدار باقی‌مانده سری‌های ساخت با موجودی کالا برابر نیست.','موجودی کالا: '+stock+' | جمع سری ساخت: '+total);}}
-  else if(stock!==null&&stock>0)unverified=true;
   if(unverified){unverifiedStockTrace++;add('stock-trace-unverified',String(product.id??''),'ردیابی مقداری کالا به دلیل نبود یا نامعتبر بودن سابقه کاردکس/سری ساخت کامل نیست.','موجودی ثبت‌شده: '+String((product&&product.stock)??'خالی'));}
  });
  const knownReturns=new Set();invoices.forEach(inv=>(Array.isArray(inv&&inv.returnRefs)?inv.returnRefs:[]).forEach(r=>knownReturns.add(String((r&&r.id)??''))));
