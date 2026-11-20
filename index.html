@@ -11605,7 +11605,7 @@
         missingTreasuryVouchers: 0, duplicateTreasuryVouchers: 0, orphanTreasuryVouchers: 0,
         missingChecks: 0, orphanChecks: 0, missingCheckVouchers: 0, duplicateCheckVouchers: 0,
         invalidTransactionAmounts: 0, invalidTransactionDates: 0, invalidParties: 0, invalidAccounts: 0,
-        duplicateTransactionIds: 0, invalidAllocations: 0, overAllocatedInvoices: 0,
+        duplicateTransactionIds: 0, invalidAllocations: 0, duplicateAllocationRows: 0, overAllocatedInvoices: 0,
         paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0, creditRefundsChecked: 0, missingCreditRefundVouchers: 0, duplicateCreditRefundVouchers: 0, orphanCreditRefundVouchers: 0,
         duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0, invalidLedgerLines: 0, duplicateCheckTransactionLinks: 0,
         invalidCreditRecords: 0, creditBalanceMismatches: 0, missingCreditRefundRecords: 0, duplicateCreditIds: 0
@@ -11644,6 +11644,7 @@
       const addAllocations = (owner, allocations, ownerAmount, expectedType) => {
         const rows = Array.isArray(allocations) ? allocations : [];
         let total = 0;
+        const seenInvoiceIds = new Set();
         rows.forEach((a,index) => {
           const amount = Number(a?.amount);
           const inv = invoiceById.get(String(a?.invoiceId));
@@ -11653,8 +11654,14 @@
             add('allocation-invalid','تخصیص دریافت/پرداخت به فاکتور نامعتبر است.', 'تراکنش/چک: '+String(owner.id)+' | ردیف: '+(index+1)+' | فاکتور: '+String(a?.invoiceId ?? '—')+' | مبلغ: '+String(a?.amount ?? '—'));
             return;
           }
+          const invoiceKey = String(inv.id);
+          if (seenInvoiceIds.has(invoiceKey)) {
+            counts.duplicateAllocationRows++;
+            add('allocation-duplicate-invoice','یک فاکتور در چند ردیف تخصیص یک دریافت، پرداخت یا چک تکرار شده است.','تراکنش/چک: '+String(owner.id)+' | فاکتور: '+invoiceKey+' | ردیف: '+(index+1));
+          }
+          seenInvoiceIds.add(invoiceKey);
           total += amount;
-          allocationTotals.set(String(inv.id),(allocationTotals.get(String(inv.id)) || 0)+amount);
+          allocationTotals.set(invoiceKey,(allocationTotals.get(invoiceKey) || 0)+amount);
         });
         if (rows.length && finite(ownerAmount) && total > Number(ownerAmount)+1) {
           counts.invalidAllocations++;
