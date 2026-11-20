@@ -42,7 +42,7 @@ function buildInventoryCostAudit(state){
   kardex.forEach((row,index)=>{
    const inQty=amount(row&&row.inQty),outQty=amount(row&&row.outQty),balance=amount(row&&row.bal);
    const rawBalance=row&&row.bal, numericBalance=rawBalance!==null&&rawBalance!==undefined&&String(rawBalance).trim()!==''?Number(rawBalance):NaN;
-   if(!row||typeof row!=='object'||inQty===null||outQty===null||balance===null||(inQty>0&&outQty>0)){
+   if(!row||typeof row!=='object'||inQty===null||outQty===null||balance===null){
     invalidKardexRows++;unverified=true;
     if(Number.isFinite(numericBalance)&&numericBalance< -0.000001)negativeKardexBalances++;
     add('kardex-row-invalid',String(product.id??''),'ردیف کاردکس دارای مقدار ورود، خروج یا مانده نامعتبر است.','ردیف: '+(index+1)+' | تاریخ: '+String(row&&row.date||'—')+' | شرح: '+String(row&&row.doc||'—'));
