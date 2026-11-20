@@ -40,9 +40,9 @@ function buildInventoryCostAudit(state){
  active.forEach(inv=>{
   const invoiceId=String(inv.id??''),isSale=inv.type==='sale';
   (Array.isArray(inv.returnRefs)?inv.returnRefs:[]).forEach(ref=>{
-   const returnId=String(ref&&ref.id??'').trim();
+   const returnId=String((ref&&ref.id)??'').trim();
    (Array.isArray(ref&&ref.items)?ref.items:[]).forEach(item=>{
-    const productId=String(item&&item.productId??'').trim(),qty=amount(item&&item.qty),cost=amount(item&&item.inventoryCost);
+    const productId=String((item&&item.productId)??'').trim(),qty=amount(item&&item.qty),cost=amount(item&&item.inventoryCost);
     const product=products.find(p=>p&&String(p.id)===productId);
     if(!product||!productId||qty===null||qty<=0||cost===null){
      returnKardexUnverified++;add('return-kardex-unverified',invoiceId,'ردیف برگشت برای تطبیق با کاردکس، کالا، مقدار یا بهای دفتری معتبر ندارد.','برگشت: '+returnId+' | کالا: '+productId);
