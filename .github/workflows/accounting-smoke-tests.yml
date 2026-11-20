@@ -27,6 +27,7 @@ jobs:
           set -e
           node tests/manual-voucher-correction-atomicity.test.js
           node tests/invoice-posting-atomicity.test.js
+          node tests/inventory-costing-precision.test.js
           node tests/invoice-integrity-audit.test.js
           node tests/inventory-value-discrepancy-sources.test.js
           node tests/inventory-cost-audit.test.js
