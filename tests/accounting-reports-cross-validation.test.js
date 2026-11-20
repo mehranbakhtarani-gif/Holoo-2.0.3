@@ -211,6 +211,27 @@ assert.equal(api.buildAccountLedger('1101','1405/01/01','1405/01/30').closingNet
 assert.equal(api.buildAccountLedger('1102','1405/01/01','1405/01/30').closingNet,805);
 
 
+// Missing debit/credit fields must not be silently interpreted as zero in ledger reports.
+state.vouchers.push(voucher(9,'1405/01/09','سند با مبلغ ثبت‌نشده',[
+  {code:'1101',credit:0},
+  {code:'4101',debit:0,credit:25}
+]));
+const beforeMalformedVoucherAfterPush = JSON.stringify(state.vouchers);
+const malformedTrial = api.buildTrialBalanceReport('1405/01/01','1405/01/30');
+const malformedPnl = api.buildProfitLossReport('1405/01/01','1405/01/30');
+const malformedBs = api.buildBalanceSheetReport('1405/01/30');
+assert.equal(malformedTrial.invalidAmountLines,2);
+assert.equal(malformedTrial.includedVouchers,7);
+assert.equal(malformedTrial.totals.periodDebit,1145);
+assert.equal(malformedTrial.totals.periodCredit,1130);
+assert.equal(malformedPnl.invalidAmountLines,2);
+assert.equal(malformedPnl.netProfit,430);
+assert.equal(malformedBs.invalidAmountLines,2);
+assert.equal(malformedBs.assets,2245);
+assert.equal(api.buildAccountLedger('1101','1405/01/01','1405/01/30').invalidAmountLines,2);
+assert.equal(JSON.stringify(state.vouchers),beforeMalformedVoucherAfterPush,
+  'report generation must not mutate vouchers');
+
 const closeState = {
   fiscalYear:'1404', activeRole:'mehran', checks:[], invoices:[],
   vouchers:[
