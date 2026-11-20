@@ -10629,10 +10629,15 @@
     function countInvalidReportVoucherLines(voucher) {
       const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
       return lines.filter(line => {
-        const debit = Number(line?.debit || 0), credit = Number(line?.credit || 0);
+        const rawDebit = line?.debit, rawCredit = line?.credit;
+        const debitPresent = rawDebit !== null && rawDebit !== undefined && String(rawDebit).trim() !== '';
+        const creditPresent = rawCredit !== null && rawCredit !== undefined && String(rawCredit).trim() !== '';
+        const debit = Number(rawDebit), credit = Number(rawCredit);
         const missingAccountCode = !String(line?.code || '').trim();
-        return missingAccountCode || !Number.isFinite(debit) || !Number.isFinite(credit) ||
-          debit < 0 || credit < 0 || (debit > 0 && credit > 0);
+        return missingAccountCode || !debitPresent || !creditPresent ||
+          !Number.isFinite(debit) || !Number.isFinite(credit) ||
+          debit < 0 || credit < 0 || (debit > 0 && credit > 0) ||
+          (debit === 0 && credit === 0);
       }).length;
     }
 
@@ -11017,9 +11022,14 @@
       let invalidLines = 0;
       let debitTotal = 0, creditTotal = 0;
       lines.forEach(line => {
-        const debit = Number(line?.debit || 0), credit = Number(line?.credit || 0);
-        if (!line?.code || !Number.isFinite(debit) || !Number.isFinite(credit) ||
-            debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+        const rawDebit = line?.debit, rawCredit = line?.credit;
+        const debitPresent = rawDebit !== null && rawDebit !== undefined && String(rawDebit).trim() !== '';
+        const creditPresent = rawCredit !== null && rawCredit !== undefined && String(rawCredit).trim() !== '';
+        const debit = Number(rawDebit), credit = Number(rawCredit);
+        if (!String(line?.code || '').trim() || !debitPresent || !creditPresent ||
+            !Number.isFinite(debit) || !Number.isFinite(credit) ||
+            debit < 0 || credit < 0 || (debit > 0 && credit > 0) ||
+            (debit === 0 && credit === 0)) {
           invalidLines++;
           return;
         }
@@ -11199,10 +11209,10 @@
 
     function buildGeneralLedgerAuditSummary() {
       const vs=Array.isArray(state.vouchers)?state.vouchers:[],ids=new Map(),src=new Map(),nums=new Map(),known=new Set([...(CHART_ACCOUNTS||[]),...(state.accountCatalog||[])].map(a=>String(a.code)));
-      const r={total:vs.length,duplicateIds:0,duplicateSources:0,duplicateNumbers:0,missingAccounts:0,missingParties:0,invalidDates:0,invalidAmounts:0,unbalanced:0,issues:[]};
-      vs.forEach(v=>{const id=String(v.id??'');if(id)ids.set(id,(ids.get(id)||0)+1);if(v.sourceType&&v.sourceId!=null){const k=[v.sourceType,v.sourceId,v.sourceEvent||'default'].join('|');src.set(k,(src.get(k)||0)+1);}const no=String(v.number||v.voucherNumber||'');if(no)nums.set(no,(nums.get(no)||0)+1);if(jalaliDateOrdinal(v.date||v.operationDate)===null)r.invalidDates++;const z=inspectTrialBalanceVoucher(v);r.invalidAmounts+=z.invalidLines||0;if(z.unbalanced)r.unbalanced++;(v.lines||[]).forEach(l=>{if(!String(l.code||'').trim()||!known.has(String(l.code)))r.missingAccounts++;if(l.partyId!=null&&!(state.parties||[]).some(p=>String(p.id)===String(l.partyId)))r.missingParties++;});});
+      const r={total:vs.length,duplicateIds:0,duplicateSources:0,duplicateNumbers:0,missingAccounts:0,missingParties:0,invalidDates:0,invalidAmounts:0,invalidStructure:0,unbalanced:0,issues:[]};
+      vs.forEach(v=>{const id=String(v.id??'');if(id)ids.set(id,(ids.get(id)||0)+1);if(v.sourceType&&v.sourceId!=null){const k=[v.sourceType,v.sourceId,v.sourceEvent||'default'].join('|');src.set(k,(src.get(k)||0)+1);}const no=String(v.number||v.voucherNumber||'');if(no)nums.set(no,(nums.get(no)||0)+1);if(jalaliDateOrdinal(v.date||v.operationDate)===null)r.invalidDates++;const z=inspectTrialBalanceVoucher(v);r.invalidAmounts+=z.invalidLines||0;if(z.invalidStructure)r.invalidStructure++;if(z.unbalanced)r.unbalanced++;(v.lines||[]).forEach(l=>{if(!String(l.code||'').trim()||!known.has(String(l.code)))r.missingAccounts++;if(l.partyId!=null&&!(state.parties||[]).some(p=>String(p.id)===String(l.partyId)))r.missingParties++;});});
       const extra=m=>[...m.values()].reduce((n,c)=>n+Math.max(0,c-1),0);r.duplicateIds=extra(ids);r.duplicateSources=extra(src);r.duplicateNumbers=extra(nums);
-      [['شناسه تکراری',r.duplicateIds],['رویداد منبع تکراری',r.duplicateSources],['شماره تکراری',r.duplicateNumbers],['کد حساب نامعتبر',r.missingAccounts],['طرف حساب نامعتبر',r.missingParties],['تاریخ نامعتبر',r.invalidDates],['مبلغ نامعتبر',r.invalidAmounts],['سند نامتوازن',r.unbalanced]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0);return r;
+      [['شناسه تکراری',r.duplicateIds],['رویداد منبع تکراری',r.duplicateSources],['شماره تکراری',r.duplicateNumbers],['کد حساب نامعتبر',r.missingAccounts],['طرف حساب نامعتبر',r.missingParties],['تاریخ نامعتبر',r.invalidDates],['مبلغ نامعتبر',r.invalidAmounts],['سند با ساختار ناقص',r.invalidStructure],['سند نامتوازن',r.unbalanced]].forEach(x=>{if(x[1])r.issues.push(x[0]+': '+x[1]);});r.issueCount=r.issues.reduce((n,x)=>n+Number((x.match(/: (\d+)$/)||[])[1]||0),0);return r;
     }
 
     function buildFiscalOpeningClosingAuditSummary() {
