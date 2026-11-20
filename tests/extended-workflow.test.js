@@ -32,7 +32,7 @@ function load(source, name, context) {
   if (partyHelpersStart >= 0 && partyHelpersEnd > partyHelpersStart) {
     vm.runInContext(html.slice(partyHelpersStart, partyHelpersEnd), sandbox);
   }
-  const helperStart = html.indexOf('function getReturnCostOfGoods(');
+  const helperStart = html.indexOf('function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   if (helperStart >= 0 && helperEnd > helperStart) vm.runInContext(html.slice(helperStart, helperEnd), sandbox);
   const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
