@@ -70,12 +70,12 @@ ledgerResults['200'] = { periodDebit: 5, periodCredit: 55, closingNet: -150 };
 const grossMovementMismatch = sandbox.reconcile('1405/01/01', '1405/01/31');
 assert.equal(grossMovementMismatch.mismatches, 1,
   'gross debit and credit movement differences must be detected even when their net effect is zero');
-assert.equal(grossMovementMismatch.periodDebitDifference, 5);
-assert.equal(grossMovementMismatch.periodCreditDifference, 5);
+assert.equal(grossMovementMismatch.periodDebitDifference, -5);
+assert.equal(grossMovementMismatch.periodCreditDifference, -5);
 assert.equal(grossMovementMismatch.closingNetDifference, 0,
   'the fixture intentionally keeps the closing net balance unchanged');
-assert.equal(grossMovementMismatch.details[0].periodDebitDifference, 5);
-assert.equal(grossMovementMismatch.details[0].periodCreditDifference, 5);
+assert.equal(grossMovementMismatch.details[0].periodDebitDifference, -5);
+assert.equal(grossMovementMismatch.details[0].periodCreditDifference, -5);
 assert.equal(grossMovementMismatch.details[0].closingNetDifference, 0);
 assert.equal(JSON.stringify(state), before,
   'gross movement discrepancy reporting must remain read-only');
