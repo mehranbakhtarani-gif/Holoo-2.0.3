@@ -248,6 +248,38 @@ test('party control reconciliation lists legacy rows with missing or unknown par
 
 
 
+
+test('party control reconciliation does not net offsetting differences across control accounts', () => {
+  const source = section('function buildPartyControlReconciliation(fromDate, toDate)', 'function openPartyControlReconciliation()');
+  const vouchers = [
+    { id: 31, date: '1405/01/01', lines: [
+      { code: '1103', debit: 100, credit: 0,  },
+      { code: '4101', debit: 0, credit: 100 }
+    ] },
+    { id: 32, date: '1405/01/02', lines: [
+      { code: '2101', debit: 0, credit: 100,  },
+      { code: '5101', debit: 100, credit: 0 }
+    ] }
+  ];
+  const before = JSON.stringify(vouchers);
+  const build = loadFunction(source, 'buildPartyControlReconciliation', {
+    state: { parties: [
+      { id: 'C1', name: 'مشتری', ledgerAccountCode: '1103' },
+      { id: 'S1', name: 'تأمین‌کننده', ledgerAccountCode: '2101' }
+    ], vouchers },
+    getPartyLedgerControlCodes(party) { return new Set([party.ledgerAccountCode]); },
+    normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
+    jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
+    countInvalidReportVoucherLines() { return 0; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
+  });
+  const result = build('1405/01/01', '1405/01/31');
+  assert.equal(result.totals.closingDifference, 0, 'signed differences offset, exposing the netting risk');
+  assert.equal(result.totals.absoluteClosingDifference, 200);
+  assert.equal(result.totals.mismatchedAccounts, 2);
+  assert.equal(JSON.stringify(vouchers), before, 'reconciliation remains read-only');
+});
+
 // Bank reconciliation must require amount AND date, and opening vouchers need explicit identity.
 test('bank opening classification uses structured source metadata or a narrow legacy title', () => {
   const source = section('function isBankOpeningVoucher(voucher)', 'function getBankAccountBookBalances()');
