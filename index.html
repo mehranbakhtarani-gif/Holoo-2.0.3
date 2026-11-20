@@ -11861,18 +11861,20 @@
           }
           if (linkedRefund.length === 1) {
             const refundTx = linkedRefund[0];
-            const refundAccountId = String(refund.bankAccountId || '');
             const transactionAccountId = String(refundTx.bankAccountId || refundTx.cashAccountId || '');
+            // Older refund history rows may not persist direction, bankAccountId or voucherId.
+            // Validate those references when present, while still checking the transaction against the source credit.
+            const refundAccountId = String(refund.bankAccountId || transactionAccountId);
             const refundAccount = (state.bankAccounts || []).find(account => String(account.id) === refundAccountId);
             const expectedMethod = refundAccount?.type === 'cash' ? 'صندوق نقدی' : refundAccount?.type === 'bank' ? 'حواله بانکی' : null;
             const expectedDirection = credit.creditDirection === 'sale' ? 'pay' : credit.creditDirection === 'purchase' ? 'receive' : null;
             const linkedVouchers = vouchers.filter(v => v && v.sourceType === 'party_credit_refund' &&
               String(v.sourceId) === id && String(v.sourceEvent || 'default') === refundId);
-            const voucherReferenceMismatch = linkedVouchers.length === 1 &&
-              String(refund.voucherId || '') !== String(linkedVouchers[0].id || '');
+            const voucherReferenceMismatch = Boolean(refund.voucherId) && linkedVouchers.length === 1 &&
+              String(refund.voucherId) !== String(linkedVouchers[0].id || '');
             if (!finite(refundTx.amount) || !near(refundTx.amount, refundAmount) ||
                 String(refundTx.partyId || '') !== String(credit.partyId || '') ||
-                String(refundTx.dir || '') !== String(refund.direction || '') ||
+                (refund.direction !== undefined && refund.direction !== null && String(refundTx.dir || '') !== String(refund.direction)) ||
                 String(refundTx.dir || '') !== String(expectedDirection || '') ||
                 transactionAccountId !== refundAccountId || !refundAccount ||
                 refundTx.method !== expectedMethod || voucherReferenceMismatch) {
