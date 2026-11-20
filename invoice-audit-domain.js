@@ -2,9 +2,9 @@
   'use strict';
 
   const TOLERANCE = 0.01;
-  const finite = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value));
+  const finite = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value)) && Math.abs(Number(value)) <= Number.MAX_SAFE_INTEGER;
   const amount = value => finite(value) ? Number(value) : 0;
-  const close = (a, b) => Math.abs(amount(a) - amount(b)) <= TOLERANCE;
+  const close = (a, b) => finite(a) && finite(b) && Math.abs(Number(a) - Number(b)) <= TOLERANCE;
   const key = value => String(value ?? '');
   const addFinding = (findings, invoice, severity, code, message) => {
     findings.push({
@@ -95,8 +95,17 @@
         }
       }
 
+      const aggregateSafe = [gross, net, discount].every(value => Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER);
+      if (!aggregateSafe) {
+        addFinding(findings, invoice, 'error', 'invoice-total-unsafe', 'جمع ردیف‌های فاکتور از محدوده دقت امن عددی جاوااسکریپت خارج شده است؛ نتیجه مالی قابل اتکا نیست.');
+      }
       const vatRate = Number(invoice?.vatRate ?? 0);
-      const expectedVat = Math.round(net * (vatRate / 100));
+      const rawVat = net * (vatRate / 100);
+      const vatSafe = Number.isFinite(rawVat) && Math.abs(rawVat) <= Number.MAX_SAFE_INTEGER;
+      if (!vatSafe) {
+        addFinding(findings, invoice, 'error', 'invoice-vat-calculation-unsafe', 'محاسبه مالیات فاکتور از محدوده دقت امن عددی خارج شده است.');
+      }
+      const expectedVat = vatSafe ? Math.round(rawVat) : NaN;
       const expectedGrand = net + expectedVat;
       const totals = [
         ['subtotal', gross, 'جمع ناخالص فاکتور با ردیف‌های کالا مغایرت دارد.'],

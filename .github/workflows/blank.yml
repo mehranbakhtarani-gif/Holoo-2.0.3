@@ -24,6 +24,7 @@ jobs:
         run: |
           node tests/fifo-batch.test.js
           node tests/invoice-warehouse-binding.test.js
+          node tests/financial-precision-boundaries.test.js
           node tests/inventory-value-discrepancy-sources.test.js
           node tests/inventory-cost-audit.test.js
           node tests/inventory-control-reconciliation.test.js
