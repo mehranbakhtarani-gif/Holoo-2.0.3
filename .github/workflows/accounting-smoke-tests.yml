@@ -42,6 +42,7 @@ jobs:
           node tests/returned-cheque-allocation-reconciliation.test.js
           node tests/credit-refund-reconciliation.test.js
           node tests/party-control-identity-mapping.test.js
+          node tests/party-ledger-identity-ambiguity.test.js
           for test_file in tests/bank*.test.js tests/account-ledger.test.js tests/accounting-reports-cross-validation.test.js tests/accounting-smoke.test.js tests/fiscal-year-close.test.js; do
             echo "::group::${test_file}"
             node "${test_file}"
