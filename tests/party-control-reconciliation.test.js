@@ -11,7 +11,7 @@ const end = html.indexOf('function openPartyControlReconciliation(', start);
 assert.ok(start >= 0 && end > start, 'party control reconciliation must exist');
 const source = html.slice(start, end);
 
-function run(state) {
+function run(state, fromDate = '1405/01/01', toDate = '1405/12/29') {
   const sandbox = {
     state,
     normalizeLedgerDate(value) {
@@ -43,7 +43,7 @@ function run(state) {
   };
   vm.createContext(sandbox);
   vm.runInContext(source + '; this.audit = buildPartyControlReconciliation;', sandbox);
-  return sandbox.audit('1405/01/01','1405/12/29');
+  return sandbox.audit(fromDate,toDate);
 }
 
 {
@@ -101,8 +101,9 @@ function run(state) {
       {id:'MOVE',date:'1405/02/01',lines:[{code:'1103',partyId:'C1',debit:80,credit:30}]}
     ]
   };
-  const result=run(state);
+  const result=run(state,'1405/02/01','1405/12/29');
   const row=result.rows.find(item=>item.code==='1103');
+  assert.ok(row,'control account row must be present');
   assert.equal(row.glOpeningDebit,120);
   assert.equal(row.glOpeningCredit,20);
   assert.equal(row.subOpeningDebit,120);
