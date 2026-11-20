@@ -11858,7 +11858,7 @@
             counts.incompleteLines++; lineValuesValid = false;
             add('invoice-line', inv, 'ردیف کالای فاکتور ناقص یا دارای مقدار نامعتبر است.', 'ردیف ' + (index+1) + ' | کالا: ' + (productId || 'بدون شناسه') + ' | تعداد: ' + String(line?.kg ?? 'خالی') + ' | قیمت: ' + String(line?.price ?? 'خالی') + ' | تخفیف: ' + String(line?.disc ?? 0) + ' | مبلغ: ' + String(line?.total ?? 'خالی'));
           }
-          if (productId && products.length && !products.some(p => String(p?.id) === productId)) {
+          if (productId && !products.some(p => String(p?.id) === productId)) {
             counts.invalidProductLinks++;
             add('invoice-product', inv, 'کالای ردیف فاکتور در فهرست کالاها پیدا نشد.', 'ردیف ' + (index+1) + ' | شناسه کالا: ' + productId);
           }
