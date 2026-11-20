@@ -37,6 +37,7 @@ jobs:
           node tests/party-control-reconciliation.test.js
           node tests/fx-operations-atomicity.test.js
           node tests/closed-period-correction-lock.test.js
+          node tests/fiscal-opening-closing-audit.test.js
           node tests/cheque-maturity-atomicity.test.js
           node tests/treasury-check-atomicity.test.js
           node tests/cheque-outcome-voucher-integrity.test.js

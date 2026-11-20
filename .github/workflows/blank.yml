@@ -70,6 +70,7 @@ jobs:
           node tests/treasury-settlement-journal-audit.test.js
           node tests/account-ledger.test.js
           node tests/fiscal-year-close.test.js
+          node tests/fiscal-opening-closing-audit.test.js
           node tests/closed-period-correction-lock.test.js
           node tests/cheque-maturity-atomicity.test.js
           node tests/extended-workflow.test.js
