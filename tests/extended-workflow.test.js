@@ -32,7 +32,10 @@ function load(source, name, context) {
   if (partyHelpersStart >= 0 && partyHelpersEnd > partyHelpersStart) {
     vm.runInContext(html.slice(partyHelpersStart, partyHelpersEnd), sandbox);
   }
-  const helperStart = html.indexOf('function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {');
+  const precisionStart = html.indexOf('function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {');
+  const precisionEnd = html.indexOf('function inspectProductBatchReconciliation(', precisionStart);
+  if (precisionStart >= 0 && precisionEnd > precisionStart) vm.runInContext(html.slice(precisionStart, precisionEnd), sandbox);
+  const helperStart = html.indexOf('function getReturnCostOfGoods(');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   if (helperStart >= 0 && helperEnd > helperStart) vm.runInContext(html.slice(helperStart, helperEnd), sandbox);
   const warehouseResolverStart = html.indexOf('function resolveInvoiceWarehouseProduct(');
@@ -134,7 +137,7 @@ function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAcc
       if (remaining > 0) throw new Error('insufficient test batch stock');
       return { totalCost: Math.round(allocations.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)), allocations };
     },
-    postVoucher(...args) { posted.push(args); }, saveState() { saves++; return true; }, renderAll() {}, showToast(message, type) { console.log('DEBUG invoice toast:', message, type); }, faNum: String
+    postVoucher(...args) { posted.push(args); }, saveState() { saves++; return true; }, renderAll() {}, showToast() {}, faNum: String
   });
   submit();
   return { state, product, posted, saves };
