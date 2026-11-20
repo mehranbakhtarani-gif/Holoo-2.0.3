@@ -6,8 +6,9 @@ const html = fs.readFileSync('index.html', 'utf8');
 const inspectStart = html.indexOf('    function inspectTrialBalanceVoucher(voucher)');
 const auditStart = html.indexOf('    function buildBankTransferAuditSummary()');
 const auditEnd = html.indexOf('\n    function renderTreasuryModule()', auditStart);
-assert.ok(inspectStart >= 0 && auditStart > inspectStart && auditEnd > auditStart, 'bank transfer audit functions must exist');
+assert.ok(inspectStart >= 0 && auditStart >= 0 && auditEnd > auditStart, 'bank transfer audit functions must exist');
 const inspectEnd = html.indexOf('\n    function ', inspectStart + 20);
+assert.ok(inspectEnd > inspectStart, 'trial balance voucher inspector must be bounded');
 const source = html.slice(inspectStart, inspectEnd) + '\n' +
   html.slice(auditStart, auditEnd) + '\nthis.audit = buildBankTransferAuditSummary;';
 
