@@ -9480,7 +9480,7 @@
         total: checks.length, active: 0, missingIssueVoucher: 0, duplicateSayad: 0,
         duplicateCheckIds: 0, invalidStatuses: 0, missingTreasuryLink: 0, invalidCheckData: 0, missingStatusVoucher: 0,
         duplicateSourceEvents: 0, invalidVoucher: 0, allocationIssues: 0, allocationReleaseIssues: 0,
-        lifecycleJournalMismatches: 0,
+        lifecycleJournalMismatches: 0, duplicateCheckTransactionLinks: 0,
         issues: []
       };
       const sayadCounts = new Map();
@@ -9493,8 +9493,8 @@
       });
       checksBySourceTx.forEach((rows, sourceTxId) => {
         if (rows.length > 1) {
-          counts.duplicateCheckTransactionLinks++;
-          add('check-transaction-duplicate','بیش از یک رکورد چک به یک گردش خزانه متصل شده است.','گردش: '+sourceTxId+' | چک‌ها: '+rows.map(row => String(row.id || 'بدون شناسه')).join('، '));
+          summary.duplicateCheckTransactionLinks++;
+          summary.issues.push('گردش خزانه ' + sourceTxId + ': بیش از یک رکورد چک به این گردش متصل شده است (' + rows.map(row => String(row.id || 'بدون شناسه')).join('، ') + ').');
         }
       });
       checks.forEach(check => {
@@ -11692,6 +11692,19 @@
           }
         }
         if (!isCheckTx) addAllocations(tx,tx.allocations || (Number(tx.allocInvId)>0?[{invoiceId:tx.allocInvId,amount:tx.amount}]:[]),tx.amount,expectedType);
+      });
+      const checksBySourceTx = new Map();
+      checks.forEach(check => {
+        const sourceTxId = String(check?.sourceTxId || '');
+        if (!sourceTxId) return;
+        if (!checksBySourceTx.has(sourceTxId)) checksBySourceTx.set(sourceTxId, []);
+        checksBySourceTx.get(sourceTxId).push(check);
+      });
+      checksBySourceTx.forEach((rows, sourceTxId) => {
+        if (rows.length > 1) {
+          counts.duplicateCheckTransactionLinks++;
+          add('check-transaction-duplicate','بیش از یک رکورد چک به یک گردش خزانه متصل شده است.','گردش: '+sourceTxId+' | چک‌ها: '+rows.map(row => String(row.id || 'بدون شناسه')).join('، '));
+        }
       });
       checks.forEach(check => {
         counts.checksChecked++;
