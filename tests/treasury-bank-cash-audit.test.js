@@ -57,6 +57,7 @@ const sandbox = {
   },
   jalaliDateOrdinal(value) { return /^14\d{2}\/\d{2}\/\d{2}$/.test(String(value||'')) ? 1 : null; },
   buildCheckAuditSummary() { return {issueCount:2}; }
+  buildTreasurySettlementAuditSummary() { return {issueCount:0}; }
 };
 vm.createContext(sandbox);
 vm.runInContext(html.slice(start,end) + '; this.audit = buildTreasuryBankCashAuditSummary;', sandbox);
