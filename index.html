@@ -11389,7 +11389,7 @@
             }
             if (lineIndex < 0) {
               add('return-product-link', invoice, returnId, 'ردیف برگشت به ردیف یکتای فاکتور اصلی متصل نیست.', 'ردیف برگشت ' + (itemIndex + 1) + ' | کالا: ' + String(line?.productId || 'بدون شناسه'));
-            } else {
+            } else if (Number.isFinite(qty) && qty > 0) {
               const key = String(lineIndex);
               returnedByLine.set(key, (returnedByLine.get(key) || 0) + qty);
               const productId = String(line?.productId || '');
