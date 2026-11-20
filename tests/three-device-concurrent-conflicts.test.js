@@ -69,7 +69,7 @@ assert.equal(apply({ id: 'e2-root', writer: 'writer-ehsan-2', baseline: base,
 assert.equal(apply({ id: 'm-root', writer: 'writer-mehran', baseline: base,
   changes: [], root: ['fiscalYear'] }).reason, 'overlap',
   'concurrent writes to the same root key must conflict');
-assert.equal(apply({ id: 'retry-m1', writer: 'writer-mehran', baseline: base,
+assert.equal(apply({ id: 'retry-m1', writer: 'writer-ehsan-2', baseline: base,
   changes: [{ type: 'products', id: 'p1' }] }).reason, 'overlap');
 assert.equal(apply({ id: 'e1-1', writer: 'writer-ehsan-1', baseline: base,
   changes: [{ type: 'parties', id: 'c1' }] }).status, 'already_applied',
