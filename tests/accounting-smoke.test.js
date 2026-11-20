@@ -668,7 +668,7 @@ test('settlement audit reconciles cheque allocations and party credit applicatio
       {id:'TR-CHECK',date:'1405/01/03',dir:'receive',partyId:'P1',method:'چک صیادی',amount:40,allocations:[{invoiceId:7,amount:40}]},
       {id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:10,remainingAmount:0,applications:[{id:'AP1',invoiceId:7,amount:10}]}
     ],
-    checks:[{id:'CHK1',sourceTxId:'TR-CHECK',dir:'receive',partyId:'P1',amount:40,status:'in_progress',bankAccountId:'B1',allocations:[{invoiceId:7,amount:40}]}],
+    checks:[{id:'CHK1',sourceTxId:'TR-CHECK',dir:'receive',partyId:'P1',amount:40,status:'in_progress',issueDate:'1405/01/03',dueDate:'1405/02/03',bankAccountId:'B1',allocations:[{invoiceId:7,amount:40}]}],
     vouchers:[
       {id:11,sourceType:'check',sourceId:'CHK1',sourceEvent:'issued',date:'1405/01/03',lines:[{code:'1104',partyId:'P1',debit:40,credit:0},{code:'1103',partyId:'P1',debit:0,credit:40}]},
       {id:12,sourceType:'party_credit_apply',sourceId:'CR1',sourceEvent:'AP1',date:'1405/01/03',lines:[{code:'2101',partyId:'P1',debit:10,credit:0},{code:'1103',partyId:'P1',debit:0,credit:10}]}
