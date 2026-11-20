@@ -26,6 +26,7 @@ jobs:
           node tests/invoice-warehouse-binding.test.js
           node tests/inventory-value-discrepancy-sources.test.js
           node tests/inventory-cost-audit.test.js
+          node tests/inventory-control-reconciliation.test.js
           node tests/settlement-ledger-line-integrity.test.js
           node tests/bank-transfer-audit-integrity.test.js
           node tests/per-bank-reconciliation-balances.test.js
