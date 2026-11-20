@@ -23,6 +23,7 @@ jobs:
       - name: Run accounting and integrity test suite
         run: |
           node tests/fifo-batch.test.js
+          node tests/inventory-costing-precision.test.js
           node tests/invoice-warehouse-binding.test.js
           node tests/financial-precision-boundaries.test.js
           node tests/invoice-money-safe-integer.test.js

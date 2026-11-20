@@ -32,6 +32,9 @@ function load(source, name, context) {
   if (partyHelpersStart >= 0 && partyHelpersEnd > partyHelpersStart) {
     vm.runInContext(html.slice(partyHelpersStart, partyHelpersEnd), sandbox);
   }
+  const precisionStart = html.indexOf('function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {');
+  const precisionEnd = html.indexOf('function inspectProductBatchReconciliation(', precisionStart);
+  if (precisionStart >= 0 && precisionEnd > precisionStart) vm.runInContext(html.slice(precisionStart, precisionEnd), sandbox);
   const helperStart = html.indexOf('function getReturnCostOfGoods(');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   if (helperStart >= 0 && helperEnd > helperStart) vm.runInContext(html.slice(helperStart, helperEnd), sandbox);

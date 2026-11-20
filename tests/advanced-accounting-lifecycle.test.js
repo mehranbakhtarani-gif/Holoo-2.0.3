@@ -14,6 +14,9 @@ function section(startMarker, endMarker) {
   return html.slice(start, end).trim();
 }
 function load(source, name, context) {
+  const precisionStart = html.indexOf('function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {');
+  const precisionEnd = html.indexOf('function inspectProductBatchReconciliation(', precisionStart);
+  const precisionSource = precisionStart >= 0 && precisionEnd > precisionStart ? html.slice(precisionStart, precisionEnd) : '';
   const helperStart = html.indexOf('function getReturnCostOfGoods(');
   const helperEnd = html.indexOf('function submitPartialReturn()', helperStart);
   const helperSource = helperStart >= 0 && helperEnd > helperStart ? html.slice(helperStart, helperEnd) : '';
@@ -76,6 +79,7 @@ function load(source, name, context) {
     ...context
   };
   vm.createContext(sandbox);
+  if (precisionSource) vm.runInContext(precisionSource, sandbox);
   if (helperSource) vm.runInContext(helperSource, sandbox);
   if (purchaseReturnSource) vm.runInContext(purchaseReturnSource, sandbox);
   if (sayadSource) vm.runInContext(sayadSource, sandbox);

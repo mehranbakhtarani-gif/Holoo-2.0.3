@@ -4078,6 +4078,73 @@
     // =========================================================================
     // 7A. BATCH / LOT TRACKING AND FIFO COST LAYER
     // =========================================================================
+    function safeInventoryDecimalUnits(value, maxDecimals = 6, roundExcess = false) {
+      if (value === null || value === undefined || String(value).trim() === '' ||
+          !Number.isInteger(maxDecimals) || maxDecimals < 0 || maxDecimals > 9) return null;
+      let raw = String(value).trim();
+      if (/e/i.test(raw)) {
+        const numeric = Number(raw);
+        if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e15) return null;
+        raw = numeric.toFixed(maxDecimals).replace(/0+$/, '').replace(/\.$/, '');
+      }
+      let parts = raw.split('.');
+      if (parts.length > 2 || !/^\d+$/.test(parts[0]) ||
+          (parts[1] !== undefined && !/^\d+$/.test(parts[1]))) return null;
+      if (parts[1] && parts[1].length > maxDecimals) {
+        if (!roundExcess) return null;
+        const numeric = Number(raw);
+        if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e15) return null;
+        raw = numeric.toFixed(maxDecimals).replace(/0+$/, '').replace(/\.$/, '');
+        parts = raw.split('.');
+      }
+      const scale = 10n ** BigInt(maxDecimals);
+      const units = BigInt(parts[0]) * scale + BigInt((parts[1] || '').padEnd(maxDecimals, '0') || '0');
+      return units <= BigInt(Number.MAX_SAFE_INTEGER) * scale ? units : null;
+    }
+
+    function safeInventoryMoneySum(values) {
+      if (!Array.isArray(values)) return null;
+      let total = 0n;
+      for (const value of values) {
+        if (!Number.isSafeInteger(value) || value < 0) return null;
+        total += BigInt(value);
+      }
+      return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : null;
+    }
+
+    function safeInventoryCostFromAllocations(allocations) {
+      if (!Array.isArray(allocations)) return null;
+      let scaledTotal = 0n;
+      for (const allocation of allocations) {
+        const quantity = safeInventoryDecimalUnits(allocation && allocation.quantity);
+        const unitCost = safeInventoryDecimalUnits(allocation && allocation.unitCost, 9, true);
+        if (quantity === null || quantity <= 0n || unitCost === null) return null;
+        scaledTotal += quantity * unitCost;
+      }
+      const scale = 1000000000000000n;
+      const rounded = (scaledTotal + scale / 2n) / scale;
+      return rounded <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rounded) : null;
+    }
+
+    function safeInventoryExtendedCost(quantity, unitCost) {
+      return safeInventoryCostFromAllocations([{ quantity, unitCost }]);
+    }
+
+    function safeInventoryAverageCost(existingQty, existingUnitCost, incomingQty, incomingTotalCost) {
+      const oldQty = safeInventoryDecimalUnits(existingQty);
+      const oldCost = safeInventoryDecimalUnits(existingUnitCost, 9, true);
+      const addQty = safeInventoryDecimalUnits(incomingQty);
+      if (oldQty === null || oldCost === null || addQty === null ||
+          !Number.isSafeInteger(incomingTotalCost) || incomingTotalCost < 0) return null;
+      const totalQty = oldQty + addQty;
+      if (totalQty <= 0n) return null;
+      const scaleSquared = 1000000000000000n;
+      const valueScaled = oldQty * oldCost + BigInt(incomingTotalCost) * scaleSquared;
+      const denominator = totalQty * 1000000000n;
+      const average = (valueScaled + denominator / 2n) / denominator;
+      return average <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(average) : null;
+    }
+
     function inspectProductBatchReconciliation(product) {
       if (!product) return { valid: false, stock: 0, tracked: 0, difference: 0, issue: 'محصول پیدا نشد.' };
       const stock = Number(product.stock || 0);
@@ -4669,17 +4736,23 @@
         return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id));
       });
       let remaining = qty;
-      let totalCost = 0;
-      const allocations = [];
+      const planned = [];
       for (const batch of ordered) {
         if (remaining <= 0.000001) break;
         const take = Math.min(remaining, Number(batch.remainingQty || 0));
-        batch.remainingQty = Math.max(0, Number(batch.remainingQty || 0) - take);
-        totalCost += take * Number(batch.unitCost || 0);
-        allocations.push({ batchId: batch.id, lot: batch.lot, quantity: take, unitCost: Number(batch.unitCost || 0), expiryDate: batch.expiryDate || '' });
+        if (!Number.isFinite(take) || take <= 0) continue;
+        planned.push({ batch, batchId: batch.id, lot: batch.lot, quantity: take,
+          unitCost: Number(batch.unitCost || 0), expiryDate: batch.expiryDate || '' });
         remaining -= take;
       }
-      return { totalCost: Math.round(totalCost), unitCost: totalCost / qty, allocations };
+      if (remaining > 0.000001) throw new Error('تخصیص سری ساخت برای خروج کامل نیست.');
+      const totalCost = safeInventoryCostFromAllocations(planned);
+      if (totalCost === null) throw new Error('بهای تمام‌شده FIFO از محدوده دقت امن خارج شده یا مقدار/بهای سری ساخت بیش از شش رقم اعشار دارد.');
+      planned.forEach(allocation => {
+        allocation.batch.remainingQty = Math.max(0, Number(allocation.batch.remainingQty || 0) - allocation.quantity);
+      });
+      const allocations = planned.map(({ batch, ...allocation }) => allocation);
+      return { totalCost, unitCost: totalCost / qty, allocations };
     }
 
     function restoreFifoAllocations(product, allocations, quantityToRestore, fallbackCost, sourceRef, alreadyRestored = []) {
@@ -4753,25 +4826,25 @@
         String(a.receivedDate || '').localeCompare(String(b.receivedDate || '')) ||
         String(a.id || '').localeCompare(String(b.id || ''))
       );
-      let remaining = qty, totalCost = 0;
-      const allocations = [];
+      let remaining = qty;
+      const planned = [];
       for (const batch of ordered) {
         if (remaining <= 0.000001) break;
         const batchRemaining = Number(batch.remainingQty ?? batch.quantity ?? 0);
         const take = Math.min(remaining, batchRemaining);
         if (take <= 0) continue;
-        batch.remainingQty = Math.max(0, batchRemaining - take);
-        totalCost += take * Number(batch.unitCost);
-        allocations.push({
-          batchId: String(batch.id), lot: String(batch.lot || ''),
-          quantity: take, unitCost: Number(batch.unitCost), expiryDate: batch.expiryDate || ''
-        });
+        planned.push({ batch, batchId: String(batch.id), lot: String(batch.lot || ''),
+          quantity: take, unitCost: Number(batch.unitCost), expiryDate: batch.expiryDate || '' });
         remaining -= take;
       }
-      if (remaining > 0.000001 || !Number.isFinite(totalCost)) {
-        throw new Error('تخصیص سری ساخت برای برگشت خرید کامل یا معتبر نیست.');
-      }
-      return { totalCost: Math.round(totalCost), unitCost: totalCost / qty, allocations };
+      if (remaining > 0.000001) throw new Error('تخصیص سری ساخت برای برگشت خرید کامل نیست.');
+      const totalCost = safeInventoryCostFromAllocations(planned);
+      if (totalCost === null) throw new Error('بهای برگشت خرید از محدوده دقت امن خارج شده است.');
+      planned.forEach(allocation => {
+        allocation.batch.remainingQty = Math.max(0, Number(allocation.batch.remainingQty ?? allocation.batch.quantity ?? 0) - allocation.quantity);
+      });
+      const allocations = planned.map(({ batch, ...allocation }) => allocation);
+      return { totalCost, unitCost: totalCost / qty, allocations };
     }
 
     // =========================================================================
@@ -6666,6 +6739,56 @@
     }
 
     function submitInvoice() {
+      // Keep these helpers local as well: invoice submission is exercised in isolation by the regression harness.
+      const safeInventoryDecimalUnits = (value, maxDecimals = 6, roundExcess = false) => {
+        if (value === null || value === undefined || String(value).trim() === '' ||
+            !Number.isInteger(maxDecimals) || maxDecimals < 0 || maxDecimals > 9) return null;
+        let raw = String(value).trim();
+        if (/e/i.test(raw)) {
+          const numeric = Number(raw);
+          if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e15) return null;
+          raw = numeric.toFixed(maxDecimals).replace(/0+$/, '').replace(/\.$/, '');
+        }
+        let parts = raw.split('.');
+        if (parts.length > 2 || !/^\d+$/.test(parts[0]) ||
+            (parts[1] !== undefined && !/^\d+$/.test(parts[1]))) return null;
+        if (parts[1] && parts[1].length > maxDecimals) {
+          if (!roundExcess) return null;
+          const numeric = Number(raw);
+          if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e15) return null;
+          raw = numeric.toFixed(maxDecimals).replace(/0+$/, '').replace(/\.$/, '');
+          parts = raw.split('.');
+        }
+        const scale = 10n ** BigInt(maxDecimals);
+        return BigInt(parts[0]) * scale + BigInt((parts[1] || '').padEnd(maxDecimals, '0') || '0');
+      };
+      const safeInventoryExtendedCost = (quantity, unitCost) => {
+        const q = safeInventoryDecimalUnits(quantity), c = safeInventoryDecimalUnits(unitCost, 9, true);
+        if (q === null || q <= 0n || c === null) return null;
+        const total = (q * c + 500000000000000n) / 1000000000000000n;
+        return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : null;
+      };
+      const safeInventoryAverageCost = (existingQty, existingUnitCost, incomingQty, incomingTotalCost) => {
+        const q = safeInventoryDecimalUnits(existingQty), c = safeInventoryDecimalUnits(existingUnitCost, 9, true);
+        const add = safeInventoryDecimalUnits(incomingQty);
+        if (q === null || c === null || add === null || !Number.isSafeInteger(incomingTotalCost) || incomingTotalCost < 0) return null;
+        const totalQty = q + add;
+        if (totalQty <= 0n) return null;
+        const denominator = totalQty * 1000000000n;
+        const numerator = q * c + BigInt(incomingTotalCost) * 1000000000000000n;
+        const average = (numerator + denominator / 2n) / denominator;
+        return average <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(average) : null;
+      };
+      const safeInventoryMoneySum = values => {
+        if (!Array.isArray(values)) return null;
+        let total = 0n;
+        for (const value of values) {
+          if (!Number.isSafeInteger(value) || value < 0) return null;
+          total += BigInt(value);
+        }
+        return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : null;
+      };
+
       // Keep posting self-contained for isolated transaction tests and callers
       // that execute this function without the surrounding page helper scope.
       function safeMoneyInteger(value) {
@@ -6842,13 +6965,16 @@
           const simulated = simulatedProducts.get(product);
           if (type === 'sale') {
             const fifo = consumeFifoStock(simulated, line.kg);
-            let lineCost = Number(line.kg) * Number(product.buyPrice || 0);
+            let lineCost = state.costingMethod === 'FIFO'
+              ? fifo.totalCost
+              : safeInventoryExtendedCost(Number(line.kg), Number(product.buyPrice || 0));
             line.fifoAllocations = fifo.allocations;
             line.costingMethod = state.costingMethod;
-            if (state.costingMethod === 'FIFO') lineCost = fifo.totalCost;
-            if (!Number.isFinite(lineCost) || lineCost < 0) throw new Error('بهای تمام‌شده یکی از اقلام معتبر نیست.');
+            if (!Number.isSafeInteger(lineCost) || lineCost < 0) throw new Error('بهای تمام‌شده یکی از اقلام معتبر یا در محدوده دقت امن نیست.');
             line.costOfGoodsSold = lineCost;
-            cogs += lineCost;
+            const nextCogs = safeInventoryMoneySum([cogs, lineCost]);
+            if (nextCogs === null) throw new Error('جمع بهای تمام‌شده فاکتور از محدوده دقت امن خارج شده است.');
+            cogs = nextCogs;
             productPlans.push({ product, simulated, line, quantity: Number(line.kg), type: 'sale' });
           } else {
             const purchaseInventoryCost = Number(line.inventoryCost ?? line.total ?? 0);
@@ -6858,9 +6984,11 @@
             if (state.costingMethod === 'AVG') {
               const nextStock = Number(simulated.stock || 0) + Number(line.kg);
               if (!Number.isFinite(nextStock) || nextStock <= 0) throw new Error('موجودی برای محاسبه میانگین معتبر نیست.');
-              const nextInventoryValue = (Number(simulated.stock || 0) * Number(simulated.buyPrice || 0)) + purchaseInventoryCost;
-              if (!Number.isFinite(nextInventoryValue) || nextInventoryValue < 0) throw new Error('ارزش خرید شامل مالیات غیرقابل‌استرداد معتبر نیست.');
-              simulated.buyPrice = Math.round(nextInventoryValue / nextStock);
+              const nextAverageCost = safeInventoryAverageCost(
+                Number(simulated.stock || 0), Number(simulated.buyPrice || 0), Number(line.kg), purchaseInventoryCost
+              );
+              if (nextAverageCost === null) throw new Error('میانگین موزون خرید از محدوده دقت امن خارج شده یا مقدار/بهای کالا بیش از شش رقم اعشار دارد.');
+              simulated.buyPrice = nextAverageCost;
             }
             addStockBatch(simulated, {
               lot: line.lot || ('PUR-' + id + '-' + line.productId),
@@ -7140,12 +7268,13 @@
       const allocations = Array.isArray(item?.fifoAllocations) ? item.fifoAllocations : [];
       const useFifo = item?.costingMethod === 'FIFO' || (!item?.costingMethod && allocations.length > 0);
       if (!useFifo || !allocations.length) {
-        const cost = Math.round(qty * fallbackCost);
-        if (!Number.isFinite(cost)) throw new Error('بهای تمام‌شده برگشتی معتبر نیست.');
+        const cost = safeInventoryExtendedCost(qty, fallbackCost);
+        if (cost === null) throw new Error('بهای تمام‌شده برگشتی از محدوده دقت امن خارج شده است.');
         return cost;
       }
       const seenBatchIds = new Set();
-      let remaining = qty, totalCost = 0;
+      let remaining = qty;
+      const returnAllocations = [];
       for (const allocation of allocations) {
         const batchId = String(allocation?.batchId ?? '');
         const allocatedQty = Number(allocation?.quantity), unitCost = Number(allocation?.unitCost);
@@ -7162,10 +7291,12 @@
         }, 0);
         if (prior > allocatedQty + 0.000001) throw new Error('مقدار برگشتی قبلی از تخصیص سری ساخت بیشتر است.');
         const take = Math.min(remaining, Math.max(0, allocatedQty - prior));
-        if (take > 0) { totalCost += take * unitCost; remaining -= take; }
+        if (take > 0) { returnAllocations.push({ quantity: take, unitCost }); remaining -= take; }
       }
-      if (remaining > 0.000001 || !Number.isFinite(totalCost)) throw new Error('مقدار برگشتی با تخصیص بهای تمام‌شده فاکتور سازگار نیست.');
-      return Math.round(totalCost);
+      if (remaining > 0.000001) throw new Error('مقدار برگشتی با تخصیص بهای تمام‌شده فاکتور سازگار نیست.');
+      const returnCost = safeInventoryCostFromAllocations(returnAllocations);
+      if (returnCost === null) throw new Error('بهای برگشت فروش از محدوده دقت امن خارج شده است.');
+      return returnCost;
     }
 
     function submitPartialReturn() {
@@ -7248,11 +7379,11 @@
             if (!Number.isFinite(nextStock) || nextStock <= 0) throw new Error('موجودی پس از برگشت فروش معتبر نیست.');
             if (state.costingMethod === 'AVG') {
               const currentAverage = Number(simulated.buyPrice || 0);
-              const nextValue = currentStock * currentAverage + entry.inventoryCost;
-              if (!Number.isFinite(currentAverage) || currentAverage < 0 || !Number.isFinite(nextValue) || nextValue < 0) {
-                throw new Error('ارزش موجودی برای محاسبه میانگین پس از برگشت فروش معتبر نیست.');
-              }
-              simulated.buyPrice = Math.round(nextValue / nextStock);
+              const nextAverageCost = safeInventoryAverageCost(
+                currentStock, currentAverage, entry.qty, entry.inventoryCost
+              );
+              if (nextAverageCost === null) throw new Error('میانگین موزون پس از برگشت فروش از محدوده دقت امن خارج شده است.');
+              simulated.buyPrice = nextAverageCost;
             }
             simulated.stock = nextStock;
           } else {
@@ -7260,9 +7391,9 @@
             entry.purchaseReturnAllocations = batchPlan.allocations;
             entry.inventoryCost = state.costingMethod === 'FIFO'
               ? batchPlan.totalCost
-              : Math.round(entry.qty * Number(simulated.buyPrice || 0));
-            if (!Number.isFinite(entry.inventoryCost) || entry.inventoryCost < 0) {
-              throw new Error('بهای دفتری کالای برگشتی معتبر نیست.');
+              : safeInventoryExtendedCost(entry.qty, Number(simulated.buyPrice || 0));
+            if (!Number.isSafeInteger(entry.inventoryCost) || entry.inventoryCost < 0) {
+              throw new Error('بهای دفتری کالای برگشتی معتبر یا در محدوده دقت امن نیست.');
             }
             simulated.stock = currentStock - entry.qty;
           }
@@ -7277,9 +7408,11 @@
       const returnTransactionSnapshot = JSON.parse(JSON.stringify(state));
       const outstandingBeforeReturn = inv.grandTotal === undefined || inv.grandTotal === null ? retTotal : getInvoiceOutstanding(inv);
       const partyCreditAmount = Math.max(0, retTotal - outstandingBeforeReturn);
-      const returnCogs = inv.type === 'sale' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : 0;
-      const returnInventoryCost = inv.type === 'purchase' ? returnPlan.reduce((sum, entry) => sum + Number(entry.inventoryCost || 0), 0) : returnCogs;
-      if (!Number.isFinite(returnInventoryCost) || returnInventoryCost < 0) { showToast('ارزش دفتری برگشت کالا معتبر نیست؛ سند صادر نشد.', 'error'); return; }
+      const returnCogs = inv.type === 'sale'
+        ? safeInventoryMoneySum(returnPlan.map(entry => Number(entry.inventoryCost || 0))) : 0;
+      const returnInventoryCost = inv.type === 'purchase'
+        ? safeInventoryMoneySum(returnPlan.map(entry => Number(entry.inventoryCost || 0))) : returnCogs;
+      if (!Number.isSafeInteger(returnInventoryCost) || returnInventoryCost < 0) { showToast('ارزش دفتری برگشت کالا معتبر نیست؛ سند صادر نشد.', 'error'); return; }
       const purchaseReturnAmountForVariance = inv.type === 'purchase' && inv.purchaseVatTreatment === 'non_recoverable' ? retTotal : returnBaseTotal;
       const purchaseReturnVariance = inv.type === 'purchase' ? purchaseReturnAmountForVariance - returnInventoryCost : 0;
       const returnVoucherLines = inv.type === 'sale'
@@ -7439,9 +7572,10 @@
         showToast('مانده مبلغ فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
 
-      const cancelCogs = inv.type === 'sale' ? cancelPlan.reduce((sum, entry) =>
-        sum + getReturnCostOfGoods(entry.item, entry.quantity, entry.product.buyPrice || 0), 0) : 0;
-      if (!Number.isFinite(cancelCogs) || cancelCogs < 0) {
+      const cancelCogs = inv.type === 'sale'
+        ? safeInventoryMoneySum(cancelPlan.map(entry =>
+            getReturnCostOfGoods(entry.item, entry.quantity, entry.product.buyPrice || 0))) : 0;
+      if (!Number.isSafeInteger(cancelCogs) || cancelCogs < 0) {
         showToast('بهای تمام‌شده مانده فاکتور معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
       }
 
