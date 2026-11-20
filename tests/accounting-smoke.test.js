@@ -703,5 +703,39 @@ test('settlement audit accepts a fully documented party-credit refund',()=>{
   assert.equal(result.issueCount,0);
   assert.equal(result.creditRefundsChecked,1);
 });
+// 12. Dynamic party control-account and subledger integrity audit.
+test('subledger audit includes custom party control codes and reports invalid mappings and lines',()=>{
+  const state={
+    parties:[
+      {id:'C1',role:'مشتری',ledgerAccountCode:'1201'},
+      {id:'S1',role:'تأمین‌کننده',ledgerAccountCode:'2101'}
+    ],
+    accountCatalog:[
+      {id:'GL-12',code:'12',level:'general'},
+      {id:'SUB-1201',code:'1201',level:'subsidiary',parentId:'GL-12',active:true}
+    ],
+    invoices:[],
+    vouchers:[
+      {id:1,date:'1405/01/01',lines:[
+        {code:'1201',partyId:'C1',debit:100,credit:0},
+        {code:'1107',partyId:'S1',debit:20,credit:0},
+        {code:'2101',partyId:'C1',debit:5,credit:0}
+      ]},
+      {id:2,date:'invalid',lines:[{code:'1201',partyId:'C1',debit:'bad',credit:0}]}
+    ]
+  };
+  const before=JSON.stringify(state);
+  const source=section('function buildSubsidiaryInvoiceAuditSummary()', 'function buildInventoryAccountingAuditSummary()');
+  const audit=loadFunction(source,'buildSubsidiaryInvoiceAuditSummary',{
+    state,
+    isSupplierParty(party){return String(party?.role||'').includes('تأمین')||String(party?.role||'').includes('تامین');},
+    jalaliDateOrdinal(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||''))?1:null;}
+  })();
+  assert.equal(audit.partyBalanceDifference,0);
+  assert.equal(audit.mappingMismatchLines,1);
+  assert.equal(audit.invalidControlLines,1);
+  assert.equal(audit.invalidControlDates,1);
+  assert.equal(JSON.stringify(state),before,'audit must not mutate accounting data');
+});
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
