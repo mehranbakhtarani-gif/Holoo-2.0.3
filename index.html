@@ -11329,21 +11329,44 @@
 
     function buildInventoryValueDiscrepancySources() {
       const invoices = new Map((state.invoices || []).map(invoice => [String(invoice.id), invoice]));
+      const products = Array.isArray(state.products) ? state.products : [];
       const grouped = new Map();
-      (state.vouchers || []).forEach(voucher => {
+      const knownTypes = new Set(['invoice', 'invoice_return', 'invoice_cancel', 'stocktake', 'import', 'manual']);
+      (state.vouchers || []).forEach((voucher, voucherIndex) => {
         const lines = (Array.isArray(voucher?.lines) ? voucher.lines : []).filter(line => String(line?.code || '').trim() === '1105');
         if (!lines.length) return;
-        const sourceType = String(voucher.sourceType || 'manual');
-        const sourceId = String(voucher.sourceId || '');
-        const key = sourceType + ':' + sourceId;
-        if (!grouped.has(key)) grouped.set(key, { sourceType, sourceId, voucherIds: [], dates: [], debit: 0, credit: 0, descriptions: [], invoiceId: null, invoiceType: null, productLines: [] });
+        const rawType = String(voucher.sourceType ?? '').trim();
+        const sourceType = rawType || 'unclassified';
+        const sourceId = String(voucher.sourceId ?? '').trim();
+        const voucherId = String(voucher.id ?? '').trim();
+        const key = sourceId ? sourceType + ':' + sourceId : sourceType + ':missing-source:' + (voucherId || voucherIndex);
+        if (!grouped.has(key)) grouped.set(key, {
+          sourceType, sourceId, voucherIds: [], dates: [], debit: 0, credit: 0, descriptions: [],
+          invoiceId: null, invoiceType: null, productLines: [], issues: [], sourceEvent: String(voucher.sourceEvent ?? '')
+        });
         const item = grouped.get(key);
-        item.voucherIds.push(String(voucher.id ?? ''));
-        item.dates.push(String(voucher.date || voucher.operationDate || ''));
+        if (voucherId) {
+          if (item.voucherIds.includes(voucherId)) item.issues.push('duplicate-voucher-id');
+          item.voucherIds.push(voucherId);
+        } else item.issues.push('missing-voucher-id');
+        const date = String(voucher.date || voucher.operationDate || '').trim();
+        item.dates.push(date);
+        if (!/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(date)) item.issues.push('invalid-or-missing-date');
+        if (!rawType) item.issues.push('missing-source-type');
+        if (!sourceId) item.issues.push('missing-source-id');
+        if (!knownTypes.has(sourceType)) item.issues.push('unsupported-source-type');
         lines.forEach(line => {
-          const debit = Number(line.debit ?? 0), credit = Number(line.credit ?? 0);
-          if (Number.isFinite(debit) && debit >= 0) item.debit += debit;
-          if (Number.isFinite(credit) && credit >= 0) item.credit += credit;
+          const debitRaw = line.debit, creditRaw = line.credit;
+          const debitText = debitRaw === null || debitRaw === undefined ? '' : String(debitRaw).trim();
+          const creditText = creditRaw === null || creditRaw === undefined ? '' : String(creditRaw).trim();
+          const debit = debitText === '' ? NaN : Number(debitRaw);
+          const credit = creditText === '' ? NaN : Number(creditRaw);
+          if (!Number.isFinite(debit) || debit < 0 || !Number.isFinite(credit) || credit < 0 || (debit > 0 && credit > 0)) {
+            item.issues.push('invalid-control-amount');
+          } else {
+            item.debit += debit;
+            item.credit += credit;
+          }
           if (line.desc) item.descriptions.push(String(line.desc));
         });
         if (sourceType === 'invoice') {
@@ -11353,56 +11376,63 @@
             item.invoiceType = String(invoice.type || '');
             item.productLines = (invoice.items || []).map(line => ({
               productId: String(line.productId ?? ''),
-              productName: String((state.products || []).find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
+              productName: String(products.find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
               quantity: Number(line.kg || 0), cogs: Number(line.costOfGoodsSold || 0), lot: String(line.lot || '')
             }));
-          }
-        } else if (sourceType === 'invoice_return') {
+          } else item.issues.push('invoice-source-missing');
+        } else if (sourceType === 'invoice_return' || sourceType === 'invoice_cancel') {
           item.returnId = sourceId;
           item.invoiceId = String(voucher.sourceEvent || '');
           const invoice = invoices.get(item.invoiceId);
-          item.invoiceType = invoice ? String(invoice.type || '') : '';
-          const returnRecord = invoice && (invoice.returnRefs || []).find(entry => String(entry.id) === sourceId);
-          item.returnItems = returnRecord && Array.isArray(returnRecord.items) ? returnRecord.items.map(line => ({
-            productId: String(line.productId ?? ''),
-            productName: String((state.products || []).find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
-            quantity: Number(line.qty || 0),
-            inventoryCost: Number(line.inventoryCost || 0),
-            batchAllocations: Array.isArray(line.batchAllocations) ? line.batchAllocations : []
-          })) : [];
-          item.returnDescription = returnRecord
-            ? 'جزئیات برگشت از سابقه برگشت فاکتور و تخصیص سری ساخت خوانده شده است.'
-            : 'سابقه جزئیات برگشت در فاکتور پیدا نشد؛ این گردش نیازمند بررسی دستی است.';
+          if (invoice) {
+            item.invoiceType = String(invoice.type || '');
+            const returnRecord = (invoice.returnRefs || []).find(entry => String(entry.id) === sourceId);
+            item.returnItems = returnRecord && Array.isArray(returnRecord.items) ? returnRecord.items.map(line => ({
+              productId: String(line.productId ?? ''),
+              productName: String(products.find(p => String(p.id) === String(line.productId))?.name || line.productId || 'کالای نامشخص'),
+              quantity: Number(line.qty || 0), inventoryCost: Number(line.inventoryCost || 0),
+              batchAllocations: Array.isArray(line.batchAllocations) ? line.batchAllocations : []
+            })) : [];
+            if (!returnRecord) item.issues.push('return-record-missing');
+          } else item.issues.push('return-invoice-link-missing');
         } else if (sourceType === 'stocktake') {
           item.stocktakeOperationId = sourceId;
           item.stocktakeProductId = String(voucher.sourceEvent || '');
-          const product = (state.products || []).find(entry => String(entry.id) === item.stocktakeProductId);
+          const product = products.find(entry => String(entry.id) === item.stocktakeProductId);
           const movement = product && (product.kardex || []).find(entry =>
             entry && entry.sourceType === 'stocktake' &&
             String(entry.operationId || '') === sourceId &&
             String(entry.sourceId || '') === item.stocktakeProductId
           );
           item.stocktake = movement ? {
-            productId: item.stocktakeProductId,
-            productName: String(product.name || product.id || 'کالای نامشخص'),
+            productId: item.stocktakeProductId, productName: String(product.name || product.id || 'کالای نامشخص'),
             warehouseId: product.warehouseId ?? null,
             quantityDifference: Number(movement.inQty || 0) - Number(movement.outQty || 0),
-            countedStock: Number(movement.bal),
-            unitCost: Number(movement.price),
-            inventoryCost: Number(movement.inventoryCost),
-            valuationBasis: String(movement.valuationBasis || ''),
+            countedStock: Number(movement.bal), unitCost: Number(movement.price),
+            inventoryCost: Number(movement.inventoryCost), valuationBasis: String(movement.valuationBasis || ''),
             date: String(movement.date || '')
           } : null;
-          item.stocktakeDescription = movement
-            ? 'مغایرت انبارگردانی به قلم کالا و گردش کاردکس متصل شد.'
-            : 'گردش کاردکس متناظر با سند انبارگردانی پیدا نشد؛ بررسی دستی لازم است.';
+          if (!movement) item.issues.push('stocktake-movement-missing');
+        } else if (sourceType === 'import') {
+          item.importSourceId = sourceId;
         }
       });
-      const labels = { invoice: 'فاکتور خرید/فروش', invoice_return: 'برگشت فاکتور', invoice_cancel: 'ابطال فاکتور', stocktake: 'انبارگردانی', import: 'محموله وارداتی', manual: 'سند دستی یا بدون منشأ' };
-      return [...grouped.values()].map(item => ({
-        ...item, label: labels[item.sourceType] || ('منشأ دیگر: ' + item.sourceType), net: item.debit - item.credit,
-        voucherIds: [...new Set(item.voucherIds)], dates: [...new Set(item.dates)], descriptions: [...new Set(item.descriptions)]
-      })).sort((a,b) => Math.abs(b.net) - Math.abs(a.net));
+      const labels = {
+        invoice: 'فاکتور خرید/فروش', invoice_return: 'برگشت فاکتور', invoice_cancel: 'ابطال فاکتور',
+        stocktake: 'انبارگردانی', import: 'محموله وارداتی', manual: 'سند دستی',
+        unclassified: 'منشأ نامشخص'
+      };
+      return [...grouped.values()].map(item => {
+        const issues = [...new Set(item.issues)];
+        return {
+          ...item, label: labels[item.sourceType] || ('منشأ دیگر: ' + item.sourceType),
+          net: issues.includes('invalid-control-amount') ? null : item.debit - item.credit,
+          status: issues.length ? 'review' : 'verified',
+          issues,
+          voucherIds: [...new Set(item.voucherIds)], dates: [...new Set(item.dates)],
+          descriptions: [...new Set(item.descriptions)]
+        };
+      }).sort((a,b) => (a.status === b.status ? Math.abs(b.net || 0) - Math.abs(a.net || 0) : a.status === 'review' ? -1 : 1));
     }
 
     function buildWarehouseTransferValueReconciliation() {
