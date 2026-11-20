@@ -11380,7 +11380,7 @@
               quantity: Number(line.kg || 0), cogs: Number(line.costOfGoodsSold || 0), lot: String(line.lot || '')
             }));
           } else item.issues.push('invoice-source-missing');
-        } else if (sourceType === 'invoice_return' || sourceType === 'invoice_cancel') {
+        } else if (sourceType === 'invoice_return') {
           item.returnId = sourceId;
           item.invoiceId = String(voucher.sourceEvent || '');
           const invoice = invoices.get(item.invoiceId);
@@ -11395,6 +11395,11 @@
             })) : [];
             if (!returnRecord) item.issues.push('return-record-missing');
           } else item.issues.push('return-invoice-link-missing');
+        } else if (sourceType === 'invoice_cancel') {
+          item.invoiceId = sourceId;
+          const invoice = invoices.get(sourceId);
+          if (invoice) item.invoiceType = String(invoice.type || '');
+          else item.issues.push('cancelled-invoice-link-missing');
         } else if (sourceType === 'stocktake') {
           item.stocktakeOperationId = sourceId;
           item.stocktakeProductId = String(voucher.sourceEvent || '');
