@@ -92,6 +92,37 @@ function run(state) {
   assert.equal(result.invalidDateVouchers,1);
   assert.equal(result.includedVouchers,0);
 }
+
+{
+  const state = {
+    parties:[{id:'C1',role:'مشتری',ledgerAccountCode:'1103'}],
+    vouchers:[
+      {id:'OPEN',date:'1404/12/29',lines:[{code:'1103',partyId:'C1',debit:120,credit:20}]},
+      {id:'MOVE',date:'1405/02/01',lines:[{code:'1103',partyId:'C1',debit:80,credit:30}]}
+    ]
+  };
+  const result=run(state);
+  const row=result.rows.find(item=>item.code==='1103');
+  assert.equal(row.glOpeningDebit,120);
+  assert.equal(row.glOpeningCredit,20);
+  assert.equal(row.subOpeningDebit,120);
+  assert.equal(row.subOpeningCredit,20);
+  assert.equal(row.glPeriodDebit,80);
+  assert.equal(row.glPeriodCredit,30);
+  assert.equal(row.subPeriodDebit,80);
+  assert.equal(row.subPeriodCredit,30);
+  assert.equal(row.glClosing,150);
+  assert.equal(row.subClosing,150);
+  assert.equal(row.openingDifference,0);
+  assert.equal(row.periodDifference,0);
+  assert.equal(row.closingDifference,0);
+  assert.equal(JSON.stringify(state.vouchers),JSON.stringify([
+    {id:'OPEN',date:'1404/12/29',lines:[{code:'1103',partyId:'C1',debit:120,credit:20}]},
+    {id:'MOVE',date:'1405/02/01',lines:[{code:'1103',partyId:'C1',debit:80,credit:30}]}
+  ]),'gross movement reconciliation must be read-only');
+}
+
+console.log('PASS: opening debit/credit, period turnover and closing balance reconcile gross and net');
 console.log('PASS: offsetting differences across control accounts remain visible');
 console.log('PASS: matching customer and supplier subledgers reconcile to the general ledger');
 console.log('PASS: supplier advances remain within the supplier subledger scope');
