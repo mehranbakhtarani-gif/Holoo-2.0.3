@@ -28,6 +28,7 @@ jobs:
           node tests/manual-voucher-correction-atomicity.test.js
           node tests/invoice-posting-atomicity.test.js
           node tests/invoice-integrity-audit.test.js
+          node tests/party-control-reconciliation.test.js
           node tests/fx-operations-atomicity.test.js
           node tests/closed-period-correction-lock.test.js
           node tests/cheque-maturity-atomicity.test.js
