@@ -3,9 +3,6 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
-  if (match[1].trim()) new vm.Script(match[1], { filename: `index.html:inline-${i}` });
-}
 function sliceBetween(startText, endText) {
   const start = html.indexOf(startText), end = html.indexOf(endText, start);
   assert.ok(start >= 0 && end > start, `missing source range: ${startText}`);
@@ -39,7 +36,6 @@ const sandbox = {
 vm.createContext(sandbox);
 vm.runInContext(sliceBetween('function jalaliDateOrdinal(', 'function setAccTab('), sandbox);
 vm.runInContext(
-  'function normalizeAccountingDate(value) { return String(value || "").trim().replace(/-/g, "/"); }\\n' +
   sliceBetween('let trialBalanceFromDate = null;', 'function renderAccountingModule()') +
   '; this.buildTrialBalanceLedgerReconciliation = buildTrialBalanceLedgerReconciliation;',
   sandbox
