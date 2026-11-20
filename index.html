@@ -6018,6 +6018,9 @@
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
+        // Future vouchers are outside this ledger's selected period and must not
+        // contribute to its data-quality warnings.
+        if (dateKey > to) return;
         const invalidLines = countInvalidReportVoucherLines(voucher);
         if (invalidLines) { invalidAmountLines += invalidLines; return; }
         (voucher.lines || []).forEach(line => {
