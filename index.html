@@ -1734,6 +1734,7 @@
 
   <script src="./import-domain.js"></script>
   <script src="./warehouse-audit-domain.js"></script>
+  <script src="./invoice-audit-domain.js"></script>
   <script src="./warehouse-assignment-domain.js"></script>
   <script>
     // Shared HTML escaping helper used by HR, assets, approvals and bank reconciliation.
@@ -6863,7 +6864,14 @@
       showToast('پیش‌نویس اصلاح آماده است؛ تا زمان ثبت نهایی هیچ سندی تغییر نمی‌کند.', 'info');
     }
     function renderInvoicesModule() {
-      document.getElementById('invoices-list-container').innerHTML = state.invoices.map(inv => `
+      document.getElementById('invoices-list-container').innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
+          <div><strong class="text-sky-900">ممیزی یکپارچگی فاکتورهای خرید و فروش</strong><div class="text-[11px] text-slate-600">تطبیق ردیف‌ها، مالیات، سند دفترکل، طرف‌حساب و کاردکس؛ فقط‌خواندنی</div></div>
+          <button onclick="runInvoiceIntegrityAudit()" class="rounded-xl bg-sky-800 px-3 py-2 text-xs font-bold text-white">اجرای ممیزی فاکتورها</button>
+        </div>
+        <div id="invoice-integrity-audit-report" class="hidden"></div>
+        <div class="space-y-3">
+      ` + state.invoices.map(inv => `
         <div class="bg-white rounded-2xl p-4 border ${inv.status === 'cancelled' ? 'border-rose-300 opacity-65' : 'border-slate-200'} space-y-2 text-xs">
           <div class="flex flex-wrap justify-between items-center gap-2">
             <div class="flex items-center gap-2">
@@ -6894,7 +6902,37 @@
             </div>
           </div>
         </div>
-      `).join('');
+      `).join('') + '</div>';
+    }
+
+
+    function runInvoiceIntegrityAudit() {
+      const target = document.getElementById('invoice-integrity-audit-report');
+      if (!target || !window.HolooInvoiceAudit?.auditInvoices) {
+        showToast('ماژول ممیزی فاکتور بارگذاری نشده است.', 'error');
+        return null;
+      }
+      const result = window.HolooInvoiceAudit.auditInvoices(state, { dateOrdinal: jalaliDateOrdinal });
+      const summary = result.summary;
+      const rows = result.findings.map(item => {
+        const error = item.severity === 'error';
+        return '<div class="rounded-lg border px-3 py-2 ' +
+          (error ? 'border-rose-200 bg-rose-50 text-rose-900' : 'border-amber-200 bg-amber-50 text-amber-900') +
+          '"><div class="flex flex-wrap items-center justify-between gap-2"><strong>فاکتور #' +
+          escapeKardexText(item.invoiceId) + '</strong><span class="text-[10px] font-bold">' +
+          (error ? 'مغایرت مهم' : 'نیازمند بررسی') + ' · ' + escapeKardexText(item.code) +
+          '</span></div><div class="mt-1 text-xs">' + escapeKardexText(item.message) + '</div></div>';
+      }).join('');
+      target.innerHTML = '<section class="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3">' +
+        '<div class="flex flex-wrap justify-between gap-2"><strong>نتیجه ممیزی فاکتورها</strong>' +
+        '<span class="text-xs text-slate-600">فاکتور: ' + faNum(summary.invoicesChecked) +
+        ' | مغایرت مهم: ' + faNum(summary.errors) + ' | هشدار: ' + faNum(summary.warnings) +
+        '</span></div>' +
+        (result.findings.length ? '<div class="space-y-2">' + rows + '</div>' :
+          '<div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800">در کنترل‌های انجام‌شده مغایرتی پیدا نشد.</div>') +
+        '<div class="text-[10px] text-slate-500">این گزارش فقط‌خواندنی است؛ هیچ سند، فاکتور، مانده یا گردش انباری تغییر نکرد.</div></section>';
+      target.classList.remove('hidden');
+      return result;
     }
 
     function getInvoiceReturnCorrectionBlockReason(inv, returnRef) {
