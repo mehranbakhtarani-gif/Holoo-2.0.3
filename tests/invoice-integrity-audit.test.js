@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { auditInvoices } = require('../invoice-audit-domain.js');
 
 const validSale = {
-  id: 1001, type: 'sale', date: '1405/08/29', dueDate: '1405/09/01',
+  id: 1001, voucherId: 1, type: 'sale', date: '1405/08/29', dueDate: '1405/09/01',
   partyId: 'C1', warehouseId: 'W1', payMethod: 'credit',
   subtotal: 200, netSubtotal: 180, discount: 20, vatRate: 10,
   vatAmount: 18, grandTotal: 198, commAmount: 0,
