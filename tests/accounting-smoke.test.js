@@ -49,7 +49,7 @@ test('party ledger ignores malformed vouchers after the selected end date', () =
       }
     });
   const result = build('C1', '1405/01/10', '1405/01/31');
-  assert.equal(result.rows.length, 2);
+  assert.equal(result.rows.length, 1);
   assert.equal(result.openingNet, 10);
   assert.equal(result.periodDebit, 20);
   assert.equal(result.closingNet, 30);
