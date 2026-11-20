@@ -55,7 +55,7 @@ function runAudit({ status = 'bounced', released = true, paidAmount = 20, dir = 
   const sandbox = {
     state,
     jalaliDateOrdinal(value) {
-      return /^1405\\/\\d{2}\\/\\d{2}$/.test(String(value || '')) ? 100 : null;
+      return /^1405\/\d{2}\/\d{2}$/.test(String(value || '')) ? 100 : null;
     }
   };
   vm.createContext(sandbox);
