@@ -704,6 +704,55 @@ test('settlement audit accepts a fully documented party-credit refund',()=>{
   assert.equal(result.creditRefundsChecked,1);
 });
 
+test('settlement audit reconciles credit roll-forward across applications and refunds',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],
+    invoices:[{id:1,type:'sale',status:'active',partyId:'P1',payMethod:'credit',grandTotal:100,paidAmount:50,returnRefs:[]}],
+    treasuryTxs:[
+      {id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:100,remainingAmount:30,
+        applications:[{id:'AP1',invoiceId:1,amount:50}],refunds:[{id:'RF1',amount:20}]},
+      {id:'RF1',kind:'party_credit_refund',sourceCreditId:'CR1',dir:'pay',partyId:'P1',amount:20,method:'حواله بانکی',bankAccountId:'B1'}
+    ],
+    checks:[],
+    vouchers:[
+      {id:31,sourceType:'party_credit_apply',sourceId:'CR1',sourceEvent:'AP1',date:'1405/01/02',
+        lines:[{code:'2101',partyId:'P1',debit:50,credit:0},{code:'1103',partyId:'P1',debit:0,credit:50}]},
+      {id:32,sourceType:'party_credit_refund',sourceId:'CR1',sourceEvent:'RF1',date:'1405/01/03',
+        lines:[{code:'2101',partyId:'P1',debit:20,credit:0},{code:'1102',bankAccountId:'B1',debit:0,credit:20}]}
+    ]
+  };
+  const before=JSON.stringify(state);
+  const result=runSettlementAudit(state);
+  assert.equal(result.issueCount,0);
+  assert.equal(result.creditBalanceMismatches,0);
+  assert.equal(result.missingCreditRefundRecords,0);
+  assert.equal(JSON.stringify(state),before,'credit roll-forward audit must be read-only');
+});
+test('settlement audit detects a credit balance that does not equal amount less applications and refunds',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],invoices:[],checks:[],
+    treasuryTxs:[{id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:100,remainingAmount:85,
+      applications:[{id:'AP1',invoiceId:'INV',amount:40}],refunds:[{id:'RF1',amount:20}]}],
+    vouchers:[]
+  };
+  const result=runSettlementAudit(state);
+  assert.ok(result.creditBalanceMismatches>=1);
+  assert.ok(result.invalidAllocations>=1);
+});
+test('settlement audit detects missing refund transaction and duplicate credit identifiers',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[],invoices:[],checks:[],
+    treasuryTxs:[
+      {id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:100,remainingAmount:80,applications:[],refunds:[{id:'RF-MISSING',amount:20}]},
+      {id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:10,remainingAmount:10,applications:[],refunds:[]}
+    ],
+    vouchers:[]
+  };
+  const result=runSettlementAudit(state);
+  assert.ok(result.missingCreditRefundRecords>=1);
+  assert.ok(result.duplicateCreditIds>=1);
+});
+
 test('check lifecycle audit detects missing final event journals and unreleased allocations',()=>{
   const state={
     checks:[{id:'C1',sayad:'123',dir:'receive',amount:50,partyId:'P1',status:'bounced',issueDate:'1405/01/01',dueDate:'1405/01/10',sourceTxId:'T1',allocationsReleasedAt:null,allocations:[]}],

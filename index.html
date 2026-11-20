@@ -11528,7 +11528,8 @@
         invalidTransactionAmounts: 0, invalidTransactionDates: 0, invalidParties: 0, invalidAccounts: 0,
         duplicateTransactionIds: 0, invalidAllocations: 0, overAllocatedInvoices: 0,
         paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0, creditRefundsChecked: 0, missingCreditRefundVouchers: 0, duplicateCreditRefundVouchers: 0, orphanCreditRefundVouchers: 0,
-        duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0
+        duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0,
+        invalidCreditRecords: 0, creditBalanceMismatches: 0, missingCreditRefundRecords: 0, duplicateCreditIds: 0
       };
       const add = (type, message, detail) => issues.push({ type, message, detail: String(detail || '') });
       const finite = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value));
@@ -11642,6 +11643,65 @@
           }
         }
         if (!released) addAllocations(check,check.allocations,check.amount,check.dir==='receive'?'sale':check.dir==='pay'?'purchase':null);
+      });
+      const creditIds = new Set();
+      const refundTransactions = txs.filter(tx => tx && tx.kind === 'party_credit_refund');
+      const seenRefundIds = new Set();
+      credits.forEach(credit => {
+        const id = String(credit.id || '');
+        if (!id || creditIds.has(id)) {
+          counts.duplicateCreditIds++;
+          add('credit-id-duplicate','شناسه اعتبار طرف‌حساب خالی یا تکراری است.','اعتبار: '+(id || 'خالی'));
+        }
+        creditIds.add(id);
+        const initial = Number(credit.amount);
+        const remaining = Number(credit.remainingAmount ?? credit.amount);
+        const partyExists = (state.parties || []).some(p => String(p.id) === String(credit.partyId));
+        const validDirection = ['sale','purchase'].includes(String(credit.creditDirection));
+        if (!finite(credit.amount) || initial <= 0 || !finite(remaining) || remaining < -1 || remaining > initial + 1 || !partyExists || !validDirection) {
+          counts.invalidCreditRecords++;
+          add('credit-record-invalid','مبلغ، مانده، جهت یا طرف‌حساب اعتبار ثبت‌شده معتبر نیست.','اعتبار: '+id+' | مبلغ اولیه: '+String(credit.amount)+' | مانده: '+String(credit.remainingAmount ?? 'ثبت‌نشده')+' | جهت: '+String(credit.creditDirection)+' | طرف حساب: '+String(credit.partyId));
+        }
+        const applications = Array.isArray(credit.applications) ? credit.applications : [];
+        const refundRows = Array.isArray(credit.refunds) ? credit.refunds : [];
+        const appliedTotal = applications.reduce((sum, app) => {
+          const value = Number(app?.amount);
+          return sum + (Number.isFinite(value) && value > 0 ? value : 0);
+        }, 0);
+        const refundedTotal = refundRows.reduce((sum, refund) => {
+          const value = Number(refund?.amount);
+          return sum + (Number.isFinite(value) && value > 0 ? value : 0);
+        }, 0);
+        const expectedRemaining = initial - appliedTotal - refundedTotal;
+        if (finite(credit.amount) && initial > 0 && ((!finite(credit.remainingAmount) && (appliedTotal > 1 || refundedTotal > 1)) || (finite(credit.remainingAmount) && Math.abs(remaining - expectedRemaining) > 1) || expectedRemaining < -1)) {
+          counts.creditBalanceMismatches++;
+          add('credit-rollforward-mismatch','مانده اعتبار با مبلغ اولیه منهای اعمال روی فاکتورها و استردادها تطبیق ندارد.','اعتبار: '+id+' | مبلغ اولیه: '+initial+' | اعمال‌شده: '+appliedTotal+' | مستردشده: '+refundedTotal+' | مانده ثبت‌شده: '+String(credit.remainingAmount ?? 'ثبت‌نشده')+' | مانده محاسباتی: '+expectedRemaining);
+        }
+        refundRows.forEach((refund,index) => {
+          const refundId = String(refund?.id || '');
+          const refundAmount = Number(refund?.amount);
+          if (!refundId || seenRefundIds.has(id+'|'+refundId) || !finite(refund?.amount) || refundAmount <= 0) {
+            counts.invalidCreditRecords++;
+            add('credit-refund-record-invalid','ردیف استرداد اعتبار شناسه یا مبلغ معتبر و یکتا ندارد.','اعتبار: '+id+' | ردیف: '+(index+1)+' | شناسه: '+(refundId || 'خالی')+' | مبلغ: '+String(refund?.amount ?? 'خالی'));
+          }
+          seenRefundIds.add(id+'|'+refundId);
+          const linkedRefund = refundTransactions.filter(tx => String(tx.id) === refundId && String(tx.sourceCreditId) === id);
+          if (!linkedRefund.length) {
+            counts.missingCreditRefundRecords++;
+            add('credit-refund-record-missing','استرداد ثبت‌شده در سابقه اعتبار، گردش استرداد متناظر ندارد.','اعتبار: '+id+' | استرداد: '+(refundId || 'خالی')+' | مبلغ: '+String(refund?.amount));
+          }
+          if (linkedRefund.length > 1) {
+            counts.invalidCreditRecords++;
+            add('credit-refund-record-duplicate','برای یک ردیف استرداد اعتبار چند گردش ثبت شده است.','اعتبار: '+id+' | استرداد: '+refundId);
+          }
+        });
+      });
+      refundTransactions.forEach(refund => {
+        const credit = credits.find(item => String(item.id) === String(refund.sourceCreditId));
+        if (credit && !(credit.refunds || []).some(item => String(item.id) === String(refund.id))) {
+          counts.missingCreditRefundRecords++;
+          add('credit-refund-history-missing','گردش استرداد ثبت شده اما در سابقه استرداد اعتبار مرجع ثبت نشده است.','اعتبار: '+String(credit.id)+' | استرداد: '+String(refund.id));
+        }
       });
       const seenApplications=new Set();
       credits.forEach(credit=>{
@@ -11798,7 +11858,7 @@
             counts.incompleteLines++; lineValuesValid = false;
             add('invoice-line', inv, 'ردیف کالای فاکتور ناقص یا دارای مقدار نامعتبر است.', 'ردیف ' + (index+1) + ' | کالا: ' + (productId || 'بدون شناسه') + ' | تعداد: ' + String(line?.kg ?? 'خالی') + ' | قیمت: ' + String(line?.price ?? 'خالی') + ' | تخفیف: ' + String(line?.disc ?? 0) + ' | مبلغ: ' + String(line?.total ?? 'خالی'));
           }
-          if (productId && products.length && !products.some(p => String(p?.id) === productId)) {
+          if (productId && !products.some(p => String(p?.id) === productId)) {
             counts.invalidProductLinks++;
             add('invoice-product', inv, 'کالای ردیف فاکتور در فهرست کالاها پیدا نشد.', 'ردیف ' + (index+1) + ' | شناسه کالا: ' + productId);
           }
@@ -12093,7 +12153,7 @@
         ['چک بدون گردش',settlementAudit.orphanChecks],['سند صدور چک مفقود',settlementAudit.missingCheckVouchers],['سند صدور چک تکراری',settlementAudit.duplicateCheckVouchers],
         ['مبلغ/تاریخ/طرف حساب نامعتبر',settlementAudit.invalidTransactionAmounts+settlementAudit.invalidTransactionDates+settlementAudit.invalidParties],['حساب نامعتبر',settlementAudit.invalidAccounts],['شناسه گردش تکراری',settlementAudit.duplicateTransactionIds],
         ['تخصیص نامعتبر',settlementAudit.invalidAllocations],['فاکتور بیش‌تسویه',settlementAudit.overAllocatedInvoices],['مغایرت paidAmount',settlementAudit.paidAmountMismatches],
-        ['سند اعمال اعتبار مفقود',settlementAudit.missingCreditApplicationVouchers],['سند اعتبار بدون تخصیص',settlementAudit.orphanCreditVouchers],['استردادهای اعتبار',settlementAudit.creditRefundsChecked],['سند استرداد مفقود/تکراری',settlementAudit.missingCreditRefundVouchers+settlementAudit.duplicateCreditRefundVouchers],['سند استرداد یتیم',settlementAudit.orphanCreditRefundVouchers],['مغایرت دفترکل',settlementAudit.ledgerAmountMismatches]
+        ['سند اعمال اعتبار مفقود',settlementAudit.missingCreditApplicationVouchers],['سند اعتبار بدون تخصیص',settlementAudit.orphanCreditVouchers],['استردادهای اعتبار',settlementAudit.creditRefundsChecked],['سند استرداد مفقود/تکراری',settlementAudit.missingCreditRefundVouchers+settlementAudit.duplicateCreditRefundVouchers],['سند استرداد یتیم',settlementAudit.orphanCreditRefundVouchers],['مغایرت دفترکل',settlementAudit.ledgerAmountMismatches],['اعتبار با مانده نامعتبر',settlementAudit.invalidCreditRecords],['مغایرت گردش اعتبار',settlementAudit.creditBalanceMismatches],['استرداد بدون سابقه متناظر',settlementAudit.missingCreditRefundRecords]
       ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(settlementAudit.issues.length?'<div class="space-y-1 max-h-80 overflow-y-auto">'+settlementAudit.issues.slice(0,120).map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.message)+'</b><p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>':'<p class="text-xs text-emerald-700">موردی برای بررسی در گردش‌های تسویه پیدا نشد.</p>')+'<p class="text-[10px] text-slate-500">این ممیزی فقط‌خواندنی است؛ هیچ تراکنش، تخصیص، چک، مانده یا سندی را تغییر نمی‌دهد.</p></div>';
       const invoiceDocumentAudit = buildInvoiceDocumentIntegrityAudit();
       const invoiceDocumentAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی کامل فاکتورهای خرید و فروش</strong><b class="block">'+(invoiceDocumentAudit.issueCount ? faNum(invoiceDocumentAudit.issueCount)+' مورد نیازمند بررسی' : 'فاکتورها، ردیف‌ها و اسناد حسابداری تطبیق دارند')+'</b>' +
