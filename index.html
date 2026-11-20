@@ -6053,13 +6053,24 @@
       if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
         throw new Error('بازه تاریخ گزارش تطبیق معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       }
-      const partyById = new Map((state.parties || []).map(p => [String(p.id), p]));
+      const parties = Array.isArray(state.parties) ? state.parties : [];
+      const partyIdCounts = new Map();
+      parties.forEach(party => {
+        const id = String(party?.id ?? '').trim();
+        if (id) partyIdCounts.set(id, (partyIdCounts.get(id) || 0) + 1);
+      });
+      const ambiguousPartyIds = new Set([...partyIdCounts.entries()].filter(([,count]) => count > 1).map(([id]) => id));
+      const duplicatePartyIds = ambiguousPartyIds.size;
+      const partyById = new Map(parties.filter(party => {
+        const id = String(party?.id ?? '').trim();
+        return id && partyIdCounts.get(id) === 1;
+      }).map(party => [String(party.id), party]));
       const codes = new Set(['1103', '2101', '1107']);
       (state.parties || []).forEach(p => getPartyLedgerControlCodes(p).forEach(code => codes.add(code)));
       const stats = new Map();
       codes.forEach(code => stats.set(code, { code, glOpening: 0, glPeriod: 0, subOpening: 0, subPeriod: 0 }));
       let invalidDateVouchers = 0, invalidAmountVouchers = 0, invalidStructureVouchers = 0, unbalancedVouchers = 0, includedVouchers = 0, unassignedLines = 0, mappingMismatchLines = 0;
-      const unassignedDetails = [];
+      const unassignedDetails = [], mappingMismatchDetails = [];
       (state.vouchers || []).forEach(voucher => {
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
@@ -6093,12 +6104,30 @@
               debit,
               credit,
               partyId,
-              reason: partyId ? 'شناسه طرف حساب در فهرست اشخاص وجود ندارد' : 'شناسه طرف حساب ثبت نشده است'
+              reason: !partyId ? 'شناسه طرف حساب ثبت نشده است' :
+                ambiguousPartyIds.has(partyId) ? 'شناسه طرف حساب در فهرست اشخاص تکراری است' : 'شناسه طرف حساب در فهرست اشخاص وجود ندارد'
             });
             return;
           }
           // Supplier advances (1107) belong only to supplier subledgers.
-          if (!getPartyLedgerControlCodes(party).has(code)) mappingMismatchLines++;
+          const expectedCodes = getPartyLedgerControlCodes(party);
+          if (!expectedCodes.has(code)) {
+            mappingMismatchLines++;
+            mappingMismatchDetails.push({
+              voucherId: voucher.id == null ? '' : String(voucher.id),
+              date: String(rawDate || ''),
+              voucherDesc: String(voucher.desc || ''),
+              lineIndex: lineIndex + 1,
+              code,
+              lineDesc: String(line.desc || ''),
+              partyId,
+              partyName: String(party.name || party.id || ''),
+              partyRole: String(party.role || ''),
+              expectedCodes: [...expectedCodes],
+              debit,
+              credit
+            });
+          }
           item['sub' + bucket] += net;
         });
       });
@@ -6118,7 +6147,7 @@
         if (Math.abs(r.closingDifference) > 0.5) t.mismatchedAccounts++;
         return t;
       }, { glOpening:0, glPeriod:0, subOpening:0, subPeriod:0, glClosing:0, subClosing:0, openingDifference:0, periodDifference:0, closingDifference:0, absoluteClosingDifference:0, mismatchedAccounts:0 });
-      return { rows, invalidDateVouchers, invalidAmountVouchers, invalidStructureVouchers, unbalancedVouchers, includedVouchers, unassignedLines, unassignedDetails, mappingMismatchLines, totals };
+      return { rows, invalidDateVouchers, invalidAmountVouchers, invalidStructureVouchers, unbalancedVouchers, includedVouchers, duplicatePartyIds, unassignedLines, unassignedDetails, mappingMismatchLines, mappingMismatchDetails, totals };
     }
 
     function openPartyControlReconciliation() {
@@ -6195,7 +6224,8 @@
         if (report.invalidAmountVouchers) warnings.push(faNum(report.invalidAmountVouchers) + ' سند دارای ردیف با کد حساب یا مبلغ نامعتبر کنار گذاشته شد.');
         if (report.invalidStructureVouchers) warnings.push(faNum(report.invalidStructureVouchers) + ' سند ساختار ناقص دارد.');
         if (report.unbalancedVouchers) warnings.push(faNum(report.unbalancedVouchers) + ' سند نامتوازن تا تاریخ گزارش وجود دارد.');
-        if (report.unassignedLines) warnings.push(faNum(report.unassignedLines) + ' ردیف حساب کنترلی بدون طرف حساب معتبر وجود دارد.');
+        if (report.duplicatePartyIds) warnings.push(faNum(report.duplicatePartyIds) + ' شناسه طرف حساب تکراری است؛ ردیف‌های وابسته به این شناسه مبهم و از تفصیلی کنار گذاشته شده‌اند.');
+        if (report.unassignedLines) warnings.push(faNum(report.unassignedLines) + ' ردیف حساب کنترلی بدون طرف حساب یکتا و معتبر وجود دارد.');
         if (report.mappingMismatchLines) warnings.push(faNum(report.mappingMismatchLines) + ' ردیف با کد حساب متفاوت از حساب کنترلی تعریف‌شده برای طرف حساب ثبت شده است.');
         const unassignedRows = (report.unassignedDetails || []).map(item =>
           '<tr class="border-b"><td class="p-2">' + escapeLedgerText(faNum(item.voucherId)) + '</td><td class="p-2">' + escapeLedgerText(faNum(item.date)) + '</td><td class="p-2">' + escapeLedgerText(faNum(item.lineIndex)) + '</td><td class="p-2">' + escapeLedgerText(faNum(item.code)) + '</td><td class="p-2">' + escapeLedgerText(item.voucherDesc) + '</td><td class="p-2">' + escapeLedgerText(item.lineDesc) + '</td><td class="p-2">' + escapeLedgerText(item.reason) + '</td><td class="p-2">' + money(item.debit) + '</td><td class="p-2">' + money(item.credit) + '</td></tr>'
@@ -6203,12 +6233,18 @@
         const unassignedPanel = report.unassignedLines
           ? '<section class="border border-amber-300 rounded-xl p-3 bg-amber-50 space-y-2"><strong class="block text-sm text-amber-950">جزئیات ' + faNum(report.unassignedLines) + ' ردیف فاقد طرف حساب معتبر</strong><p class="text-xs text-amber-900">این ردیف‌ها برای شناسایی نمایش داده شده‌اند؛ هیچ سند یا شناسه‌ای تغییر نمی‌کند.</p><div class="overflow-x-auto"><table class="w-full text-right text-xs min-w-[760px]"><thead><tr class="bg-white"><th class="p-2">شماره سند</th><th class="p-2">تاریخ</th><th class="p-2">ردیف</th><th class="p-2">کد حساب</th><th class="p-2">شرح سند</th><th class="p-2">شرح ردیف</th><th class="p-2">علت</th><th class="p-2">بدهکار</th><th class="p-2">بستانکار</th></tr></thead><tbody>' + (unassignedRows || '<tr><td colspan="9" class="p-3 text-center text-amber-900">تعداد ردیف‌ها ثبت شده، اما جزئیات آن‌ها در داده گزارش موجود نیست؛ گزارش را دوباره اجرا کنید.</td></tr>') + '</tbody></table></div></section>'
           : '';
+        const mappingMismatchRows = (report.mappingMismatchDetails || []).map(item =>
+          '<tr class="border-b"><td class="p-2">' + escapeLedgerText(faNum(item.voucherId)) + '</td><td class="p-2">' + escapeLedgerText(faNum(item.date)) + '</td><td class="p-2">' + escapeLedgerText(faNum(item.lineIndex)) + '</td><td class="p-2">' + escapeLedgerText(faNum(item.code)) + '</td><td class="p-2">' + escapeLedgerText(item.partyName) + '</td><td class="p-2">' + escapeLedgerText(item.partyRole) + '</td><td class="p-2">' + escapeLedgerText((item.expectedCodes || []).join('، ')) + '</td><td class="p-2">' + money(item.debit) + '</td><td class="p-2">' + money(item.credit) + '</td></tr>'
+        ).join('');
+        const mappingMismatchPanel = report.mappingMismatchLines
+          ? '<section class="border border-amber-300 rounded-xl p-3 bg-amber-50 space-y-2"><strong class="block text-sm text-amber-950">جزئیات ' + faNum(report.mappingMismatchLines) + ' ردیف با کد حساب نامنطبق</strong><p class="text-xs text-amber-900">این ردیف‌ها در جمع تفصیلی منظور شده‌اند، اما کد حساب با نگاشت طرف حساب سازگار نیست؛ هیچ سندی تغییر نمی‌کند.</p><div class="overflow-x-auto"><table class="w-full text-right text-xs min-w-[760px]"><thead><tr class="bg-white"><th class="p-2">شماره سند</th><th class="p-2">تاریخ</th><th class="p-2">ردیف</th><th class="p-2">کد ثبت‌شده</th><th class="p-2">طرف حساب</th><th class="p-2">نقش</th><th class="p-2">کدهای مجاز</th><th class="p-2">بدهکار</th><th class="p-2">بستانکار</th></tr></thead><tbody>' + (mappingMismatchRows || '<tr><td colspan="9" class="p-3 text-center text-amber-900">جزئیات ردیف‌های نامنطبق موجود نیست؛ گزارش را دوباره اجرا کنید.</td></tr>') + '</tbody></table></div></section>'
+          : '';
         grid.innerHTML = '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
           '<div class="flex flex-wrap justify-between items-center gap-2"><div><strong class="text-base">گزارش تطبیق اشخاص با حساب‌های کنترلی</strong><div class="text-xs text-slate-500">مقایسه مانده دفترکل با جمع مانده تفصیلی اشخاص؛ بدون تغییر اسناد</div></div><button onclick="closePartyControlReconciliation()" class="bg-slate-200 px-3 py-2 rounded-lg font-bold">بازگشت به اشخاص</button></div>' +
           '<div class="grid grid-cols-1 md:grid-cols-3 gap-2"><label class="text-xs font-bold">از تاریخ (شمسی)<input id="party-control-from" value="' + escapeLedgerText(from) + '" onchange="partyControlReportFromDate=this.value; renderPartiesModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label><label class="text-xs font-bold">تا تاریخ (شمسی)<input id="party-control-to" value="' + escapeLedgerText(to) + '" onchange="partyControlReportToDate=this.value; renderPartiesModule()" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label><div class="flex items-end text-xs text-slate-500">مبنای تطبیق: مانده افتتاحیه + گردش بازه انتخابی</div></div>' +
           '<div class="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs"><div class="p-2 bg-slate-50 rounded-lg">مانده دفترکل<strong class="block">' + amountLabel(report.totals.glClosing) + '</strong></div><div class="p-2 bg-slate-50 rounded-lg">جمع تفصیلی اشخاص<strong class="block">' + amountLabel(report.totals.subClosing) + '</strong></div><div class="p-2 bg-slate-50 rounded-lg">تعداد حساب‌های دارای اختلاف<strong class="block ' + (report.totals.mismatchedAccounts ? 'text-rose-700' : 'text-emerald-700') + '">' + faNum(report.totals.mismatchedAccounts) + '</strong></div><div class="p-2 bg-slate-50 rounded-lg">جمع قدرمطلق اختلاف حساب‌ها<strong class="block ' + (report.totals.absoluteClosingDifference ? 'text-rose-700' : 'text-emerald-700') + '">' + money(report.totals.absoluteClosingDifference) + '</strong></div></div>' +
           (warnings.length ? '<div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">' + warnings.map(escapeLedgerText).join(' ') + '</div>' : '') +
-          unassignedPanel +
+          unassignedPanel + mappingMismatchPanel +
           '<div class="overflow-x-auto"><table class="w-full text-right text-xs"><thead><tr class="bg-slate-100"><th class="p-2">کد حساب</th><th class="p-2">نام حساب</th><th class="p-2">مانده دفترکل</th><th class="p-2">جمع تفصیلی</th><th class="p-2">اختلاف</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="p-4 text-center text-slate-400">در این بازه گردش قابل گزارش وجود ندارد.</td></tr>') + '</tbody></table></div>' +
           '<p class="text-[10px] text-slate-500">اختلاف صفر به معنی تطبیق مانده دفترکل و تفصیلی است. ردیف‌های فاقد شناسه طرف حساب یا دارای کد حساب نامنطبق در هشدارها جداگانه گزارش می‌شوند.</p></div>';
         return;
