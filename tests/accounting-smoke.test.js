@@ -35,7 +35,7 @@ test('party ledger ignores malformed vouchers after the selected end date', () =
     ]
   };
   const before = JSON.stringify(state);
-  const build = loadFunction(section('function buildPartyLedger(partyId, fromDate, toDate)', 'let showPartyControlReconciliation = false;'),
+  const build = loadFunction(section('function buildPartyLedger(partyId, fromDate, toDate)', 'function buildPartyControlReconciliation('),
     'buildPartyLedger', {
       state,
       normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
@@ -67,7 +67,7 @@ test('account ledger ignores malformed vouchers after the selected end date', ()
     ]
   };
   const before = JSON.stringify(state);
-  const build = loadFunction(section('function buildAccountLedger(accountCode, fromDate, toDate)', 'function escapeLedgerText(value)'), 'buildAccountLedger', {
+  const build = loadFunction(section('function buildAccountLedger(accountCode, fromDate, toDate)', 'function exportAccountLedgerCSV('), 'buildAccountLedger', {
     state,
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
     jalaliDateOrdinal(value) {
