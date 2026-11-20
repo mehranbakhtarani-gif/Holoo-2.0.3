@@ -2,7 +2,7 @@
   'use strict';
 
   const TOLERANCE = 0.01;
-  const finite = value => Number.isFinite(Number(value));
+  const finite = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value));
   const amount = value => finite(value) ? Number(value) : 0;
   const close = (a, b) => Math.abs(amount(a) - amount(b)) <= TOLERANCE;
   const key = value => String(value ?? '');
@@ -68,15 +68,18 @@
       let gross = 0, net = 0, discount = 0;
       const expectedQtyByProduct = new Map();
       for (const [index, line] of lines.entries()) {
-        const qty = Number(line?.kg);
-        const price = Number(line?.price);
+        const qtyValid = finite(line?.kg);
+        const priceValid = finite(line?.price);
+        const totalValid = finite(line?.total);
+        const qty = qtyValid ? Number(line.kg) : NaN;
+        const price = priceValid ? Number(line.price) : NaN;
         const lineDiscount = Number(line?.disc ?? 0);
-        const lineTotal = Number(line?.total);
+        const lineTotal = totalValid ? Number(line.total) : NaN;
         const lineGross = qty * price;
-        const valid = Number.isFinite(qty) && qty > 0 &&
-          Number.isFinite(price) && price >= 0 &&
+        const valid = qtyValid && qty > 0 &&
+          priceValid && price >= 0 &&
           Number.isFinite(lineDiscount) && lineDiscount >= 0 && lineDiscount <= lineGross &&
-          Number.isFinite(lineTotal) && lineTotal >= 0 &&
+          totalValid && lineTotal >= 0 &&
           close(lineTotal, Math.max(0, lineGross - lineDiscount));
         if (!valid) {
           addFinding(findings, invoice, 'error', 'invoice-line-invalid', 'ردیف ' + (index + 1) + ': مقدار، قیمت، تخفیف یا مبلغ ردیف ناسازگار است.');
