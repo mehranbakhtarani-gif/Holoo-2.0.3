@@ -97,7 +97,7 @@ function run(state, fromDate = '1405/01/01', toDate = '1405/12/29') {
   const state = {
     parties:[{id:'C1',role:'مشتری',ledgerAccountCode:'1103'}],
     vouchers:[
-      {id:'OPEN',date:'1404/12/29',lines:[{code:'1103',partyId:'C1',debit:120,credit:20}]},
+      {id:'OPEN',date:'1405/01/01',lines:[{code:'1103',partyId:'C1',debit:120,credit:20}]},
       {id:'MOVE',date:'1405/02/01',lines:[{code:'1103',partyId:'C1',debit:80,credit:30}]}
     ]
   };
@@ -118,7 +118,7 @@ function run(state, fromDate = '1405/01/01', toDate = '1405/12/29') {
   assert.equal(row.periodDifference,0);
   assert.equal(row.closingDifference,0);
   assert.equal(JSON.stringify(state.vouchers),JSON.stringify([
-    {id:'OPEN',date:'1404/12/29',lines:[{code:'1103',partyId:'C1',debit:120,credit:20}]},
+    {id:'OPEN',date:'1405/01/01',lines:[{code:'1103',partyId:'C1',debit:120,credit:20}]},
     {id:'MOVE',date:'1405/02/01',lines:[{code:'1103',partyId:'C1',debit:80,credit:30}]}
   ]),'gross movement reconciliation must be read-only');
 }
