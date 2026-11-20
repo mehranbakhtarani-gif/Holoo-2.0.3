@@ -9741,12 +9741,102 @@
       return result;
     }
 
+    function buildTreasuryBankCashAuditSummary() {
+      const bankBalances = getBankAccountBookBalances();
+      const cashBalances = getCashAccountBookBalances();
+      const statementRows = Array.isArray(state.bankReconcileItems) ? state.bankReconcileItems : [];
+      const bankAccounts = (state.bankAccounts || []).filter(account => account.type === 'bank');
+      const accountIds = new Set(bankAccounts.map(account => String(account.id)));
+      const statementByBank = new Map();
+      let invalidStatementRows = 0, unassignedStatementRows = 0, unknownStatementRows = 0, duplicateStatementRefs = 0;
+      const seenRefs = new Set();
+      statementRows.forEach(item => {
+        const bankId = item.bankAccountId == null ? '' : String(item.bankAccountId);
+        const dateKey = bankTxDateKey(item.date);
+        const amount = Number(item.amount);
+        if (!dateKey || !Number.isFinite(amount) || amount === 0) { invalidStatementRows++; return; }
+        if (!bankId) { unassignedStatementRows++; return; }
+        if (!accountIds.has(bankId)) { unknownStatementRows++; return; }
+        if (!statementByBank.has(bankId)) statementByBank.set(bankId, []);
+        statementByBank.get(bankId).push(item);
+        const ref = String(item.ref || '').trim();
+        if (ref) {
+          const key = bankId + '::' + ref;
+          if (seenRefs.has(key)) duplicateStatementRefs++;
+          seenRefs.add(key);
+        }
+      });
+      const bankComparisons = [];
+      statementByBank.forEach((rows, bankId) => {
+        const dates = rows.map(item => bankTxDateKey(item.date)).filter(Boolean).sort();
+        if (!dates.length) return;
+        const from = dates[0], to = dates[dates.length - 1];
+        const statementNet = rows.reduce((sum, item) => sum + Number(item.amount), 0);
+        let bookNet = 0, bookRows = 0, invalidBookRows = 0, invalidBookVouchers = 0;
+        const inspected = new Set();
+        (state.vouchers || []).forEach(voucher => {
+          const dateKey = bankTxDateKey(voucher.date || voucher.operationDate);
+          if (!dateKey || dateKey < from || dateKey > to || isBankOpeningVoucher(voucher)) return;
+          (voucher.lines || []).forEach(line => {
+            if (String(line.code) !== '1102' || String(line.bankAccountId || '') !== bankId) return;
+            const debit = Number(line.debit || 0), credit = Number(line.credit || 0);
+            if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+              invalidBookRows++;
+              return;
+            }
+            if (!inspected.has(String(voucher.id))) {
+              inspected.add(String(voucher.id));
+              const integrity = inspectTrialBalanceVoucher(voucher);
+              if (integrity.invalidLines || integrity.invalidStructure || integrity.unbalanced) invalidBookVouchers++;
+            }
+            bookNet += debit - credit;
+            bookRows++;
+          });
+        });
+        const linkedCount = rows.filter(item => item.matched && (
+          item.linkedVoucherId && (state.vouchers || []).some(v => String(v.id) === String(item.linkedVoucherId)) ||
+          item.linkedTreasuryTxId && (state.treasuryTxs || []).some(tx => String(tx.id) === String(item.linkedTreasuryTxId))
+        )).length;
+        const difference = statementNet - bookNet;
+        const account = bankAccounts.find(item => String(item.id) === bankId);
+        bankComparisons.push({
+          bankId, bankName: account?.name || bankId, from, to, statementCount: rows.length,
+          linkedCount, statementNet, bookNet, difference, bookRows, invalidBookRows, invalidBookVouchers
+        });
+      });
+      const checks = Array.isArray(state.checks) ? state.checks : [];
+      const activeChecks = checks.filter(check => ['in_progress','overdue'].includes(String(check.status)));
+      const outstanding = {
+        receiveCount: activeChecks.filter(check => check.dir === 'receive').length,
+        payCount: activeChecks.filter(check => check.dir === 'pay').length,
+        receiveAmount: activeChecks.filter(check => check.dir === 'receive').reduce((sum, check) => sum + (Number.isFinite(Number(check.amount)) ? Number(check.amount) : 0), 0),
+        payAmount: activeChecks.filter(check => check.dir === 'pay').reduce((sum, check) => sum + (Number.isFinite(Number(check.amount)) ? Number(check.amount) : 0), 0),
+        overdueCount: activeChecks.filter(check => check.status === 'overdue').length,
+        missingBankAccount: activeChecks.filter(check => !check.bankAccountId).length,
+        unknownBankAccount: activeChecks.filter(check => check.bankAccountId && !accountIds.has(String(check.bankAccountId))).length,
+        invalidDueDate: activeChecks.filter(check => jalaliDateOrdinal(check.dueDate) === null).length
+      };
+      const checkAudit = buildCheckAuditSummary();
+      const differenceCount = bankComparisons.filter(row => Math.abs(row.difference) > 0.01).length;
+      const issueCount = differenceCount + invalidStatementRows + unassignedStatementRows + unknownStatementRows +
+        duplicateStatementRefs + outstanding.missingBankAccount + outstanding.unknownBankAccount +
+        outstanding.invalidDueDate + cashBalances.unassignedLines.length + cashBalances.unknownLines.length +
+        cashBalances.invalidLines + cashBalances.invalidVoucherDates + bankBalances.invalidBankLines +
+        bankBalances.invalidBankVoucherDates + bankBalances.invalidBankVoucherStructures + bankBalances.unbalancedBankVouchers;
+      return {
+        bankComparisons, statementRows: statementRows.length, invalidStatementRows, unassignedStatementRows,
+        unknownStatementRows, duplicateStatementRefs, outstanding, checkAudit, cashBalances, bankBalances,
+        differenceCount, issueCount
+      };
+    }
+
     function renderTreasuryModule() {
        computeCheckRas();
        const bookBalances = getBankAccountBookBalances();
        const balanceById = new Map(bookBalances.accounts.map(row => [String(row.account.id), row]));
        const cashBalances = getCashAccountBookBalances();
        const transferAudit = buildBankTransferAuditSummary();
+       const treasuryAudit = buildTreasuryBankCashAuditSummary();
        const bankGrid = document.getElementById('bank-accounts-grid');
        bankGrid.innerHTML = `
         <div class="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
@@ -9777,6 +9867,31 @@
           ${cashBalances.unassignedLines.length ? '<div class="rounded-lg bg-amber-50 p-2 text-[10px] text-amber-900">هشدار: ' + faNum(cashBalances.unassignedLines.length) + ' ردیف دفترکل صندوق شناسه مشخص ندارد و به‌صورت قطعی به یک صندوق قابل انتساب نیست.</div>' : ''}
           ${cashBalances.unknownLines.length ? '<div class="rounded-lg bg-rose-50 p-2 text-[10px] text-rose-900">هشدار: ' + faNum(cashBalances.unknownLines.length) + ' ردیف به شناسه صندوق تعریف‌نشده متصل است.</div>' : ''}
           ${cashBalances.invalidLines || cashBalances.invalidVoucherDates ? '<div class="rounded-lg bg-rose-50 p-2 text-[10px] text-rose-900">ردیف مبلغ نامعتبر: ' + faNum(cashBalances.invalidLines) + ' • سند با تاریخ نامعتبر: ' + faNum(cashBalances.invalidVoucherDates) + '</div>' : ''}
+        </div>
+        <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2"><strong class="text-sm">ممیزی یکپارچه بانک، صندوق، تنخواه و چک‌های باز</strong><b class="text-xs ${treasuryAudit.issueCount ? 'text-amber-700' : 'text-emerald-700'}">${faNum(treasuryAudit.issueCount)} مورد نیازمند بررسی</b></div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+            <span>ردیف صورتحساب واردشده: <b>${faNum(treasuryAudit.statementRows)}</b></span>
+            <span>مغایرت خالص صورتحساب/دفترکل: <b>${faNum(treasuryAudit.differenceCount)}</b></span>
+            <span>ردیف صورتحساب نامعتبر: <b>${faNum(treasuryAudit.invalidStatementRows)}</b></span>
+            <span>شماره پیگیری تکراری: <b>${faNum(treasuryAudit.duplicateStatementRefs)}</b></span>
+            <span>چک دریافتنی باز: <b>${faNum(treasuryAudit.outstanding.receiveCount)} • ${money(treasuryAudit.outstanding.receiveAmount)}</b></span>
+            <span>چک پرداختنی باز: <b>${faNum(treasuryAudit.outstanding.payCount)} • ${money(treasuryAudit.outstanding.payAmount)}</b></span>
+            <span>چک سررسیدگذشته: <b>${faNum(treasuryAudit.outstanding.overdueCount)}</b></span>
+            <span>چک با بانک نامشخص: <b>${faNum(treasuryAudit.outstanding.missingBankAccount + treasuryAudit.outstanding.unknownBankAccount)}</b></span>
+          </div>
+          ${treasuryAudit.bankComparisons.length ? '<div class="space-y-2"><strong class="text-xs">تطبیق گردش خالص صورتحساب با دفترکل در بازه تاریخ‌های واردشده</strong>' + treasuryAudit.bankComparisons.map(row => '<div class="rounded-lg border bg-slate-50 p-2 text-[10px] space-y-1"><div class="flex flex-wrap justify-between gap-2"><b>' + window.escapeBankReconcileText(row.bankName) + '</b><span>' + faNum(row.from) + ' تا ' + faNum(row.to) + '</span></div><div class="grid grid-cols-2 md:grid-cols-4 gap-1"><span>ردیف بانک: <b>' + faNum(row.statementCount) + '</b></span><span>وصل‌شده: <b>' + faNum(row.linkedCount) + '</b></span><span>خالص بانک: <b>' + money(row.statementNet) + '</b></span><span>خالص دفترکل: <b>' + money(row.bookNet) + '</b></span></div><div>اختلاف بانک منهای دفترکل: <b class="' + (Math.abs(row.difference) > 0.01 ? 'text-rose-700' : 'text-emerald-700') + '">' + money(row.difference) + '</b> | ردیف سند بانکی: ' + faNum(row.bookRows) + ' | ردیف نامعتبر: ' + faNum(row.invalidBookRows) + ' | سند نامعتبر: ' + faNum(row.invalidBookVouchers) + '</div></div>').join('') + '</div>' : '<p class="text-[10px] text-slate-500">برای مقایسه گردش بانک و دفترکل، صورتحساب CSV هر حساب را وارد کنید.</p>'}
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+            <span>ردیف صورتحساب بدون حساب: <b>${faNum(treasuryAudit.unassignedStatementRows)}</b></span>
+            <span>ردیف با حساب ناشناخته: <b>${faNum(treasuryAudit.unknownStatementRows)}</b></span>
+            <span>چک با سررسید نامعتبر: <b>${faNum(treasuryAudit.outstanding.invalidDueDate)}</b></span>
+            <span>مغایرت‌های ساختاری چک: <b>${faNum(treasuryAudit.checkAudit.issueCount)}</b></span>
+            <span>ردیف صندوق بدون شناسه: <b>${faNum(treasuryAudit.cashBalances.unassignedLines.length)}</b></span>
+            <span>ردیف صندوق با شناسه ناشناخته: <b>${faNum(treasuryAudit.cashBalances.unknownLines.length)}</b></span>
+            <span>ردیف بانکی با مبلغ نامعتبر: <b>${faNum(treasuryAudit.bankBalances.invalidBankLines)}</b></span>
+            <span>ردیف صندوق با مبلغ نامعتبر: <b>${faNum(treasuryAudit.cashBalances.invalidLines)}</b></span>
+          </div>
+          <p class="text-[10px] text-slate-500">مقایسه صورتحساب فقط بر اساس ردیف‌های CSV موجود و بازه اولین تا آخرین تاریخ واردشده است؛ کامل بودن فایل و مانده ابتدا/انتهای صورتحساب باید با فایل رسمی بانک کنترل شود. این گزارش فقط‌خواندنی است و هیچ سند، چک، مانده یا گردش خزانه را تغییر نمی‌دهد.</p>
         </div>
         <div class="col-span-full mt-1 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2"><strong class="text-sm">حسابرسی انتقال بین حساب‌های بانکی</strong><span class="text-[10px] font-bold">${faNum(transferAudit.transfers)} انتقال بررسی‌شده • ${transferAudit.issueCount ? faNum(transferAudit.issueCount) + ' هشدار' : 'بدون مغایرت شناسایی‌شده'}</span></div>
