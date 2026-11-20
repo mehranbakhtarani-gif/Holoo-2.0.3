@@ -11090,9 +11090,9 @@
       const controlCodes=new Set(['1103','2101','1107']);
       const allowedByParty=new Map();
       parties.forEach(p=>{
-        const primary=String(p?.ledgerAccountCode||(p?.type==='supplier'||p?.category==='supplier'?'2101':'1103'));
+        const supplier=isSupplierParty(p);\n        const primary=String(p?.ledgerAccountCode||(supplier?'2101':'1103'));
         const allowed=new Set([primary]);
-        if(p?.type==='supplier'||p?.category==='supplier'||p?.partyType==='supplier')allowed.add('1107');
+        if(supplier)allowed.add('1107');
         allowedByParty.set(String(p.id),allowed);
         allowed.forEach(code=>controlCodes.add(code));
       });
@@ -11176,7 +11176,7 @@
         ['مغایرت مبلغ فاکتور و سند',r.invoiceAmountMismatches],
         ['ارتباط نامعتبر طرف حساب',r.invalidInvoiceLinks]
       ].forEach(([label,count])=>{if(count)r.issues.push(label+': '+count);});
-      r.issueCount=r.issues.reduce((sum,item)=>sum+Number((item.match(/: (\\d+)$/)||[])[1]||0),0);
+      r.issueCount=[r.hierarchyIssues,r.duplicateSubsidiaryCodes,r.unassignedControlLines,r.invalidControlLines,r.invalidControlDates,r.mappingMismatchLines,r.partyBalanceDifference,r.missingInvoiceVouchers,r.duplicateInvoiceVouchers,r.invoiceAmountMismatches,r.invalidInvoiceLinks].reduce((sum,count)=>sum+count,0);
       return r;
     }
     function buildInventoryAccountingAuditSummary() {
