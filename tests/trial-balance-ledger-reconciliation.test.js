@@ -63,3 +63,21 @@ console.log('PASS: matching trial-balance and account-ledger totals are reconcil
 console.log('PASS: per-account debit, credit and closing-net mismatches are exposed');
 console.log('PASS: unavailable ledger helper is reported as unavailable, not as a clean audit');
 console.log('PASS: reconciliation is read-only and the UI exposes its status');
+
+
+// Equal debit/credit overstatements must not disappear behind an unchanged net balance.
+ledgerResults['200'] = { periodDebit: 5, periodCredit: 55, closingNet: -150 };
+const grossMovementMismatch = sandbox.reconcile('1405/01/01', '1405/01/31');
+assert.equal(grossMovementMismatch.mismatches, 1,
+  'gross debit and credit movement differences must be detected even when their net effect is zero');
+assert.equal(grossMovementMismatch.periodDebitDifference, -5);
+assert.equal(grossMovementMismatch.periodCreditDifference, -5);
+assert.equal(grossMovementMismatch.closingNetDifference, 0,
+  'the fixture intentionally keeps the closing net balance unchanged');
+assert.equal(grossMovementMismatch.details[0].periodDebitDifference, -5);
+assert.equal(grossMovementMismatch.details[0].periodCreditDifference, -5);
+assert.equal(grossMovementMismatch.details[0].closingNetDifference, 0);
+assert.equal(JSON.stringify(state), before,
+  'gross movement discrepancy reporting must remain read-only');
+
+console.log('PASS: offsetting debit and credit differences remain visible despite a zero net-balance difference');
