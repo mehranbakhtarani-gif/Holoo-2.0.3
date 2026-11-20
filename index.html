@@ -11274,7 +11274,8 @@
         const lines=Array.isArray(v?.lines)?v.lines:[];
         const relevant=lines.filter(line=>controlCodes.has(String(line?.code||'').trim()));
         if(!relevant.length)return;
-        if(jalaliDateOrdinal(v?.date||v?.operationDate)===null){r.invalidControlDates++;return;}
+        const validVoucherDate=jalaliDateOrdinal(v?.date||v?.operationDate)!==null;
+        if(!validVoucherDate)r.invalidControlDates++;
         relevant.forEach(line=>{
           const code=String(line?.code||'').trim();
           const rawDebit=line?.debit,rawCredit=line?.credit;
@@ -11285,6 +11286,7 @@
              debit<0||credit<0||(debit>0&&credit>0)||(debit===0&&credit===0)){
             r.invalidControlLines++;return;
           }
+          if(!validVoucherDate)return;
           const net=debit-credit;
           controlNet.set(code,(controlNet.get(code)||0)+net);
           const partyId=line?.partyId==null?'':String(line.partyId).trim();
