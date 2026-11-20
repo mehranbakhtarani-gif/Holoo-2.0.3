@@ -81,7 +81,7 @@ function fixture({ voucherId = 77, lines, txOverrides = {} } = {}) {
 
 
 {
-  const result = fixture({ txOverrides: { out: { id: 'TX-OUT', transferId: '' } } });
+  const result = fixture({ txOverrides: { out: { id: 'TX-OUT-OLD', transferId: '' } } });
   assert.equal(result.missingTransferId, 1);
   assert.ok(result.issues.some(issue => issue.includes('شناسه انتقال')));
   console.log('PASS: transaction without a transfer correlation key is reported');
