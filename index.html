@@ -11342,6 +11342,176 @@
       };
     }
 
+    function buildInvoiceDocumentIntegrityAudit() {
+      const invoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(inv => inv && ['sale','purchase'].includes(String(inv.type)));
+      const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
+      const products = Array.isArray(state.products) ? state.products : [];
+      const parties = Array.isArray(state.parties) ? state.parties : [];
+      const warehouses = Array.isArray(state.warehouses) ? state.warehouses : [];
+      const invoiceById = new Map();
+      const voucherByInvoice = new Map();
+      const issues = [];
+      const counts = {
+        invoicesChecked: invoices.length, saleInvoices: 0, purchaseInvoices: 0,
+        missingVouchers: 0, duplicateVouchers: 0, orphanVouchers: 0,
+        invalidInvoiceDates: 0, invalidVoucherDates: 0, voucherDateMismatches: 0,
+        incompleteLines: 0, invalidInvoiceTotals: 0, ledgerAmountMismatches: 0,
+        invalidPartyLinks: 0, invalidProductLinks: 0, invalidWarehouseLinks: 0
+      };
+      const add = (type, invoice, message, detail) => issues.push({
+        type, invoiceId: invoice ? String(invoice.id ?? '') : '—',
+        invoiceType: invoice ? String(invoice.type || '') : '—',
+        message, detail: String(detail || '')
+      });
+      const finite = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value));
+      const near = (a,b) => Math.abs(Number(a)-Number(b)) <= 1;
+      invoices.forEach(inv => {
+        const id = String(inv.id ?? '').trim();
+        if (!id) add('invoice-id', inv, 'شناسه فاکتور ثبت نشده است.', 'فاکتور بدون شناسه قابل اتصال مطمئن به سند نیست.');
+        if (invoiceById.has(id)) add('duplicate-invoice-id', inv, 'شناسه فاکتور تکراری است.', 'شناسه فاکتور بیش از یک بار در فهرست ثبت شده است.');
+        else invoiceById.set(id, inv);
+        if (inv.type === 'sale') counts.saleInvoices++; else counts.purchaseInvoices++;
+        const invoiceDate = inv.date;
+        const invoiceOrdinal = jalaliDateOrdinal(invoiceDate);
+        if (!invoiceDate || invoiceOrdinal === null) {
+          counts.invalidInvoiceDates++;
+          add('invoice-date', inv, 'تاریخ فاکتور نامعتبر یا خالی است.', 'تاریخ ثبت‌شده: ' + String(invoiceDate ?? 'خالی'));
+        }
+        if (inv.dueDate !== undefined && inv.dueDate !== null && String(inv.dueDate).trim() !== '') {
+          const dueOrdinal = jalaliDateOrdinal(inv.dueDate);
+          if (dueOrdinal === null || (invoiceOrdinal !== null && dueOrdinal < invoiceOrdinal)) {
+            counts.invalidInvoiceDates++;
+            add('invoice-due-date', inv, 'تاریخ سررسید نامعتبر یا قبل از تاریخ فاکتور است.', 'صدور: ' + String(invoiceDate) + ' | سررسید: ' + String(inv.dueDate));
+          }
+        }
+        if (parties.length && !parties.some(p => String(p?.id) === String(inv.partyId))) {
+          counts.invalidPartyLinks++;
+          add('invoice-party', inv, 'طرف حساب فاکتور در فهرست اشخاص پیدا نشد.', 'شناسه طرف حساب: ' + String(inv.partyId ?? 'ثبت‌نشده'));
+        }
+        if (warehouses.length && !warehouses.some(w => String(w?.id) === String(inv.warehouseId))) {
+          counts.invalidWarehouseLinks++;
+          add('invoice-warehouse', inv, 'انبار فاکتور در فهرست انبارها پیدا نشد.', 'شناسه انبار: ' + String(inv.warehouseId ?? 'ثبت‌نشده'));
+        }
+        const lines = Array.isArray(inv.items) ? inv.items : [];
+        if (!lines.length) {
+          counts.incompleteLines++;
+          add('invoice-lines-empty', inv, 'فاکتور فاقد ردیف کالا است.', 'حداقل یک ردیف معتبر مورد انتظار است.');
+        }
+        let gross = 0, discount = 0, net = 0, lineValuesValid = true;
+        lines.forEach((line, index) => {
+          const productId = String(line?.productId ?? '').trim();
+          const qtyOk = finite(line?.kg) && Number(line.kg) > 0;
+          const priceOk = finite(line?.price) && Number(line.price) >= 0;
+          const disc = line?.disc === undefined || line?.disc === null || String(line.disc).trim() === '' ? 0 : Number(line.disc);
+          const totalOk = finite(line?.total) && Number(line.total) >= 0;
+          const rowGross = qtyOk && priceOk ? Number(line.kg) * Number(line.price) : NaN;
+          const rowNet = totalOk ? Number(line.total) : NaN;
+          const rowOk = !!productId && qtyOk && priceOk && Number.isFinite(disc) && disc >= 0 &&
+            Number.isFinite(rowGross) && disc <= rowGross + 0.000001 && totalOk &&
+            Math.abs(rowNet - Math.max(0, rowGross - disc)) <= 0.01;
+          if (!rowOk) {
+            counts.incompleteLines++; lineValuesValid = false;
+            add('invoice-line', inv, 'ردیف کالای فاکتور ناقص یا دارای مقدار نامعتبر است.', 'ردیف ' + (index+1) + ' | کالا: ' + (productId || 'بدون شناسه') + ' | تعداد: ' + String(line?.kg ?? 'خالی') + ' | قیمت: ' + String(line?.price ?? 'خالی') + ' | تخفیف: ' + String(line?.disc ?? 0) + ' | مبلغ: ' + String(line?.total ?? 'خالی'));
+          }
+          if (productId && products.length && !products.some(p => String(p?.id) === productId)) {
+            counts.invalidProductLinks++;
+            add('invoice-product', inv, 'کالای ردیف فاکتور در فهرست کالاها پیدا نشد.', 'ردیف ' + (index+1) + ' | شناسه کالا: ' + productId);
+          }
+          if (rowOk) { gross += rowGross; discount += disc; net += rowNet; }
+        });
+        const storedGross = inv.subtotal;
+        const storedDiscount = inv.discount;
+        const storedNet = inv.netSubtotal !== undefined ? inv.netSubtotal : inv.subtotal;
+        const vatRate = inv.vatRate === undefined || inv.vatRate === null || String(inv.vatRate).trim() === '' ? 0 : Number(inv.vatRate);
+        const expectedVat = Number.isFinite(vatRate) && vatRate >= 0 ? Math.round(net * vatRate / 100) : NaN;
+        const vat = inv.vatAmount;
+        const grand = inv.grandTotal;
+        if (!lineValuesValid || !finite(storedGross) || !finite(storedDiscount) || !finite(storedNet) ||
+            !finite(vat) || !finite(grand) || !Number.isFinite(expectedVat) ||
+            !near(storedGross,gross) || !near(storedDiscount,discount) || !near(storedNet,net) ||
+            !near(vat,expectedVat) || !near(grand,net+Number(vat))) {
+          counts.invalidInvoiceTotals++;
+          add('invoice-total', inv, 'جمع سربرگ فاکتور با محاسبه ردیف‌ها، تخفیف یا مالیات سازگار نیست.', 'ناخالص ردیف‌ها: ' + gross + ' | ناخالص ثبت‌شده: ' + String(storedGross) + ' | تخفیف ردیف‌ها: ' + discount + ' | تخفیف ثبت‌شده: ' + String(storedDiscount) + ' | خالص ردیف‌ها: ' + net + ' | خالص ثبت‌شده: ' + String(storedNet) + ' | مالیات مورد انتظار: ' + expectedVat + ' | مالیات ثبت‌شده: ' + String(vat) + ' | جمع نهایی: ' + String(grand));
+        }
+      });
+      vouchers.filter(v => v && String(v.sourceType || '') === 'invoice').forEach(v => {
+        const id = String(v.sourceId ?? '').trim();
+        if (!invoiceById.has(id)) {
+          counts.orphanVouchers++;
+          add('orphan-voucher', null, 'سند حسابداری فاکتور بدون فاکتور مرجع است.', 'شناسه سند: ' + String(v.id ?? '—') + ' | شناسه فاکتور منبع: ' + (id || 'ثبت‌نشده'));
+          return;
+        }
+        if (!voucherByInvoice.has(id)) voucherByInvoice.set(id, []);
+        voucherByInvoice.get(id).push(v);
+      });
+      invoices.forEach(inv => {
+        const id = String(inv.id ?? '').trim();
+        const linked = voucherByInvoice.get(id) || [];
+        if (!linked.length) {
+          counts.missingVouchers++;
+          add('missing-voucher', inv, 'سند حسابداری متناظر با فاکتور پیدا نشد.', 'فاکتور فعال/تاریخی بدون سند منبع invoice');
+          return;
+        }
+        if (linked.length > 1) {
+          counts.duplicateVouchers++;
+          add('duplicate-voucher', inv, 'برای یک فاکتور بیش از یک سند حسابداری با منشأ فاکتور ثبت شده است.', 'تعداد اسناد: ' + linked.length + ' | شناسه‌ها: ' + linked.map(v => String(v.id ?? '—')).join(', '));
+          return;
+        }
+        const voucher = linked[0];
+        const voucherDate = voucher.date || voucher.operationDate;
+        const voucherOrdinal = jalaliDateOrdinal(voucherDate);
+        if (!voucherDate || voucherOrdinal === null) {
+          counts.invalidVoucherDates++;
+          add('voucher-date', inv, 'تاریخ سند حسابداری فاکتور نامعتبر یا خالی است.', 'تاریخ سند: ' + String(voucherDate ?? 'خالی'));
+        } else if (jalaliDateOrdinal(inv.date) !== null && voucherOrdinal !== jalaliDateOrdinal(inv.date)) {
+          counts.voucherDateMismatches++;
+          add('voucher-date-mismatch', inv, 'تاریخ سند حسابداری با تاریخ فاکتور یکسان نیست.', 'تاریخ فاکتور: ' + String(inv.date) + ' | تاریخ سند: ' + String(voucherDate));
+        }
+        if (inv.voucherId !== undefined && inv.voucherId !== null && String(inv.voucherId) !== String(voucher.id)) {
+          add('voucher-reference', inv, 'شناسه سند ذخیره‌شده در فاکتور با سند منبع یکسان نیست.', 'شناسه ثبت‌شده: ' + String(inv.voucherId) + ' | سند پیدا‌شده: ' + String(voucher.id));
+        }
+        const lines = Array.isArray(voucher.lines) ? voucher.lines : [];
+        const sum = (code, side) => lines.filter(line => String(line?.code || '').trim() === code)
+          .reduce((total,line) => total + (finite(line?.[side]) ? Number(line[side]) : 0), 0);
+        const payCode = inv.payMethod === 'credit'
+          ? (inv.type === 'sale' ? '1103' : '2101')
+          : (inv.payMethod === 'cash' ? '1101' : '1102');
+        const net = Number(inv.netSubtotal !== undefined ? inv.netSubtotal : inv.subtotal);
+        const vat = Number(inv.vatAmount);
+        const grand = Number(inv.grandTotal);
+        let mismatch = !Array.isArray(voucher.lines) || lines.length < 2;
+        if (![net,vat,grand].every(Number.isFinite)) mismatch = true;
+        else if (inv.type === 'sale') {
+          mismatch = mismatch || !near(sum(payCode,'debit')-sum(payCode,'credit'),grand) ||
+            !near(sum('4101','credit')-sum('4101','debit'),net) ||
+            !near(sum('2103','credit')-sum('2103','debit'),vat);
+          const cogsLines = (Array.isArray(inv.items) ? inv.items : []).map(line => line?.costOfGoodsSold);
+          if (cogsLines.some(value => !finite(value) || Number(value) < 0)) {
+            mismatch = true;
+            add('invoice-cogs-missing', inv, 'بهای تمام‌شده یک یا چند ردیف فروش ثبت نشده یا نامعتبر است.', 'ردیف‌های فروش باید مبنای بهای تمام‌شده قابل تأیید داشته باشند.');
+          } else {
+            const cogs = cogsLines.reduce((total,value)=>total+Number(value),0);
+            mismatch = mismatch || !near(sum('5101','debit'),cogs) || !near(sum('1105','credit'),cogs);
+          }
+        } else {
+          mismatch = mismatch || !near(sum('1105','debit')-sum('1105','credit'),net) ||
+            !near(sum('1106','debit')-sum('1106','credit'),vat) ||
+            !near(sum(payCode,'credit')-sum(payCode,'debit'),grand);
+        }
+        const totals = lines.reduce((acc,line) => {
+          if (!finite(line?.debit) || !finite(line?.credit) || Number(line.debit)<0 || Number(line.credit)<0 || (Number(line.debit)>0 && Number(line.credit)>0)) acc.invalid = true;
+          else { acc.debit += Number(line.debit); acc.credit += Number(line.credit); }
+          return acc;
+        },{debit:0,credit:0,invalid:false});
+        if (totals.invalid || !near(totals.debit,totals.credit)) mismatch = true;
+        if (mismatch) {
+          counts.ledgerAmountMismatches++;
+          add('invoice-ledger', inv, 'مبالغ یا ساختار سند حسابداری با فاکتور و ردیف‌های آن تطبیق ندارد.', 'بدهکار سند: ' + totals.debit + ' | بستانکار سند: ' + totals.credit + ' | حساب تسویه: ' + payCode + ' | مبلغ نهایی فاکتور: ' + String(inv.grandTotal));
+        }
+      });
+      return { ...counts, issueCount: issues.length, issues };
+    }
+
     function buildInvoiceReturnIntegrityAudit() {
       const invoices = (Array.isArray(state.invoices) ? state.invoices : []).filter(invoice => invoice && ['sale','purchase'].includes(invoice.type));
       const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
@@ -11531,6 +11701,17 @@
         ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>' +
         (inventoryValuationIntegrity.issues.length ? '<div class="space-y-1 max-h-72 overflow-y-auto">'+inventoryValuationIntegrity.issues.slice(0,40).map(item=>'<div class="border-t pt-1 text-[10px]"><b>'+escapeLedgerText(item.productName)+' ('+escapeLedgerText(item.productId)+')</b> — '+escapeLedgerText(item.message)+'<p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">موردی برای بررسی در این کنترل پیدا نشد.</p>')+
         '<p class="text-[10px] text-slate-500">مقادیر با بهای صفر به‌تنهایی خطا محسوب نمی‌شوند. گزارش فقط‌خواندنی است و موجودی یا بهای کالا را خودکار تغییر نمی‌دهد.</p></div>';
+      const invoiceDocumentAudit = buildInvoiceDocumentIntegrityAudit();
+      const invoiceDocumentAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی کامل فاکتورهای خرید و فروش</strong><b class="block">'+(invoiceDocumentAudit.issueCount ? faNum(invoiceDocumentAudit.issueCount)+' مورد نیازمند بررسی' : 'فاکتورها، ردیف‌ها و اسناد حسابداری تطبیق دارند')+'</b>' +
+        '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[
+          ['فاکتورهای بررسی‌شده',invoiceDocumentAudit.invoicesChecked],['فاکتور خرید',invoiceDocumentAudit.purchaseInvoices],['فاکتور فروش',invoiceDocumentAudit.saleInvoices],
+          ['سند مفقود',invoiceDocumentAudit.missingVouchers],['سند تکراری',invoiceDocumentAudit.duplicateVouchers],['سند بدون فاکتور',invoiceDocumentAudit.orphanVouchers],
+          ['تاریخ فاکتور/سررسید نامعتبر',invoiceDocumentAudit.invalidInvoiceDates],['تاریخ سند نامعتبر',invoiceDocumentAudit.invalidVoucherDates],['اختلاف تاریخ فاکتور و سند',invoiceDocumentAudit.voucherDateMismatches],
+          ['ردیف کالای ناقص',invoiceDocumentAudit.incompleteLines],['مغایرت جمع فاکتور',invoiceDocumentAudit.invalidInvoiceTotals],['مغایرت مبلغ دفترکل',invoiceDocumentAudit.ledgerAmountMismatches],
+          ['طرف حساب نامعتبر',invoiceDocumentAudit.invalidPartyLinks],['کالای نامعتبر',invoiceDocumentAudit.invalidProductLinks],['انبار نامعتبر',invoiceDocumentAudit.invalidWarehouseLinks]
+        ].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>' +
+        (invoiceDocumentAudit.issues.length ? '<div class="space-y-1 max-h-80 overflow-y-auto">'+invoiceDocumentAudit.issues.slice(0,100).map(item=>'<div class="border-t pt-1 text-[10px]"><b>فاکتور '+escapeLedgerText(item.invoiceId)+' | '+escapeLedgerText(item.invoiceType)+'</b> — '+escapeLedgerText(item.message)+'<p class="text-slate-500">'+escapeLedgerText(item.detail)+'</p></div>').join('')+'</div>' : '<p class="text-xs text-emerald-700">موردی برای بررسی در فاکتورهای خرید و فروش پیدا نشد.</p>')+
+        '<p class="text-[10px] text-slate-500">این ممیزی فقط‌خواندنی است؛ هیچ فاکتور، سند، موجودی یا مانده‌ای را تغییر نمی‌دهد. اختلاف‌ها برای بررسی دستی گزارش می‌شوند.</p></div>';
       const invoiceReturnAudit = buildInvoiceReturnIntegrityAudit();
       const invoiceReturnAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق برگشت خرید و فروش با فاکتور، انبار و دفترکل</strong><b class="block">'+(invoiceReturnAudit.issueCount ? faNum(invoiceReturnAudit.issueCount)+' مورد نیازمند بررسی' : 'سوابق برگشت با فاکتور، کاردکس و سند حسابداری سازگار است')+'</b>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[
@@ -11596,7 +11777,7 @@
         '<div class="bg-white rounded-2xl p-4 border space-y-3">' +
         '<div class="flex flex-wrap justify-between items-center gap-2"><strong>تراز آزمایشی چهارستونی</strong>' +
         '<div class="flex flex-wrap gap-2"><button onclick="exportTrialBalanceCSV()" class="touch-btn bg-emerald-700 text-white rounded-lg px-3 font-bold">دانلود CSV</button><button onclick="printTrialBalanceReport()" class="touch-btn bg-slate-700 text-white rounded-lg px-3 font-bold">چاپ / ذخیره PDF</button></div></div>' +
-        inventoryAuditPanel + inventoryValuationIntegrityPanel + invoiceReturnAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
+        inventoryAuditPanel + inventoryValuationIntegrityPanel + invoiceDocumentAuditPanel + invoiceReturnAuditPanel + inventoryValuePanel + inventoryValueSourcesPanel + warehouseTransferAuditPanel + subledgerAuditPanel + fiscalAuditPanel + auditPanel +
         '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">' +
         '<label class="text-xs font-bold">از تاریخ (شمسی)<input id="trial-from" value="' + escapeLedgerText(from) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label>' +
         '<label class="text-xs font-bold">تا تاریخ (شمسی)<input id="trial-to" value="' + escapeLedgerText(to) + '" class="touch-btn mt-1 w-full border rounded-lg px-2 tabular-nums" /></label></div>' +
