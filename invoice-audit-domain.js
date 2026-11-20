@@ -67,6 +67,7 @@
       }
       let gross = 0, net = 0, discount = 0;
       const expectedQtyByProduct = new Map();
+      const expectedMovementCountByProduct = new Map();
       for (const [index, line] of lines.entries()) {
         const qtyValid = finite(line?.kg);
         const priceValid = finite(line?.price);
@@ -90,6 +91,7 @@
         if (line?.productId !== undefined && line?.productId !== null) {
           const productId = key(line.productId);
           expectedQtyByProduct.set(productId, (expectedQtyByProduct.get(productId) || 0) + (Number.isFinite(qty) ? qty : 0));
+          expectedMovementCountByProduct.set(productId, (expectedMovementCountByProduct.get(productId) || 0) + 1);
         }
       }
 
@@ -191,10 +193,25 @@
           continue;
         }
         const movements = (Array.isArray(product.kardex) ? product.kardex : [])
-          .filter(move => String(move?.doc || '') === movementLabel);
-        const movedQty = sum(movements, move => invoice.type === 'sale' ? move?.outQty : move?.inQty);
+          .filter(move => String(move?.doc || '').trim() === movementLabel);
+        const direction = invoice.type === 'sale' ? 'outQty' : 'inQty';
+        const oppositeDirection = invoice.type === 'sale' ? 'inQty' : 'outQty';
+        const movedQty = sum(movements, move => move?.[direction]);
         if (!movements.length || !close(movedQty, expectedQty)) {
           addFinding(findings, invoice, 'warning', 'inventory-movement-mismatch', 'گردش کاردکس با مقدار کالای فاکتور تطبیق ندارد: ' + (product.name || productId));
+        }
+        if (movements.length > (expectedMovementCountByProduct.get(productId) || 0)) {
+          addFinding(findings, invoice, 'warning', 'inventory-movement-duplicate', 'تعداد ردیف‌های کاردکس از تعداد ردیف‌های متناظر فاکتور بیشتر است: ' + (product.name || productId));
+        }
+        if (movements.some(move => amount(move?.[oppositeDirection]) > TOLERANCE)) {
+          addFinding(findings, invoice, 'error', 'inventory-movement-direction-mismatch', 'جهت ورود/خروج کاردکس با نوع فاکتور سازگار نیست: ' + (product.name || productId));
+        }
+        if (movements.some(move => String(move?.date || '') !== String(invoice.date || ''))) {
+          addFinding(findings, invoice, 'warning', 'inventory-movement-date-mismatch', 'تاریخ گردش کاردکس با تاریخ فاکتور یکسان نیست: ' + (product.name || productId));
+        }
+        if (invoice.warehouseId !== undefined && invoice.warehouseId !== null &&
+            key(product.warehouseId) !== key(invoice.warehouseId)) {
+          addFinding(findings, invoice, 'warning', 'inventory-warehouse-mismatch', 'کالای متصل به ردیف فاکتور در انبار ثبت‌شده روی فاکتور قرار ندارد: ' + (product.name || productId));
         }
       }
     }

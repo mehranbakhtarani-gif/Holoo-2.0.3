@@ -22,7 +22,7 @@ const baseState = {
   invoices: [validSale], vouchers: [validVoucher],
   parties: [{ id: 'C1', name: 'مشتری نمونه' }],
   warehouses: [{ id: 'W1', name: 'انبار اصلی' }],
-  products: [{ id: 'P1', name: 'کالای نمونه', kardex: [{ doc: 'فاکتور فروش #1001', outQty: 2, inQty: 0 }] }]
+  products: [{ id: 'P1', name: 'کالای نمونه', warehouseId: 'W1', kardex: [{ date: '1405/08/29', doc: 'فاکتور فروش #1001', outQty: 2, inQty: 0 }] }]
 };
 const ordinal = value => value === '1405/08/29' ? 1 : value === '1405/09/01' ? 2 : null;
 
@@ -54,6 +54,34 @@ const ordinal = value => value === '1405/08/29' ? 1 : value === '1405/09/01' ? 2
   broken.products[0].kardex[0].outQty = 1;
   const result = auditInvoices(broken, { dateOrdinal: ordinal });
   assert.ok(result.findings.some(item => item.code === 'inventory-movement-mismatch'));
+}
+{
+  const broken = structuredClone(baseState);
+  broken.products[0].kardex[0].inQty = 2;
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'inventory-movement-direction-mismatch'),
+    'a sale must not be represented by an inbound stock movement');
+}
+{
+  const broken = structuredClone(baseState);
+  broken.products[0].kardex[0].date = '1405/08/30';
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'inventory-movement-date-mismatch'),
+    'stock movement date must match the source invoice date');
+}
+{
+  const broken = structuredClone(baseState);
+  broken.products[0].warehouseId = 'W2';
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'inventory-warehouse-mismatch'),
+    'invoice stock movement must resolve to the invoice warehouse');
+}
+{
+  const broken = structuredClone(baseState);
+  broken.products[0].kardex.push({ date: '1405/08/29', doc: 'فاکتور فروش #1001', outQty: 1, inQty: 0 });
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'inventory-movement-duplicate'),
+    'extra kardex rows for one invoice line must be visible even when totals still reconcile');
 }
 {
   const broken = structuredClone(baseState);
