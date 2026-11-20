@@ -30,6 +30,7 @@ jobs:
           node tests/invoice-integrity-audit.test.js
           node tests/inventory-value-discrepancy-sources.test.js
           node tests/inventory-cost-audit.test.js
+          node tests/inventory-control-reconciliation.test.js
           node tests/settlement-ledger-line-integrity.test.js
           node tests/settlement-allocation-legacy-fallback.test.js
           node tests/settlement-duplicate-allocation-rows.test.js
