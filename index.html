@@ -6008,8 +6008,10 @@
       if (!from || !to || from > to || jalaliDateOrdinal(fromDate) === null || jalaliDateOrdinal(toDate) === null) {
         throw new Error('بازه تاریخ گردش طرف حساب معتبر نیست؛ تاریخ شمسی واقعی وارد کنید.');
       }
-      const party = (state.parties || []).find(item => String(item.id) === String(partyId));
-      if (!party) throw new Error('طرف حساب برای تهیه گردش حساب پیدا نشد.');
+      const matchingParties = (state.parties || []).filter(item => String(item?.id ?? '') === String(partyId));
+      if (!matchingParties.length) throw new Error('طرف حساب برای تهیه گردش حساب پیدا نشد.');
+      if (matchingParties.length > 1) throw new Error('شناسه این طرف حساب تکراری است؛ برای جلوگیری از انتساب گردش به شخص اشتباه، گزارش تفصیلی مسدود شد.');
+      const party = matchingParties[0];
       const controlCodes = getPartyLedgerControlCodes(party);
       const entries = [];
       let openingDebit = 0, openingCredit = 0, periodDebit = 0, periodCredit = 0;
