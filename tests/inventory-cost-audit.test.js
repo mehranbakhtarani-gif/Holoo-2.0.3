@@ -12,4 +12,10 @@ test('matches sale return with sourceEvent invoice id',()=>{const inv=sale('S6',
 test('matches purchase return against inventory carrying value',()=>{const inv=purchase('P7',{returnRefs:[{id:'R7',costOfGoodsSold:0,items:[{productId:'K1',qty:1,inventoryCost:90}]}]});const vouchers=[v('VP7','invoice','P7',null,[{code:'1105',debit:500,credit:0}]),v('VR7','invoice_return','R7','P7',[{code:'1105',debit:0,credit:90}])];assert.equal(audit({invoices:[inv],vouchers}).returnAmountMismatches,0);});
 test('flags missing return voucher and orphan return voucher',()=>{const inv=sale('S8',{returnRefs:[{id:'R8',costOfGoodsSold:10,items:[]}]});const r=audit({invoices:[inv],vouchers:[v('VO','invoice_return','ORPHAN','S8',[])]});assert.equal(r.returnLinksUnverified,1);assert.equal(r.orphanReturnVouchers,1);});
 test('does not mutate source records',()=>{const state={invoices:[sale('S9')],vouchers:[v('V9','invoice','S9',null,[{code:'5101',debit:300,credit:0},{code:'1105',debit:0,credit:300}])],products:[{id:'K1',batches:[]}]};const before=JSON.stringify(state);audit(state);assert.equal(JSON.stringify(state),before);});
+
+test('detects current stock differing from last Kardex balance',()=>{const r=audit({products:[{id:'K1',stock:7,kardex:[{inQty:10,outQty:2,bal:8,doc:'فروش'}]}]});assert.equal(r.kardexStockMismatches,1);});
+test('detects remaining batch quantity differing from current stock',()=>{const r=audit({products:[{id:'K1',stock:8,batches:[{id:'B1',quantity:10,remainingQty:6,unitCost:100}]}]});assert.equal(r.batchStockMismatches,1);});
+test('accepts matching stock, last Kardex balance and batch remaining quantity',()=>{const r=audit({products:[{id:'K1',stock:8,kardex:[{inQty:10,outQty:2,bal:8}],batches:[{id:'B1',quantity:10,remainingQty:8,unitCost:100}]}]});assert.equal(r.kardexStockMismatches,0);assert.equal(r.batchStockMismatches,0);assert.equal(r.unverifiedStockTrace,0);});
+test('marks positive stock without Kardex or batch trace as unverified',()=>{const r=audit({products:[{id:'K1',stock:4}]});assert.equal(r.unverifiedStockTrace,1);});
+
 console.log('PASS inventory cost audit suite');
