@@ -11673,7 +11673,7 @@
           return sum + (Number.isFinite(value) && value > 0 ? value : 0);
         }, 0);
         const expectedRemaining = initial - appliedTotal - refundedTotal;
-        if (finite(credit.amount) && initial > 0 && (!finite(credit.remainingAmount) || Math.abs(remaining - expectedRemaining) > 1 || expectedRemaining < -1)) {
+        if (finite(credit.amount) && initial > 0 && ((!finite(credit.remainingAmount) && (appliedTotal > 1 || refundedTotal > 1)) || (finite(credit.remainingAmount) && Math.abs(remaining - expectedRemaining) > 1) || expectedRemaining < -1)) {
           counts.creditBalanceMismatches++;
           add('credit-rollforward-mismatch','مانده اعتبار با مبلغ اولیه منهای اعمال روی فاکتورها و استردادها تطبیق ندارد.','اعتبار: '+id+' | مبلغ اولیه: '+initial+' | اعمال‌شده: '+appliedTotal+' | مستردشده: '+refundedTotal+' | مانده ثبت‌شده: '+String(credit.remainingAmount ?? 'ثبت‌نشده')+' | مانده محاسباتی: '+expectedRemaining);
         }
