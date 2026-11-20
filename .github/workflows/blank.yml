@@ -25,6 +25,7 @@ jobs:
           node tests/fifo-batch.test.js
           node tests/invoice-warehouse-binding.test.js
           node tests/inventory-value-discrepancy-sources.test.js
+          node tests/settlement-ledger-line-integrity.test.js
           node tests/stocktaking-atomicity.test.js
           node tests/warehouse-stagnant-days.test.js
           node tests/warehouse-batch-metadata.test.js
