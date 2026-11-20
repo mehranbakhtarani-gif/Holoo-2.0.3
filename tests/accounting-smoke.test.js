@@ -376,7 +376,7 @@ test('inventory control ledger drilldown groups 1105 movements by source and lin
         { id: 100, sourceType: 'invoice', sourceId: '42', date: '1405/01/01', lines: [{ code: '1105', debit: 800, credit: 0, desc: 'خرید کالا' }] },
         { id: 101, sourceType: 'invoice_return', sourceId: 'RET-1', sourceEvent: '42', date: '1405/01/02', lines: [{ code: '1105', debit: 0, credit: 100, desc: 'برگشت خرید' }] },
         { id: 102, sourceType: 'stocktake', sourceId: 'STK-1', sourceEvent: 'P1', date: '1405/01/03', lines: [{ code: '1105', debit: 50, credit: 0, desc: 'اضافه انبار' }] },
-        { id: 103, date: '1405/01/04', lines: [{ code: '1105', debit: 20, credit: 0, desc: 'سند دستی' }] }
+        { id: 103, sourceType: 'manual', sourceId: 'MAN-103', date: '1405/01/04', lines: [{ code: '1105', debit: 20, credit: 0, desc: 'سند دستی' }] }
       ]
     }
   });
