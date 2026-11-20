@@ -12574,7 +12574,6 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
         ? state.accountCatalog : (typeof buildAccountCatalog === 'function' ? buildAccountCatalog() : []);
       const catalog = sourceCatalog.filter(node => node && node.active !== false);
       const rows = Array.isArray(report.rows) ? report.rows : [];
-      const byCode = new Map(rows.map(row => [String(row.code || '').trim(), row]));
       const idCounts = new Map();
       catalog.forEach(node => {
         const id = String(node.id ?? '').trim();
@@ -12624,14 +12623,14 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
         const code = String(node.code || '').trim();
         const parentId = String(node.parentId ?? '').trim();
         if (node.level === 'group') {
-          if (!/^\\d$/.test(code) || parentId) hierarchyIssues++;
+          if (!/^\d$/.test(code) || parentId) hierarchyIssues++;
         } else if (node.level === 'general') {
           const parent = uniqueById.get(parentId);
-          if (!/^\\d{2}$/.test(code) || !parent || parent.level !== 'group' ||
+          if (!/^\d{2}$/.test(code) || !parent || parent.level !== 'group' ||
               String(parent.code) !== code.slice(0, 1)) hierarchyIssues++;
         } else if (node.level === 'subsidiary') {
           const parent = uniqueById.get(parentId);
-          if (!/^\\d{4,8}$/.test(code) || !parent || parent.level !== 'general' ||
+          if (!/^\d{4,8}$/.test(code) || !parent || parent.level !== 'general' ||
               !code.startsWith(String(parent.code || ''))) hierarchyIssues++;
         } else hierarchyIssues++;
       });
