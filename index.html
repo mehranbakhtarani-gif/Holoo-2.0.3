@@ -2820,6 +2820,47 @@
       const str = faNum(v.toLocaleString('en-US'));
       return unit ? `${str} ${isToman ? 'تومان' : 'ریال'}` : str;
     }
+    // Monetary values are stored in whole rial. BigInt is used for intermediate
+    // arithmetic to prevent floating-point drift and unsafe integer aggregation.
+    function safeMoneyInteger(value) {
+      if (value === null || value === undefined || value === '') return null;
+      const number = Number(value);
+      if (!Number.isFinite(number) || Math.abs(number) > Number.MAX_SAFE_INTEGER) return null;
+      const rounded = Math.round(number);
+      return Number.isSafeInteger(rounded) ? rounded : null;
+    }
+    function safeMoneySum(values) {
+      if (!Array.isArray(values)) return null;
+      let total = 0n;
+      for (const value of values) {
+        const amount = safeMoneyInteger(value);
+        if (amount === null) return null;
+        total += BigInt(amount);
+      }
+      const limit = BigInt(Number.MAX_SAFE_INTEGER);
+      return total > limit || total < -limit ? null : Number(total);
+    }
+    function safePercentAmount(amount, rate) {
+      const base = safeMoneyInteger(amount), percent = Number(rate);
+      if (base === null || !Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+      const scaledRate = Math.round(percent * 1000000);
+      if (!Number.isSafeInteger(scaledRate)) return null;
+      const numerator = BigInt(base) * BigInt(scaledRate);
+      const rounded = (numerator + 50000000n) / 100000000n;
+      const limit = BigInt(Number.MAX_SAFE_INTEGER);
+      return rounded > limit || rounded < -limit ? null : Number(rounded);
+    }
+    function safeProportionalAmount(totalAmount, cumulativeBase, totalBase) {
+      const total = safeMoneyInteger(totalAmount);
+      const cumulative = safeMoneyInteger(cumulativeBase);
+      const denominator = safeMoneyInteger(totalBase);
+      if (total === null || cumulative === null || denominator === null || denominator <= 0) return null;
+      const numerator = BigInt(total) * BigInt(cumulative);
+      const divisor = BigInt(denominator);
+      const rounded = (numerator + divisor / 2n) / divisor;
+      const limit = BigInt(Number.MAX_SAFE_INTEGER);
+      return rounded > limit || rounded < -limit ? null : Number(rounded);
+    }
     function toggleCurrency() {
       state.currency = state.currency === 'IRR' ? 'IRT' : 'IRR';
       saveState(); renderAll();
@@ -6557,8 +6598,10 @@
       const p = getSelectedInvoiceProduct();
       const unitId = document.getElementById('inv-line-unit-mode').value;
       const rawQty = Number(document.getElementById('inv-line-qty').value || 0);
-      const price = isGift ? 0 : Number(document.getElementById('inv-line-price').value || 0);
-      const disc = isGift ? 0 : Number(document.getElementById('inv-line-disc').value || 0);
+      const rawPrice = isGift ? 0 : Number(document.getElementById('inv-line-price').value || 0);
+      const rawDiscount = isGift ? 0 : Number(document.getElementById('inv-line-disc').value || 0);
+      const price = safeMoneyInteger(rawPrice);
+      const disc = safeMoneyInteger(rawDiscount);
       if (!p || rawQty <= 0) return;
 
       if (unitId !== 'kg' && !document.getElementById('confirm-unit-conv').checked) {
@@ -6569,6 +6612,13 @@
       const u = state.customUnits.find(x => x.id === unitId);
       const factor = unitId === 'kg' ? 1 : (unitId === 'carton' ? p.cartonKg : (u?.factor || 1));
       const kg = rawQty * factor;
+      const grossAmount = Number.isFinite(kg * price) ? safeMoneyInteger(kg * price) : null;
+      if (!Number.isFinite(rawQty) || rawQty <= 0 || !Number.isFinite(factor) || factor <= 0 ||
+          !Number.isFinite(kg) || kg <= 0 || price === null || price < 0 ||
+          disc === null || disc < 0 || grossAmount === null || disc > grossAmount) {
+        showToast('مقدار، قیمت یا تخفیف از محدوده معتبر خارج است؛ مبلغ باید در محدوده صحیح امن ریال باشد.', 'error');
+        return;
+      }
       const cartons = Math.round((kg / p.cartonKg) * 10) / 10;
 
       if (String(p.warehouseId) !== String(document.getElementById('inv-warehouse').value)) {
@@ -6581,7 +6631,7 @@
 
       invDraft.lines.push({
         productId: invDraft.type === 'purchase' ? String(p.baseProductId || p.id) : p.id, name: isGift ? `${p.name} (🎁 اشانتیون / نمونه)` : p.name,
-        cartons, kg, price, disc, isGift, total: Math.max(0, (kg * price) - disc), returnedKg: 0,
+        cartons, kg, price, disc, isGift, total: safeMoneySum([grossAmount, -disc]), returnedKg: 0,
         lot: document.getElementById('inv-line-lot')?.value.trim() || '',
         productionDate: document.getElementById('inv-line-prod-date')?.value.trim() || '',
         expiryDate: document.getElementById('inv-line-expiry')?.value.trim() || ''
@@ -6600,19 +6650,63 @@
     }
 
     function recalcInvDraft() {
-      const grossSub = invDraft.lines.reduce((s, l) => s + (l.kg * l.price), 0);
-      const disc = invDraft.lines.reduce((s, l) => s + l.disc, 0);
-      const netSub = invDraft.lines.reduce((s, l) => s + l.total, 0);
-      const vat = Math.round(netSub * (Number(document.getElementById('inv-vat-rate').value || 0) / 100));
-      const comm = Math.round(netSub * (Number(document.getElementById('inv-commission-rate').value || 0) / 100));
-      document.getElementById('inv-sum-sub').textContent = money(grossSub);
-      document.getElementById('inv-sum-disc').textContent = money(disc);
-      document.getElementById('inv-sum-vat').textContent = money(vat);
-      document.getElementById('inv-sum-comm').textContent = money(comm);
-      document.getElementById('inv-sum-grand').textContent = money(netSub + vat);
+      const grossSub = safeMoneySum(invDraft.lines.map(line => safeMoneyInteger(Number(line.kg) * Number(line.price))));
+      const disc = safeMoneySum(invDraft.lines.map(line => line.disc));
+      const netSub = safeMoneySum(invDraft.lines.map(line => line.total));
+      const vatRate = Number(document.getElementById('inv-vat-rate').value || 0);
+      const commRate = Number(document.getElementById('inv-commission-rate').value || 0);
+      const vat = netSub === null ? null : safePercentAmount(netSub, vatRate);
+      const comm = netSub === null ? null : safePercentAmount(netSub, commRate);
+      const grand = netSub === null || vat === null ? null : safeMoneySum([netSub, vat]);
+      document.getElementById('inv-sum-sub').textContent = grossSub === null ? '—' : money(grossSub);
+      document.getElementById('inv-sum-disc').textContent = disc === null ? '—' : money(disc);
+      document.getElementById('inv-sum-vat').textContent = vat === null ? '—' : money(vat);
+      document.getElementById('inv-sum-comm').textContent = comm === null ? '—' : money(comm);
+      document.getElementById('inv-sum-grand').textContent = grand === null ? '—' : money(grand);
     }
 
     function submitInvoice() {
+      // Keep posting self-contained for isolated transaction tests and callers
+      // that execute this function without the surrounding page helper scope.
+      function safeMoneyInteger(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const number = Number(value);
+        if (!Number.isFinite(number) || Math.abs(number) > Number.MAX_SAFE_INTEGER) return null;
+        const rounded = Math.round(number);
+        return Number.isSafeInteger(rounded) ? rounded : null;
+      }
+      function safeMoneySum(values) {
+        if (!Array.isArray(values)) return null;
+        let total = 0n;
+        for (const value of values) {
+          const amount = safeMoneyInteger(value);
+          if (amount === null) return null;
+          total += BigInt(amount);
+        }
+        const limit = BigInt(Number.MAX_SAFE_INTEGER);
+        return total > limit || total < -limit ? null : Number(total);
+      }
+      function safePercentAmount(amount, rate) {
+        const base = safeMoneyInteger(amount), percent = Number(rate);
+        if (base === null || !Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+        const scaledRate = Math.round(percent * 1000000);
+        if (!Number.isSafeInteger(scaledRate)) return null;
+        const numerator = BigInt(base) * BigInt(scaledRate);
+        const rounded = (numerator + 50000000n) / 100000000n;
+        const limit = BigInt(Number.MAX_SAFE_INTEGER);
+        return rounded > limit || rounded < -limit ? null : Number(rounded);
+      }
+      function safeProportionalAmount(totalAmount, cumulativeBase, totalBase) {
+        const total = safeMoneyInteger(totalAmount);
+        const cumulative = safeMoneyInteger(cumulativeBase);
+        const denominator = safeMoneyInteger(totalBase);
+        if (total === null || cumulative === null || denominator === null || denominator <= 0) return null;
+        const numerator = BigInt(total) * BigInt(cumulative);
+        const divisor = BigInt(denominator);
+        const rounded = (numerator + divisor / 2n) / divisor;
+        const limit = BigInt(Number.MAX_SAFE_INTEGER);
+        return rounded > limit || rounded < -limit ? null : Number(rounded);
+      }
       if (!invDraft.lines.length) { showToast('حداقل یک کالا اضافه کنید.', 'error'); return; }
       const type = invDraft.type;
       const pendingSourceOrderId = invDraft.sourceOrderId !== undefined && invDraft.sourceOrderId !== null ? String(invDraft.sourceOrderId) : null;
@@ -6643,23 +6737,21 @@
       }
       const invoiceLines = invDraft.lines.map(line => ({ ...line }));
       if (invoiceLines.some(line => {
-        const kg = Number(line.kg), price = Number(line.price);
-        const discount = Number(line.disc ?? 0), total = Number(line.total);
-        const gross = kg * price;
-        const expectedTotal = Math.max(0, gross - discount);
-        return !Number.isFinite(kg) || kg <= 0 ||
-          !Number.isFinite(price) || price < 0 ||
-          !Number.isFinite(discount) || discount < 0 || discount > gross ||
-          !Number.isFinite(total) || total < 0 ||
-          Math.abs(total - expectedTotal) > 0.000001;
+        const kg = Number(line.kg), price = safeMoneyInteger(line.price);
+        const discount = safeMoneyInteger(line.disc ?? 0), total = safeMoneyInteger(line.total);
+        const gross = Number.isFinite(kg * Number(line.price)) ? safeMoneyInteger(kg * Number(line.price)) : null;
+        const expectedTotal = gross === null || discount === null ? null : safeMoneySum([gross, -discount]);
+        return !Number.isFinite(kg) || kg <= 0 || price === null || price < 0 ||
+          discount === null || discount < 0 || gross === null || discount > gross ||
+          total === null || total < 0 || expectedTotal === null || total !== expectedTotal;
       })) {
-        showToast('مقدار، قیمت یا تخفیف یکی از ردیف‌ها معتبر نیست؛ تخفیف نباید از مبلغ ناخالص ردیف بیشتر باشد.', 'error'); return;
+        showToast('مقدار، قیمت یا تخفیف یکی از ردیف‌ها معتبر نیست؛ مبالغ باید صحیح و در محدوده امن ریال باشند.', 'error'); return;
       }
-      const sub = invoiceLines.reduce((sum, line) => sum + Number(line.total || 0), 0);
-      const disc = invoiceLines.reduce((sum, line) => sum + Number(line.disc || 0), 0);
-      const grossSub = invoiceLines.reduce((sum, line) => sum + (Number(line.kg) * Number(line.price)), 0);
-      const vatAmount = Math.round(sub * (vatRate / 100));
-      const commAmount = Math.round(sub * (commRate / 100));
+      const sub = safeMoneySum(invoiceLines.map(line => line.total));
+      const disc = safeMoneySum(invoiceLines.map(line => line.disc));
+      const grossSub = safeMoneySum(invoiceLines.map(line => safeMoneyInteger(Number(line.kg) * Number(line.price))));
+      const vatAmount = sub === null ? null : safePercentAmount(sub, vatRate);
+      const commAmount = sub === null ? null : safePercentAmount(sub, commRate);
       const salespersonName = String(document.getElementById('inv-salesperson').value || '').trim();
       const normalizePartyName = value => String(value || '').normalize('NFKC')
         .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
@@ -6670,21 +6762,21 @@
       if (type === 'sale' && commAmount > 0 && !salespersonParty) {
         showToast('برای ثبت پورسانت، بازاریاب باید دقیقاً از اشخاص ثبت‌شده انتخاب/تطبیق داده شود. نام واردشده با هیچ شخص فعالی یکسان نیست؛ فاکتور ثبت نشد.', 'error'); return;
       }
-      const grandTotal = sub + vatAmount;
-      if (type === 'purchase' && sub > 0) {
+      const grandTotal = sub === null || vatAmount === null ? null : safeMoneySum([sub, vatAmount]);
+      if (type === 'purchase' && sub > 0 && vatAmount !== null) {
         let allocatedBase = 0, allocatedVat = 0;
         invoiceLines.forEach(line => {
-          const lineBase = Number(line.total || 0);
-          const nextBase = allocatedBase + lineBase;
-          const nextVat = Math.round(nextBase * (vatAmount / sub));
-          line.nonRecoverableVatAmount = nextVat - allocatedVat;
-          line.inventoryCost = lineBase + line.nonRecoverableVatAmount;
+          const lineBase = safeMoneyInteger(line.total);
+          const nextBase = lineBase === null ? null : safeMoneySum([allocatedBase, lineBase]);
+          const nextVat = nextBase === null ? null : safeProportionalAmount(vatAmount, nextBase, sub);
+          line.nonRecoverableVatAmount = nextVat === null ? null : nextVat - allocatedVat;
+          line.inventoryCost = line.nonRecoverableVatAmount === null ? null : safeMoneySum([lineBase, line.nonRecoverableVatAmount]);
           allocatedBase = nextBase;
           allocatedVat = nextVat;
         });
       }
-      if (![sub, disc, grossSub, vatAmount, commAmount, grandTotal].every(Number.isFinite) ||
-          (type === 'purchase' && invoiceLines.some(line => !Number.isFinite(line.inventoryCost) || line.inventoryCost < 0))) {
+      if ([sub, disc, grossSub, vatAmount, commAmount, grandTotal].some(value => value === null) ||
+          (type === 'purchase' && invoiceLines.some(line => !Number.isSafeInteger(line.inventoryCost) || line.inventoryCost < 0))) {
         showToast('جمع مبالغ فاکتور معتبر نیست؛ از ثبت جلوگیری شد.', 'error'); return;
       }
       const id = state.invoices.length ? Math.max(...state.invoices.map(i => i.id)) + 1 : 1001;
