@@ -79,8 +79,8 @@ const dateOrdinal = () => 1;
   const source = fs.readFileSync(require.resolve('../index.html'), 'utf8');
   assert.ok(source.includes("purchaseVatTreatment: 'non_recoverable'"),
     'new purchase invoices must persist the non-recoverable VAT policy');
-  assert.ok(source.includes('line.nonRecoverableVatAmount = nextVat - allocatedVat;'),
-    'VAT must be allocated across purchase lines cumulatively without losing rounding residue');
+  assert.ok(source.includes('safeProportionalAmount(vatAmount, nextBase, sub)'),
+    'VAT must be allocated across purchase lines cumulatively with exact integer ratios');
   assert.ok(source.includes('const purchaseInventoryCost = Number(line.inventoryCost ?? line.total ?? 0);'),
     'FIFO batch and weighted-average inventory cost must include non-recoverable VAT');
   assert.ok(source.includes('debit: grandTotal, credit: 0 },'),
