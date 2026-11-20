@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const html = fs.readFileSync('index.html', 'utf8');
-for (const [i, match] of [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)].entries()) {
+for (const [i, match] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
   if (match[1].trim()) new vm.Script(match[1], { filename: 'index.html:inline-' + i });
 }
 
@@ -11,8 +11,8 @@ function sourceOf(name) {
   const start = html.indexOf('function ' + name + '(');
   assert.notEqual(start, -1, 'missing function ' + name);
   const candidates = [
-    html.indexOf('\\n    function ', start + 10),
-    html.indexOf('\\n    async function ', start + 10)
+    html.indexOf('\n    function ', start + 10),
+    html.indexOf('\n    async function ', start + 10)
   ].filter(index => index > start);
   return html.slice(start, candidates.length ? Math.min(...candidates) : html.length);
 }
@@ -72,7 +72,6 @@ sandbox.state.accountingPeriodLocks = [
 assert.equal(sandbox.getActiveAccountingPeriodLocks().length, 2);
 assert.equal(sandbox.getAccountingPeriodLockForDate(months[0].from).periodKey, 'month:1405:1');
 assert.equal(sandbox.getAccountingPeriodLockForDate(months[0].to).periodKey, 'month:1405:1');
-assert.equal(sandbox.getAccountingPeriodLockForDate('1405/01/01') !== null, true);
 assert.equal(sandbox.getAccountingPeriodLockForDate('1405/02/01'), null,
   'a reopened month must not block posting');
 assert.equal(sandbox.getAccountingPeriodLockForDate('1405/04/01'), null,
