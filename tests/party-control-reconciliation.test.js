@@ -27,13 +27,38 @@ function run(state, fromDate = '1405/01/01', toDate = '1405/12/29') {
       return mo>=1 && mo<=12 && d>=1 && d<=(mo<=6?31:mo<=11?30:29) ? y*10000+mo*100+d : null;
     },
     countInvalidReportVoucherLines(voucher) {
-      return (voucher.lines || []).filter(line => {
-        const debit=Number(line.debit ?? 0), credit=Number(line.credit ?? 0);
-        return !String(line.code || '').trim() || !Number.isFinite(debit) || !Number.isFinite(credit) ||
-          debit<0 || credit<0 || (debit>0 && credit>0);
+      const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+      return lines.filter(line => {
+        const rawDebit=line?.debit, rawCredit=line?.credit;
+        const debitPresent=rawDebit !== null && rawDebit !== undefined && String(rawDebit).trim() !== '';
+        const creditPresent=rawCredit !== null && rawCredit !== undefined && String(rawCredit).trim() !== '';
+        const debit=Number(rawDebit), credit=Number(rawCredit);
+        return !String(line?.code || '').trim() || !debitPresent || !creditPresent ||
+          !Number.isFinite(debit) || !Number.isFinite(credit) ||
+          debit<0 || credit<0 || (debit>0 && credit>0) || (debit===0 && credit===0);
       }).length;
     },
-    inspectTrialBalanceVoucher() { return { invalidStructure:false, unbalanced:false }; },
+    inspectTrialBalanceVoucher(voucher) {
+      const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+      let invalidLines=0, debitTotal=0, creditTotal=0;
+      lines.forEach(line => {
+        const rawDebit=line?.debit, rawCredit=line?.credit;
+        const debitPresent=rawDebit !== null && rawDebit !== undefined && String(rawDebit).trim() !== '';
+        const creditPresent=rawCredit !== null && rawCredit !== undefined && String(rawCredit).trim() !== '';
+        const debit=Number(rawDebit), credit=Number(rawCredit);
+        if (!String(line?.code || '').trim() || !debitPresent || !creditPresent ||
+            !Number.isFinite(debit) || !Number.isFinite(credit) ||
+            debit<0 || credit<0 || (debit>0 && credit>0) || (debit===0 && credit===0)) {
+          invalidLines++; return;
+        }
+        debitTotal+=debit; creditTotal+=credit;
+      });
+      return {
+        invalidStructure: lines.length < 2,
+        unbalanced: invalidLines===0 && (!Number.isFinite(debitTotal) || !Number.isFinite(creditTotal) ||
+          debitTotal<=0 || creditTotal<=0 || Math.round(debitTotal)!==Math.round(creditTotal))
+      };
+    },
     getPartyLedgerControlCodes(party) {
       const supplier = String(party.role || '').includes('تأمین');
       const codes = new Set([String(party.ledgerAccountCode || (supplier?'2101':'1103'))]);
@@ -105,6 +130,74 @@ function run(state, fromDate = '1405/01/01', toDate = '1405/12/29') {
 }
 
 
+{
+  const state = {
+    parties:[
+      {id:'C1',role:'مشتری',ledgerAccountCode:'1103'},
+      {id:'S1',role:'تأمین‌کننده',ledgerAccountCode:'2101'}
+    ],
+    vouchers:[
+      {id:'OPEN-C',date:'1404/12/29',lines:[
+        {code:'1103',partyId:'C1',debit:300,credit:50},
+        {code:'3101',debit:0,credit:250}
+      ]},
+      {id:'OPEN-S',date:'1404/12/29',lines:[
+        {code:'2101',partyId:'S1',debit:0,credit:120},
+        {code:'3101',debit:120,credit:0}
+      ]},
+      {id:'SALE-C',date:'1405/01/01',lines:[
+        {code:'1103',partyId:'C1',debit:500,credit:0},
+        {code:'4101',debit:0,credit:500}
+      ]},
+      {id:'RECEIPT-C',date:'1405/01/31',lines:[
+        {code:'1103',partyId:'C1',debit:0,credit:200},
+        {code:'1101',debit:200,credit:0}
+      ]},
+      {id:'PAYABLE-S',date:'1405/01/05',lines:[
+        {code:'2101',partyId:'S1',debit:20,credit:0},
+        {code:'1101',debit:0,credit:20}
+      ]},
+      {id:'BILL-S',date:'1405/01/20',lines:[
+        {code:'2101',partyId:'S1',debit:0,credit:70},
+        {code:'4101',debit:70,credit:0}
+      ]},
+      {id:'INCOMPLETE',date:'1405/01/10',lines:[
+        {code:'1103',partyId:'C1',debit:10,credit:0}
+      ]},
+      {id:'FUTURE-INVALID',date:'1405/02/01',lines:[
+        {code:'1103',partyId:'C1',debit:'',credit:0}
+      ]}
+    ]
+  };
+  const before=JSON.stringify(state);
+  const result=run(state,'1405/01/01','1405/01/31');
+  const customer=result.rows.find(item=>item.code==='1103');
+  const supplier=result.rows.find(item=>item.code==='2101');
+  assert.ok(customer && supplier,'customer and supplier control accounts must be reported');
+  assert.equal(customer.glOpeningDebit,300);
+  assert.equal(customer.glOpeningCredit,50);
+  assert.equal(customer.subOpeningDebit,300);
+  assert.equal(customer.subOpeningCredit,50);
+  assert.equal(customer.glPeriodDebit,510,'period debit includes the visible incomplete voucher');
+  assert.equal(customer.glPeriodCredit,200);
+  assert.equal(customer.subPeriodDebit,510);
+  assert.equal(customer.subPeriodCredit,200);
+  assert.equal(customer.glClosing,560);
+  assert.equal(customer.subClosing,560);
+  assert.equal(supplier.glOpeningCredit,120);
+  assert.equal(supplier.subOpeningCredit,120);
+  assert.equal(supplier.glPeriodDebit,20);
+  assert.equal(supplier.glPeriodCredit,70);
+  assert.equal(supplier.subPeriodDebit,20);
+  assert.equal(supplier.subPeriodCredit,70);
+  assert.equal(supplier.glClosing,-170);
+  assert.equal(supplier.subClosing,-170);
+  assert.equal(result.invalidStructureVouchers,1,'incomplete vouchers must be explicitly counted');
+  assert.equal(result.unbalancedVouchers,1,'unbalanced vouchers must be explicitly counted');
+  assert.equal(result.invalidAmountVouchers,0,'future invalid vouchers are outside the selected period');
+  assert.equal(result.includedVouchers,7);
+  assert.equal(JSON.stringify(state),before,'opening/period reconciliation must remain strictly read-only');
+}
 
 console.log('PASS: gross debit and credit turnover reconciles between the control ledger and party subledger');
 console.log('PASS: offsetting differences across control accounts remain visible');
