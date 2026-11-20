@@ -9822,7 +9822,7 @@
         duplicateStatementRefs + outstanding.missingBankAccount + outstanding.unknownBankAccount +
         outstanding.invalidDueDate + cashBalances.unassignedLines.length + cashBalances.unknownLines.length +
         cashBalances.invalidLines + cashBalances.invalidVoucherDates + bankBalances.invalidBankLines +
-        bankBalances.invalidBankVoucherDates + bankBalances.invalidBankVoucherStructures + bankBalances.unbalancedBankVouchers;
+        bankBalances.invalidBankVoucherDates + bankBalances.invalidBankVoucherStructures + bankBalances.unbalancedBankVouchers + checkAudit.issueCount;
       return {
         bankComparisons, statementRows: statementRows.length, invalidStatementRows, unassignedStatementRows,
         unknownStatementRows, duplicateStatementRefs, outstanding, checkAudit, cashBalances, bankBalances,
