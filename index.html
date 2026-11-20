@@ -11297,9 +11297,20 @@
         const rawDate = voucher?.date || voucher?.operationDate;
         const dateValid = !!rawDate && jalaliDateOrdinal(rawDate) !== null;
         const validation = inspectTrialBalanceVoucher(voucher);
-        if (!dateValid || validation.invalidLines || validation.invalidStructure || validation.unbalanced) invalidControlVouchers++;
+        const invalidControlLines = controlLines.some(line => {
+          const rawDebit = line?.debit, rawCredit = line?.credit;
+          const debitPresent = rawDebit !== null && rawDebit !== undefined && String(rawDebit).trim() !== '';
+          const creditPresent = rawCredit !== null && rawCredit !== undefined && String(rawCredit).trim() !== '';
+          const debit = Number(rawDebit), credit = Number(rawCredit);
+          return !debitPresent || !creditPresent ||
+            !Number.isFinite(debit) || !Number.isFinite(credit) ||
+            debit < 0 || credit < 0 || (debit > 0 && credit > 0) ||
+            (debit === 0 && credit === 0);
+        });
+        if (!dateValid || validation.invalidLines || validation.invalidStructure ||
+            validation.unbalanced || invalidControlLines) invalidControlVouchers++;
         controlLines.forEach(line => {
-          const debit = Number(line?.debit ?? 0), credit = Number(line?.credit ?? 0);
+          const debit = Number(line?.debit), credit = Number(line?.credit);
           if (Number.isFinite(debit) && Number.isFinite(credit) && debit >= 0 && credit >= 0) {
             controlDebit += debit; controlCredit += credit;
           }
