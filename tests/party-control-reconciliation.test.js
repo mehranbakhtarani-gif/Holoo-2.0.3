@@ -138,7 +138,8 @@ function run(state, fromDate = '1405/01/01', toDate = '1405/12/29') {
     ],
     vouchers:[
       {id:'OPEN-C',date:'1404/12/29',lines:[
-        {code:'1103',partyId:'C1',debit:300,credit:50},
+        {code:'1103',partyId:'C1',debit:300,credit:0},
+        {code:'1103',partyId:'C1',debit:0,credit:50},
         {code:'3101',debit:0,credit:250}
       ]},
       {id:'OPEN-S',date:'1404/12/29',lines:[
