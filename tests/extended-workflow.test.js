@@ -134,7 +134,7 @@ function runInvoice(type, payMethod = 'credit', bankAccounts = [], settlementAcc
       if (remaining > 0) throw new Error('insufficient test batch stock');
       return { totalCost: Math.round(allocations.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)), allocations };
     },
-    postVoucher(...args) { posted.push(args); }, saveState() { saves++; return true; }, renderAll() {}, showToast() {}, faNum: String
+    postVoucher(...args) { posted.push(args); }, saveState() { saves++; return true; }, renderAll() {}, showToast(message, type) { console.log('DEBUG invoice toast:', message, type); }, faNum: String
   });
   submit();
   return { state, product, posted, saves };
