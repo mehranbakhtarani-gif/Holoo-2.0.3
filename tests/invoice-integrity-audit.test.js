@@ -74,4 +74,28 @@ const ordinal = value => value === '1405/08/29' ? 1 : value === '1405/09/01' ? 2
 }
 console.log('PASS: valid invoice reconciles to journal, party and stock ledger');
 console.log('PASS: invoice totals, journal balances/accounts, missing links, stock and duplicate IDs are detected');
+
+{
+  const broken = structuredClone(baseState);
+  broken.invoices[0].vatRate = 0;
+  broken.invoices[0].vatAmount = null;
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'invoice-vatAmount-mismatch'),
+    'null must not be accepted as a real zero VAT amount');
+}
+{
+  const broken = structuredClone(baseState);
+  broken.invoices[0].items[0].price = null;
+  broken.invoices[0].items[0].total = 0;
+  broken.invoices[0].subtotal = 0;
+  broken.invoices[0].netSubtotal = 0;
+  broken.invoices[0].discount = 0;
+  broken.invoices[0].vatRate = 0;
+  broken.invoices[0].vatAmount = 0;
+  broken.invoices[0].grandTotal = 0;
+  const result = auditInvoices(broken, { dateOrdinal: ordinal });
+  assert.ok(result.findings.some(item => item.code === 'invoice-line-invalid'),
+    'null unit price must not be accepted as a genuine zero price');
+}
+
 console.log('PASS: invoice integrity audit is read-only');
