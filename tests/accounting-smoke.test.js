@@ -703,6 +703,46 @@ test('settlement audit accepts a fully documented party-credit refund',()=>{
   assert.equal(result.issueCount,0);
   assert.equal(result.creditRefundsChecked,1);
 });
+
+test('check lifecycle audit detects missing final event journals and unreleased allocations',()=>{
+  const state={
+    checks:[{id:'C1',sayad:'123',dir:'receive',amount:50,partyId:'P1',status:'bounced',issueDate:'1405/01/01',dueDate:'1405/01/10',sourceTxId:'T1',allocationsReleasedAt:null,allocations:[]}],
+    treasuryTxs:[{id:'T1',method:'چک صیادی',dir:'receive',amount:50,partyId:'P1'}],
+    bankAccounts:[{id:'B1',type:'bank'}],invoices:[],
+    vouchers:[{id:1,sourceType:'check',sourceId:'C1',sourceEvent:'issued',date:'1405/01/01',lines:[]}]
+  };
+  const before=JSON.stringify(state);
+  const audit=loadFunction(section('function buildCheckAuditSummary()', 'function buildBankTransferAuditSummary()'),'buildCheckAuditSummary',{
+    state, normalizeSayadId(value){return String(value||'');}, isValidSayadId(){return true;},
+    jalaliDateOrdinal(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||''))?1:null;},
+    inspectTrialBalanceVoucher(){return {invalidLines:0,invalidStructure:false,unbalanced:false};}
+  })();
+  assert.equal(audit.missingStatusVoucher,1);
+  assert.equal(audit.allocationReleaseIssues,1);
+  assert.equal(JSON.stringify(state),before,'check audit must not mutate accounting data');
+});
+test('check lifecycle audit accepts balanced bounced journal with released allocations',()=>{
+  const state={
+    checks:[{id:'C2',sayad:'456',dir:'receive',amount:50,partyId:'P1',status:'bounced',issueDate:'1405/01/01',dueDate:'1405/01/10',sourceTxId:'T2',allocationsReleasedAt:'2026-11-20T10:00:00.000Z',allocations:[]}],
+    treasuryTxs:[{id:'T2',method:'چک صیادی',dir:'receive',amount:50,partyId:'P1'}],
+    bankAccounts:[{id:'B1',type:'bank'}],invoices:[],
+    vouchers:[
+      {id:2,sourceType:'check',sourceId:'C2',sourceEvent:'issued',date:'1405/01/01',lines:[]},
+      {id:3,sourceType:'check',sourceId:'C2',sourceEvent:'bounced',date:'1405/01/10',lines:[
+        {code:'1103',partyId:'P1',debit:50,credit:0},{code:'1104',partyId:'P1',debit:0,credit:50}
+      ]}
+    ]
+  };
+  const audit=loadFunction(section('function buildCheckAuditSummary()', 'function buildBankTransferAuditSummary()'),'buildCheckAuditSummary',{
+    state, normalizeSayadId(value){return String(value||'');}, isValidSayadId(){return true;},
+    jalaliDateOrdinal(value){return /^\\d{4}\\/\\d{2}\\/\\d{2}$/.test(String(value||''))?1:null;},
+    inspectTrialBalanceVoucher(){return {invalidLines:0,invalidStructure:false,unbalanced:false};}
+  })();
+  assert.equal(audit.missingStatusVoucher,0);
+  assert.equal(audit.allocationReleaseIssues,0);
+  assert.equal(audit.lifecycleJournalMismatches,0);
+});
+
 // 12. Dynamic party control-account and subledger integrity audit.
 test('subledger audit includes custom party control codes and reports invalid mappings and lines',()=>{
   const state={
