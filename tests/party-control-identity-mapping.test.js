@@ -81,7 +81,7 @@ function run(state) {
   assert.equal(result.mappingMismatchDetails.length,1);
   assert.equal(result.mappingMismatchDetails[0].voucherId,'V-MAP');
   assert.equal(result.mappingMismatchDetails[0].partyId,'C1');
-  assert.deepEqual(result.mappingMismatchDetails[0].expectedCodes,['1103']);
+  assert.equal(JSON.stringify(result.mappingMismatchDetails[0].expectedCodes),JSON.stringify(['1103']));
   assert.equal(JSON.stringify(state),before,'mapping diagnostics must not mutate accounting records');
 }
 
