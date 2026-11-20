@@ -25,6 +25,38 @@ function test(name, fn) {
   results.push(name);
 }
 
+test('party ledger ignores malformed vouchers after the selected end date', () => {
+  const state = {
+    parties: [{ id: 'C1', name: 'مشتری آزمایشی', ledgerAccountCode: '1103' }],
+    vouchers: [
+      { id: 1, date: '1405/01/02', lines: [{ code: '1103', partyId: 'C1', debit: 10, credit: 0 }] },
+      { id: 2, date: '1405/01/12', lines: [{ code: '1103', partyId: 'C1', debit: 20, credit: 0 }] },
+      { id: 3, date: '1405/02/01', lines: [{ code: '1103', partyId: 'C1', credit: 0 }] }
+    ]
+  };
+  const before = JSON.stringify(state);
+  const build = loadFunction(section('function buildPartyLedger(partyId, fromDate, toDate)', 'let showPartyControlReconciliation = false;'),
+    'buildPartyLedger', {
+      state,
+      normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
+      jalaliDateOrdinal(value) {
+        const match = String(value || '').match(/^1405\/(\d{2})\/(\d{2})$/);
+        return match ? Number(match[1]) * 100 + Number(match[2]) : null;
+      },
+      getPartyLedgerControlCodes() { return new Set(['1103']); },
+      countInvalidReportVoucherLines(voucher) {
+        return (voucher.lines || []).filter(line => line.debit == null || line.credit == null).length;
+      }
+    });
+  const result = build('C1', '1405/01/10', '1405/01/31');
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.openingNet, 10);
+  assert.equal(result.periodDebit, 20);
+  assert.equal(result.closingNet, 30);
+  assert.equal(result.invalidAmountLines, 0);
+  assert.equal(JSON.stringify(state), before, 'party ledger must remain read-only');
+});
+
 // Dashboard and cashflow balances must ignore malformed postings without hiding imbalances.
 test('dashboard balances exclude invalid-date and invalid-amount vouchers and report quality', () => {
   const source = section('function buildDashboardAccountBalances()', 'function getPartyNetBalance(');
