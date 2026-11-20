@@ -38,9 +38,9 @@ vm.runInContext(html.slice(start,end) + '; this.audit = buildFiscalOpeningClosin
 {
   const state = {
     vouchers: [
-      {id:'prior',date:'1404/12/29',lines:[{code:'1101',debit:1000,credit:0},{code:'3101',debit:0,credit:1000}]},
+      {id:'prior',date:'1404/12/29',lines:[{code:'1101',debit:1500,credit:0},{code:'3101',debit:0,credit:1000},{code:'4101',debit:0,credit:500}]},
       {id:'closing',date:'1404/12/29',sourceType:'fiscal_year_close',sourceEvent:'closing',sourceId:'1404',lines:[{code:'4101',debit:500,credit:0},{code:'3102',debit:0,credit:500}]},
-      {id:'opening',date:'1405/01/01',sourceType:'opening',lines:[{code:'1101',debit:1000,credit:0},{code:'3101',debit:0,credit:1000}]}
+      {id:'opening',date:'1405/01/01',sourceType:'opening',lines:[{code:'1101',debit:1500,credit:0},{code:'3101',debit:0,credit:1000},{code:'3102',debit:0,credit:500}]}
     ],
     fiscalYearClosures:[{year:'1404',status:'closed',voucherId:'closing'}]
   };
@@ -59,7 +59,7 @@ vm.runInContext(html.slice(start,end) + '; this.audit = buildFiscalOpeningClosin
     vouchers: [
       {id:'prior',date:'1404/12/29',lines:[{code:'1101',debit:1000,credit:0},{code:'3101',debit:0,credit:1000}]},
       {id:'closing',date:'1404/12/29',sourceType:'fiscal_year_close',sourceEvent:'closing',sourceId:'1404',lines:[{code:'4101',debit:500,credit:0},{code:'3102',debit:0,credit:500}]},
-      {id:'opening',date:'1405/01/01',sourceType:'opening',lines:[{code:'1101',debit:900,credit:0},{code:'3101',debit:0,credit:900}]}
+      {id:'opening',date:'1405/01/01',sourceType:'opening',lines:[{code:'1101',debit:1400,credit:0},{code:'3101',debit:0,credit:900},{code:'3102',debit:0,credit:600}]}
     ],
     fiscalYearClosures:[{year:'1404',status:'closed',voucherId:'closing'}]
   };
