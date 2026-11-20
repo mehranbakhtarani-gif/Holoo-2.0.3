@@ -858,5 +858,54 @@ test('subledger audit includes custom party control codes and reports invalid ma
   assert.equal(audit.invalidControlDates,1);
   assert.equal(JSON.stringify(state),before,'audit must not mutate accounting data');
 });
+
+// 13. Fiscal-year closing preview must block premature close and unresolved prior years.
+function fiscalCloseContext(state, today) {
+  return {
+    state,
+    normalizeAccountingDate(value) { return String(value || '').replace(/[^\d]/g, '').slice(0, 4); },
+    normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
+    jalaliDateOrdinal(value) {
+      const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      if (!match) return null;
+      const y = Number(match[1]), m = Number(match[2]), d = Number(match[3]);
+      return m >= 1 && m <= 12 && d >= 1 && d <= (m <= 6 ? 31 : m <= 11 ? 30 : 29)
+        ? y * 10000 + m * 100 + d : null;
+    },
+    getFiscalYearEndDate(year) { return String(year) + '/12/29'; },
+    getTodayJalaliDate() { return today; },
+    getFiscalYearCloseRecord() { return null; },
+    inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; },
+    isOpeningKardexDocument() { return false; },
+    buildFiscalYearCarryForwardSummary() {
+      return { assets: 100, liabilitiesAndEquity: 100, difference: 0, accountCount: 2,
+        invalidDateVouchers: 0, invalidAmountLines: 0, invalidStructureVouchers: 0, unbalancedVouchers: 0 };
+    },
+    CHART_ACCOUNTS: [{ code: '3102' }],
+    money: String
+  };
+}
+test('fiscal-year close preview blocks an unclosed prior year without mutating vouchers', () => {
+  const state = {
+    vouchers: [{ id: 1, date: '1404/12/29', lines: [{ code: '4101', debit: 0, credit: 100 }] }],
+    fiscalYearClosures: []
+  };
+  const before = JSON.stringify(state);
+  const source = section('function buildFiscalYearClosePreview(year, options = {})', 'function closeFiscalYear()');
+  const preview = loadFunction(source, 'buildFiscalYearClosePreview', fiscalCloseContext(state, '1405/12/29'))('1405');
+  assert.equal(preview.blocked, true);
+  assert.deepEqual(Array.from(preview.priorUnclosed), ['1404']);
+  assert.ok(preview.warnings.some(warning => warning.includes('1404')));
+  assert.equal(JSON.stringify(state), before, 'preview must remain read-only');
+});
+test('fiscal-year close preview rejects closing before the actual fiscal-year end', () => {
+  const state = { vouchers: [], fiscalYearClosures: [] };
+  const before = JSON.stringify(state);
+  const source = section('function buildFiscalYearClosePreview(year, options = {})', 'function closeFiscalYear()');
+  const preview = loadFunction(source, 'buildFiscalYearClosePreview', fiscalCloseContext(state, '1405/12/28'));
+  assert.throws(() => preview('1405'), /پس از پایان واقعی سال/);
+  assert.equal(JSON.stringify(state), before, 'rejected preview must not mutate state');
+});
+
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
