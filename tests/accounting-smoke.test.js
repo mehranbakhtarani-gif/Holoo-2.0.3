@@ -689,5 +689,19 @@ test('settlement audit detects invoice over-allocation and paid amount mismatch'
   assert.ok(result.overAllocatedInvoices>=1);
   assert.ok(result.paidAmountMismatches>=1);
 });
+test('settlement audit accepts a fully documented party-credit refund',()=>{
+  const state={
+    parties:[{id:'P1'}],bankAccounts:[{id:'B1',type:'bank'}],invoices:[],
+    treasuryTxs:[
+      {id:'CR1',kind:'party_credit',partyId:'P1',creditDirection:'sale',amount:10,remainingAmount:0,applications:[],refunds:[{id:'RF1',amount:10}]},
+      {id:'RF1',kind:'party_credit_refund',sourceCreditId:'CR1',dir:'pay',partyId:'P1',amount:10,method:'حواله بانکی',bankAccountId:'B1'}
+    ],
+    checks:[],
+    vouchers:[{id:21,sourceType:'party_credit_refund',sourceId:'CR1',sourceEvent:'RF1',date:'1405/01/03',lines:[{code:'2101',partyId:'P1',debit:10,credit:0},{code:'1102',bankAccountId:'B1',debit:0,credit:10}]}]
+  };
+  const result=runSettlementAudit(state);
+  assert.equal(result.issueCount,0);
+  assert.equal(result.creditRefundsChecked,1);
+});
 console.log(`PASS: ${results.length} accounting smoke tests`);
 for (const name of results) console.log(`- ${name}`);
