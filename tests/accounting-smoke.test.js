@@ -262,7 +262,7 @@ test('party control reconciliation excludes future-dated malformed vouchers from
     getPartyLedgerControlCodes(party) { return new Set([party.ledgerAccountCode]); },
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
     jalaliDateOrdinal(value) {
-      const match = String(value || '').match(/^1405\\/(\\d{2})\\/(\\d{2})$/);
+      const match = String(value || '').match(/^1405\/(\d{2})\/(\d{2})$/);
       return match ? Number(match[1]) * 100 + Number(match[2]) : null;
     },
     countInvalidReportVoucherLines(voucher) {
