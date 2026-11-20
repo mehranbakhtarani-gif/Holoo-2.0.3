@@ -253,11 +253,11 @@ test('party control reconciliation does not net offsetting differences across co
   const source = section('function buildPartyControlReconciliation(fromDate, toDate)', 'function openPartyControlReconciliation()');
   const vouchers = [
     { id: 31, date: '1405/01/01', lines: [
-      { code: '1103', debit: 100, credit: 0, partyId: 'C1' },
+      { code: '1103', debit: 100, credit: 0,  },
       { code: '4101', debit: 0, credit: 100 }
     ] },
     { id: 32, date: '1405/01/02', lines: [
-      { code: '2101', debit: 0, credit: 100, partyId: 'S1' },
+      { code: '2101', debit: 0, credit: 100,  },
       { code: '5101', debit: 100, credit: 0 }
     ] }
   ];
