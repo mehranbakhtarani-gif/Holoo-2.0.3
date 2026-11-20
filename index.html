@@ -6075,9 +6075,10 @@
         const rawDate = voucher.date || voucher.operationDate;
         const dateKey = normalizeLedgerDate(rawDate);
         if (!dateKey || jalaliDateOrdinal(rawDate) === null) { invalidDateVouchers++; return; }
+        // Exclude future-dated vouchers before counting period amount issues.
+        if (dateKey > to) return;
         const invalidLines = countInvalidReportVoucherLines(voucher);
         if (invalidLines) { invalidAmountVouchers++; return; }
-        if (dateKey > to) return;
         const validation = inspectTrialBalanceVoucher(voucher);
         if (validation.invalidStructure) invalidStructureVouchers++;
         if (validation.unbalanced) unbalancedVouchers++;
