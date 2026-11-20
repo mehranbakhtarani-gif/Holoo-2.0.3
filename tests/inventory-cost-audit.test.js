@@ -19,3 +19,7 @@ test('accepts matching stock, last Kardex balance and batch remaining quantity',
 test('marks positive stock without Kardex or batch trace as unverified',()=>{const r=audit({products:[{id:'K1',stock:4}]});assert.equal(r.unverifiedStockTrace,1);});
 
 console.log('PASS inventory cost audit suite');
+
+test('detects an intermediate Kardex balance break even when the last balance matches current stock',()=>{const r=audit({products:[{id:'K1',stock:7,kardex:[{inQty:10,outQty:0,bal:10,doc:'خرید'},{inQty:0,outQty:2,bal:7,doc:'فروش'}]}]});assert.equal(r.kardexStockMismatches,0);assert.equal(r.kardexSequenceMismatches,1);});
+test('accepts a continuous Kardex chain and an initial stocktake baseline',()=>{const r=audit({products:[{id:'K1',stock:6,kardex:[{sourceType:'stocktake',inQty:4,outQty:1,bal:6,doc:'اصلاحیه انبارگردانی'},{inQty:3,outQty:3,bal:6,doc:'گردش'}]}]});assert.equal(r.kardexSequenceMismatches,0);assert.equal(r.invalidKardexRows,0);});
+test('flags malformed and negative Kardex movements without changing source data',()=>{const state={products:[{id:'K1',stock:2,kardex:[{inQty:3,outQty:0,bal:3},{inQty:-1,outQty:0,bal:2}]}]};const before=JSON.stringify(state);const r=audit(state);assert.equal(r.invalidKardexRows,1);assert.equal(r.unverifiedStockTrace,1);assert.equal(JSON.stringify(state),before);});
