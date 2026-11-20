@@ -11342,14 +11342,144 @@
       const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
       const openings = vouchers.filter(v => ['opening','legacy_opening'].includes(String(v.sourceType || '')));
       const closings = vouchers.filter(v => v.sourceType === 'fiscal_year_close' && (v.sourceEvent || 'default') === 'closing');
-      const r = { openingCount: openings.length, closingCount: closings.length, duplicateOpeningYears: 0, duplicateClosingYears: 0, invalidOpening: 0, invalidClosing: 0, openingResultAccounts: 0, closingNonResultAccounts: 0, missingCloseRecords: 0, issues: [] };
-      const countYears = list => { const counts = new Map(); list.forEach(v => { const d = normalizeLedgerDate(v.date || v.operationDate); const y = d ? d.slice(0,4) : ''; if (y) counts.set(y,(counts.get(y)||0)+1); }); return Array.from(counts.values()).reduce((n,c)=>n+Math.max(0,c-1),0); };
-      r.duplicateOpeningYears = countYears(openings); r.duplicateClosingYears = countYears(closings);
-      openings.forEach(v => { const c = inspectTrialBalanceVoucher(v); if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidOpening++; if ((v.lines || []).some(l => /^[456]/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.openingResultAccounts++; });
-      closings.forEach(v => { const c = inspectTrialBalanceVoucher(v); if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidClosing++; if ((v.lines || []).some(l => !/^[456]\d*$/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.closingNonResultAccounts++; });
-      (Array.isArray(state.fiscalYearClosures) ? state.fiscalYearClosures : []).filter(x => x.status !== 'reopened').forEach(x => { const y = normalizeAccountingDate(x.year); if (y && !closings.some(v => String(v.sourceId || '') === y)) r.missingCloseRecords++; });
-      [['سال‌های دارای بیش از یک سند افتتاحیه',r.duplicateOpeningYears],['سال‌های دارای بیش از یک سند اختتامیه',r.duplicateClosingYears],['اسناد افتتاحیه نامعتبر یا نامتوازن',r.invalidOpening],['اسناد اختتامیه نامعتبر یا نامتوازن',r.invalidClosing],['ردیف درآمد/هزینه در افتتاحیه',r.openingResultAccounts],['ردیف غیرنتیجه‌ای در سند اختتامیه سود و زیان',r.closingNonResultAccounts],['سابقه بستن بدون سند اختتامیه',r.missingCloseRecords]].forEach(x => { if (x[1]) r.issues.push(x[0] + ': ' + x[1]); });
-      r.issueCount = r.issues.reduce((n,x) => n + Number((x.match(/: (\d+)$/) || [])[1] || 0),0); return r;
+      const closures = (Array.isArray(state.fiscalYearClosures) ? state.fiscalYearClosures : []).filter(x => x && x.status !== 'reopened');
+      const r = {
+        openingCount: openings.length, closingCount: closings.length,
+        duplicateOpeningYears: 0, duplicateClosingYears: 0, invalidOpening: 0, invalidClosing: 0,
+        openingResultAccounts: 0, closingNonResultAccounts: 0, missingCloseRecords: 0,
+        openingYearsCompared: 0, openingBalanceMismatches: 0, openingBalanceDetails: [],
+        implicitCarryForwardYears: 0, invalidYearBoundaryVouchers: 0, issues: []
+      };
+      const yearOf = voucher => {
+        const raw = voucher?.date || voucher?.operationDate;
+        if (jalaliDateOrdinal(raw) === null) return '';
+        const key = normalizeLedgerDate(raw);
+        return key ? key.slice(0,4) : '';
+      };
+      const countYears = list => {
+        const counts = new Map();
+        list.forEach(v => { const y = yearOf(v); if (y) counts.set(y,(counts.get(y)||0)+1); });
+        return Array.from(counts.values()).reduce((n,c)=>n+Math.max(0,c-1),0);
+      };
+      r.duplicateOpeningYears = countYears(openings);
+      r.duplicateClosingYears = countYears(closings);
+      openings.forEach(v => {
+        const c = inspectTrialBalanceVoucher(v);
+        if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidOpening++;
+        if ((v.lines || []).some(l => /^[456]/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.openingResultAccounts++;
+      });
+      closings.forEach(v => {
+        const c = inspectTrialBalanceVoucher(v);
+        if (c.invalidLines || c.invalidStructure || c.unbalanced) r.invalidClosing++;
+        if ((v.lines || []).some(l => !/^[456]\d*$/.test(String(l.code || '')) && (Number(l.debit || 0) || Number(l.credit || 0)))) r.closingNonResultAccounts++;
+      });
+      closures.forEach(x => {
+        const y = normalizeAccountingDate(x.year);
+        if (y && !closings.some(v => String(v.sourceId || '') === y)) r.missingCloseRecords++;
+      });
+
+      // Compare explicit opening vouchers with the prior fiscal year's permanent-account carry-forward.
+      // When no explicit opening voucher exists, the application carries balances cumulatively in the ledger;
+      // this is informational and must not be reported as a discrepancy.
+      const openingByYear = new Map();
+      openings.forEach(v => {
+        const y = yearOf(v);
+        if (!y) { r.invalidYearBoundaryVouchers++; return; }
+        if (!openingByYear.has(y)) openingByYear.set(y, []);
+        openingByYear.get(y).push(v);
+      });
+      const closedYears = new Set();
+      closures.forEach(x => { const y = normalizeAccountingDate(x.year); if (y) closedYears.add(y); });
+      closings.forEach(v => { const y = String(v.sourceId || ''); if (/^14\d{2}$/.test(y)) closedYears.add(y); });
+      const openingYears = Array.from(openingByYear.keys()).sort();
+      openingYears.forEach(openYear => {
+        const previousYear = String(Number(openYear) - 1);
+        if (!closedYears.has(previousYear)) return;
+        const openingVouchers = openingByYear.get(openYear) || [];
+        const openingDate = openYear + '0101';
+        const boundaryOpenings = openingVouchers.filter(v => normalizeLedgerDate(v.date || v.operationDate) === openingDate);
+        if (!boundaryOpenings.length) {
+          r.invalidYearBoundaryVouchers++;
+          r.issues.push('سند افتتاحیه سال ' + openYear + ' در تاریخ ابتدای سال ثبت نشده است: 1');
+          return;
+        }
+        r.openingYearsCompared++;
+        const previousEnd = getFiscalYearEndDate(previousYear);
+        const previousEndKey = normalizeLedgerDate(previousEnd);
+        const expected = new Map();
+        let invalidPrior = false;
+        vouchers.forEach(v => {
+          const key = normalizeLedgerDate(v.date || v.operationDate);
+          if (!key || jalaliDateOrdinal(v.date || v.operationDate) === null) {
+            if (key === '' || String(v.date || v.operationDate || '').slice(0,4) === previousYear) invalidPrior = true;
+            return;
+          }
+          if (key > previousEndKey) return;
+          const validation = inspectTrialBalanceVoucher(v);
+          if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) {
+            if (key.slice(0,4) === previousYear) invalidPrior = true;
+            return;
+          }
+          (v.lines || []).forEach(line => {
+            const code = String(line.code || '').trim();
+            if (!/^[123]\d*$/.test(code)) return;
+            const net = Number(line.debit || 0) - Number(line.credit || 0);
+            if (!Number.isFinite(net)) return;
+            expected.set(code, (expected.get(code) || 0) + net);
+          });
+        });
+        if (invalidPrior) {
+          r.invalidYearBoundaryVouchers++;
+          r.issues.push('سال ' + previousYear + ' دارای سند نامعتبر است؛ تطبیق افتتاحیه با مانده پایان سال قطعی نیست: 1');
+          return;
+        }
+        const actual = new Map();
+        let invalidOpeningVoucher = false;
+        boundaryOpenings.forEach(v => {
+          const validation = inspectTrialBalanceVoucher(v);
+          if (validation.invalidLines || validation.invalidStructure || validation.unbalanced) invalidOpeningVoucher = true;
+          (v.lines || []).forEach(line => {
+            const code = String(line.code || '').trim();
+            if (!/^[123]\d*$/.test(code)) return;
+            const net = Number(line.debit || 0) - Number(line.credit || 0);
+            if (!Number.isFinite(net)) { invalidOpeningVoucher = true; return; }
+            actual.set(code, (actual.get(code) || 0) + net);
+          });
+        });
+        if (invalidOpeningVoucher) {
+          r.invalidYearBoundaryVouchers++;
+          r.issues.push('سند افتتاحیه سال ' + openYear + ' نامعتبر یا نامتوازن است؛ تطبیق مانده انتقالی قابل اتکا نیست: 1');
+          return;
+        }
+        const codes = new Set([...expected.keys(), ...actual.keys()]);
+        const mismatches = [];
+        codes.forEach(code => {
+          const expectedNet = expected.get(code) || 0;
+          const actualNet = actual.get(code) || 0;
+          if (Math.abs(expectedNet - actualNet) > 0.5) mismatches.push({
+            priorYear: previousYear, openingYear: openYear, code,
+            priorClosingNet: expectedNet, openingNet: actualNet,
+            difference: actualNet - expectedNet
+          });
+        });
+        if (mismatches.length) {
+          r.openingBalanceMismatches += mismatches.length;
+          r.openingBalanceDetails.push(...mismatches);
+          r.issues.push('مغایرت انتقال مانده از سال ' + previousYear + ' به افتتاحیه ' + openYear + ': ' + mismatches.length);
+        }
+      });
+      r.implicitCarryForwardYears = Array.from(closedYears).filter(y => !openingByYear.has(String(Number(y) + 1))).length;
+      [
+        ['سال‌های دارای بیش از یک سند افتتاحیه',r.duplicateOpeningYears],
+        ['سال‌های دارای بیش از یک سند اختتامیه',r.duplicateClosingYears],
+        ['اسناد افتتاحیه نامعتبر یا نامتوازن',r.invalidOpening],
+        ['اسناد اختتامیه نامعتبر یا نامتوازن',r.invalidClosing],
+        ['ردیف درآمد/هزینه در افتتاحیه',r.openingResultAccounts],
+        ['ردیف غیرنتیجه‌ای در سند اختتامیه سود و زیان',r.closingNonResultAccounts],
+        ['سابقه بستن بدون سند اختتامیه',r.missingCloseRecords]
+      ].forEach(x => { if (x[1]) r.issues.push(x[0] + ': ' + x[1]); });
+      r.issueCount = r.issues.reduce((n,x) => n + Number((x.match(/: (\d+)$/) || [])[1] || 0),0);
+      return r;
     }
     function buildSubsidiaryInvoiceAuditSummary() {
       const vouchers = Array.isArray(state.vouchers) ? state.vouchers : [];
@@ -12794,7 +12924,8 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
       const subledgerAudit = buildSubsidiaryInvoiceAuditSummary();
       const subledgerAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>تطبیق حساب‌های معین، تفصیلی و فاکتورها</strong><b class="block">'+(subledgerAudit.issueCount?faNum(subledgerAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['کنترل‌های تفصیلی',subledgerAudit.subledgerAccounts],['خط کنترلی بدون تفصیلی',subledgerAudit.unassignedControlLines],['ردیف مبلغ نامعتبر',subledgerAudit.invalidControlLines],['تاریخ سند کنترلی نامعتبر',subledgerAudit.invalidControlDates],['کد حساب ناسازگار',subledgerAudit.mappingMismatchLines],['اختلاف تفصیلی/کنترلی',subledgerAudit.partyBalanceDifference],['ایراد ساختار حساب',subledgerAudit.hierarchyIssues],['کد معین تکراری',subledgerAudit.duplicateSubsidiaryCodes],['فاکتور فعال بررسی‌شده',subledgerAudit.invoicesChecked],['فاکتور بدون سند',subledgerAudit.missingInvoiceVouchers],['سند تکراری فاکتور',subledgerAudit.duplicateInvoiceVouchers],['مغایرت مبلغ فاکتور',subledgerAudit.invoiceAmountMismatches],['طرف حساب نامعتبر',subledgerAudit.invalidInvoiceLinks]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(subledgerAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+subledgerAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">تطبیق معین، تفصیلی و فاکتورها بدون مغایرت.</p>')+'<p class="text-[10px]">کنترل فقط خواندنی است؛ مبالغ یا اسناد را اصلاح نمی‌کند.</p></div>';
       const fiscalAudit = buildFiscalOpeningClosingAuditSummary();
-      const fiscalAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>کنترل اسناد افتتاحیه و اختتامیه</strong><b class="block">'+(fiscalAudit.issueCount?faNum(fiscalAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['اسناد افتتاحیه',fiscalAudit.openingCount],['اسناد اختتامیه',fiscalAudit.closingCount],['سال افتتاحیه تکراری',fiscalAudit.duplicateOpeningYears],['سال اختتامیه تکراری',fiscalAudit.duplicateClosingYears],['افتتاحیه نامعتبر',fiscalAudit.invalidOpening],['اختتامیه نامعتبر',fiscalAudit.invalidClosing],['ردیف نتیجه‌ای در افتتاحیه',fiscalAudit.openingResultAccounts],['ردیف غیرنتیجه‌ای در اختتامیه',fiscalAudit.closingNonResultAccounts],['سابقه بستن بدون سند',fiscalAudit.missingCloseRecords]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(fiscalAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+fiscalAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های افتتاحیه و اختتامیه بدون مغایرت.</p>')+'<p class="text-[10px]">گزارش صرفاً خواندنی است؛ اسناد یا سوابق مالی را تغییر نمی‌دهد.</p></div>';
+      const fiscalOpeningDetailRows = fiscalAudit.openingBalanceDetails.slice(0,30).map(item => '<div class="flex flex-wrap justify-between gap-2 border-t pt-1 text-[10px]"><span>سال '+faNum(item.priorYear)+' به '+faNum(item.openingYear)+' — حساب '+escapeLedgerText(faNum(item.code))+'</span><span>پایان قبل: '+money(item.priorClosingNet)+' | افتتاحیه: '+money(item.openingNet)+' | اختلاف: <b class="text-rose-700">'+money(item.difference)+'</b></span></div>').join('');
+      const fiscalAuditPanel = '<div class="rounded-xl border p-3 space-y-2"><strong>ممیزی انتقال مانده بین سال‌های مالی</strong><b class="block">'+(fiscalAudit.issueCount?faNum(fiscalAudit.issueCount)+' مورد نیازمند بررسی':'بدون مغایرت شناسایی‌شده')+'</b><div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">'+[['اسناد افتتاحیه',fiscalAudit.openingCount],['اسناد اختتامیه',fiscalAudit.closingCount],['سال افتتاحیه تکراری',fiscalAudit.duplicateOpeningYears],['سال اختتامیه تکراری',fiscalAudit.duplicateClosingYears],['افتتاحیه نامعتبر',fiscalAudit.invalidOpening],['اختتامیه نامعتبر',fiscalAudit.invalidClosing],['سال‌های تطبیق‌شده',fiscalAudit.openingYearsCompared],['اختلاف حساب‌های انتقالی',fiscalAudit.openingBalanceMismatches],['انتقال ضمنی دفترکل',fiscalAudit.implicitCarryForwardYears],['سابقه بستن بدون سند',fiscalAudit.missingCloseRecords]].map(x=>'<span>'+x[0]+': <b>'+faNum(x[1])+'</b></span>').join('')+'</div>'+(fiscalOpeningDetailRows?'<div class="space-y-1">'+fiscalOpeningDetailRows+'</div>':'')+(fiscalAudit.issues.length?'<ul class="list-disc pr-5 text-xs text-amber-800">'+fiscalAudit.issues.map(x=>'<li>'+escapeLedgerText(x)+'</li>').join('')+'</ul>':'<p class="text-xs text-emerald-700">کنترل‌های افتتاحیه و اختتامیه بدون مغایرت.</p>')+'<p class="text-[10px]">در نبود سند افتتاحیه مستقل، مانده انتقالی به‌صورت تجمعی از دفترکل محاسبه می‌شود؛ این وضعیت به‌تنهایی مغایرت نیست. گزارش فقط‌خواندنی است و هیچ سند یا مانده‌ای را تغییر نمی‌دهد.</p></div>';
       const auditDetailRows = audit.details.slice(0, 100).map((item, index) =>
         '<tr class="border-t align-top"><td class="p-2">' + faNum(index + 1) + '</td>' +
         '<td class="p-2 whitespace-nowrap">' + escapeLedgerText(item.date) + '</td>' +
