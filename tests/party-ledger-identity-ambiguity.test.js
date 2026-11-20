@@ -12,7 +12,7 @@ function makeBuilder(state) {
     state,
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
     jalaliDateOrdinal(value) {
-      const match = String(value || '').match(/^(\\d{4})\\/(\\d{2})\\/(\\d{2})$/);
+      const match = String(value || '').match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
       if (!match) return null;
       const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
       if (month < 1 || month > 12 || day < 1 || day > (month <= 6 ? 31 : month <= 11 ? 30 : 29)) return null;
