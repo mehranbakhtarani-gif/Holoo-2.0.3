@@ -10655,6 +10655,9 @@
       (state.vouchers || []).forEach(v => {
         const dateKey = normalizeLedgerDate(v.date || v.operationDate);
         if (!dateKey || jalaliDateOrdinal(v.date || v.operationDate) === null) { invalidDateVouchers++; return; }
+        // A valid voucher dated after this ledger's end date is outside the
+        // selected report period and must not affect its amount-quality warnings.
+        if (dateKey > to) return;
         const invalidLines = countInvalidReportVoucherLines(v);
         if (invalidLines) { invalidAmountLines += invalidLines; return; }
         (v.lines || []).forEach(line => {
