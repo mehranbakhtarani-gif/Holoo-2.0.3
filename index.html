@@ -9439,8 +9439,9 @@
       const treasuryTxs = Array.isArray(state.treasuryTxs) ? state.treasuryTxs : [];
       const summary = {
         total: checks.length, active: 0, missingIssueVoucher: 0, duplicateSayad: 0,
-        missingTreasuryLink: 0, invalidCheckData: 0, missingStatusVoucher: 0,
-        duplicateSourceEvents: 0, invalidVoucher: 0, allocationIssues: 0,
+        duplicateCheckIds: 0, invalidStatuses: 0, missingTreasuryLink: 0, invalidCheckData: 0, missingStatusVoucher: 0,
+        duplicateSourceEvents: 0, invalidVoucher: 0, allocationIssues: 0, allocationReleaseIssues: 0,
+        lifecycleJournalMismatches: 0,
         issues: []
       };
       const sayadCounts = new Map();
@@ -9449,9 +9450,17 @@
         if (sayad) sayadCounts.set(sayad, (sayadCounts.get(sayad) || 0) + 1);
       });
       summary.duplicateSayad = [...sayadCounts.values()].filter(count => count > 1).reduce((sum, count) => sum + count, 0);
+      const checkIdCounts = new Map();
+      checks.forEach(check => { const id = String(check?.id || ''); checkIdCounts.set(id, (checkIdCounts.get(id) || 0) + 1); });
+      summary.duplicateCheckIds = [...checkIdCounts.values()].filter(count => count > 1).reduce((sum, count) => sum + count, 0);
       checks.forEach(check => {
         const label = String(check.sayad || check.id || 'بدون شناسه');
         const amount = Number(check.amount);
+        const validStatuses = ['in_progress', 'overdue', 'cleared', 'bounced', 'endorsed', 'voided'];
+        if (!validStatuses.includes(String(check.status || ''))) {
+          summary.invalidStatuses++;
+          summary.issues.push(label + ': وضعیت گردش چک ناشناخته یا نامعتبر است (' + String(check.status || 'خالی') + ').');
+        }
         if (!['receive', 'pay'].includes(check.dir) || !Number.isFinite(amount) || amount <= 0 ||
             jalaliDateOrdinal(check.issueDate) === null || jalaliDateOrdinal(check.dueDate) === null ||
             !isValidSayadId(normalizeSayadId(check.sayad))) {
@@ -9463,6 +9472,10 @@
         if (sourceTx.length !== 1) {
           summary.missingTreasuryLink++;
           summary.issues.push(label + ': گردش خزانه متناظر پیدا نشد یا شناسه آن تکراری است.');
+        } else if (String(sourceTx[0].partyId) !== String(check.partyId) ||
+            String(sourceTx[0].dir) !== String(check.dir) || Math.abs(Number(sourceTx[0].amount) - amount) > 1) {
+          summary.invalidCheckData++;
+          summary.issues.push(label + ': مبلغ، جهت یا طرف حساب گردش خزانه با رکورد چک مغایرت دارد.');
         }
         const issued = vouchers.filter(v => v.sourceType === 'check' && String(v.sourceId) === String(check.id) && (v.sourceEvent || 'default') === 'issued');
         if (issued.length !== 1) {
@@ -9476,11 +9489,33 @@
           summary.duplicateSourceEvents++;
           summary.issues.push(label + ': رویداد حسابداری تکراری برای چک ثبت شده است.');
         }
-        const requiredEvent = ['cleared', 'bounced', 'voided'].includes(check.status) ? check.status : null;
+        const requiredEvent = ['cleared', 'bounced', 'voided', 'endorsed'].includes(check.status) ? check.status : null;
         const corrected = Boolean(check.correctedByCheckId && check.reversalVoucherId);
-        if (requiredEvent && !corrected && !events.some(v => (v.sourceEvent || 'default') === requiredEvent)) {
+        const statusEvents = requiredEvent ? events.filter(v => (v.sourceEvent || 'default') === requiredEvent) : [];
+        if (requiredEvent && !corrected && !statusEvents.length) {
           summary.missingStatusVoucher++;
           summary.issues.push(label + ': سند متناظر با وضعیت نهایی چک وجود ندارد.');
+        }
+        const shouldReleaseAllocations = ['bounced', 'voided'].includes(String(check.status));
+        if (!corrected && shouldReleaseAllocations !== Boolean(check.allocationsReleasedAt)) {
+          summary.allocationReleaseIssues++;
+          summary.issues.push(label + ': وضعیت برگشت/ابطال چک با پرچم آزادسازی تخصیص فاکتورها سازگار نیست.');
+        }
+        if (requiredEvent && statusEvents.length === 1 && ['cleared', 'bounced', 'voided'].includes(requiredEvent)) {
+          const lines = Array.isArray(statusEvents[0].lines) ? statusEvents[0].lines : [];
+          const expected = requiredEvent === 'cleared'
+            ? (check.dir === 'receive' ? [{code:'1102',side:'debit'},{code:'1104',side:'credit',party:true}] : [{code:'2102',side:'debit',party:true},{code:'1102',side:'credit'}])
+            : (check.dir === 'receive' ? [{code:'1103',side:'debit',party:true},{code:'1104',side:'credit',party:true}] : [{code:'2102',side:'debit',party:true},{code:'2101',side:'credit',party:true}]);
+          const invalidLifecycleLines = expected.some(rule => {
+            const rows = lines.filter(line => String(line.code) === rule.code && (!rule.party || String(line.partyId || '') === String(check.partyId)));
+            const value = rows.reduce((sum,line) => sum + Number(line[rule.side] || 0), 0);
+            return Math.abs(value - amount) > 1;
+          }) || Math.abs(lines.reduce((sum,line) => sum + Number(line.debit || 0), 0) -
+              lines.reduce((sum,line) => sum + Number(line.credit || 0), 0)) > 1;
+          if (invalidLifecycleLines || jalaliDateOrdinal(statusEvents[0].date || statusEvents[0].operationDate) === null) {
+            summary.lifecycleJournalMismatches++;
+            summary.issues.push(label + ': مبلغ، کد حساب، تاریخ یا توازن سند رویداد نهایی چک با وضعیت ثبت‌شده سازگار نیست.');
+          }
         }
         if (events.some(v => {
           const integrity = inspectTrialBalanceVoucher(v);
@@ -9490,19 +9525,27 @@
           summary.invalidVoucher++;
           summary.issues.push(label + ': حداقل یکی از اسناد مرتبط، تاریخ/ساختار/مبلغ نامعتبر یا عدم توازن دارد.');
         }
+        let allocationTotal = 0;
         (Array.isArray(check.allocations) ? check.allocations : []).forEach(allocation => {
           const invoice = (state.invoices || []).find(item => String(item.id) === String(allocation.invoiceId));
           const allocated = Number(allocation.amount);
-          if (!invoice || !Number.isFinite(allocated) || allocated <= 0) {
+          const expectedInvoiceType = check.dir === 'receive' ? 'sale' : 'purchase';
+          if (!invoice || !Number.isFinite(allocated) || allocated <= 0 ||
+              (invoice && (String(invoice.partyId) !== String(check.partyId) || invoice.type !== expectedInvoiceType))) {
             summary.allocationIssues++;
-            summary.issues.push(label + ': تخصیص نامعتبر یا فاکتور مرتبطِ مفقود دارد.');
-          }
+            summary.issues.push(label + ': تخصیص نامعتبر، طرف حساب/نوع فاکتور ناسازگار یا فاکتور مرتبطِ مفقود دارد.');
+          } else allocationTotal += allocated;
         });
+        if (allocationTotal > amount + 1) {
+          summary.allocationIssues++;
+          summary.issues.push(label + ': جمع تخصیص‌های چک از مبلغ خود چک بیشتر است.');
+        }
       });
       summary.issues = [...new Set(summary.issues)].slice(0, 30);
-      summary.issueCount = summary.missingIssueVoucher + summary.duplicateSayad + summary.missingTreasuryLink +
-        summary.invalidCheckData + summary.missingStatusVoucher + summary.duplicateSourceEvents +
-        summary.invalidVoucher + summary.allocationIssues;
+      summary.issueCount = summary.missingIssueVoucher + summary.duplicateSayad + summary.duplicateCheckIds +
+        summary.invalidStatuses + summary.missingTreasuryLink + summary.invalidCheckData +
+        summary.missingStatusVoucher + summary.duplicateSourceEvents + summary.invalidVoucher +
+        summary.allocationIssues + summary.allocationReleaseIssues + summary.lifecycleJournalMismatches;
       return summary;
     }
 
