@@ -36,7 +36,7 @@ const dateOrdinal = () => 1;
 {
   const broken = structuredClone(state);
   broken.vouchers[0].lines.push({ code: '1106', debit: 10, credit: 0 });
-  broken.vouchers[0].lines[1].credit = 120;
+  broken.vouchers[0].lines[0].debit = 100;
   const result = auditInvoices(broken, { dateOrdinal });
   assert.ok(result.findings.some(x => x.code === 'journal-account-mismatch-1106'),
     'non-recoverable VAT must not be posted to input VAT control 1106');
