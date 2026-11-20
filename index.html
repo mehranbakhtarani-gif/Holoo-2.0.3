@@ -11608,6 +11608,7 @@
         duplicateTransactionIds: 0, invalidAllocations: 0, duplicateAllocationRows: 0, overAllocatedInvoices: 0,
         paidAmountMismatches: 0, missingCreditApplicationVouchers: 0, orphanCreditVouchers: 0, creditRefundsChecked: 0, missingCreditRefundVouchers: 0, duplicateCreditRefundVouchers: 0, orphanCreditRefundVouchers: 0,
         duplicateCreditApplicationIds: 0, ledgerAmountMismatches: 0, invalidLedgerLines: 0, duplicateCheckTransactionLinks: 0,
+        missingCheckOutcomeVouchers: 0, duplicateCheckOutcomeVouchers: 0, orphanCheckOutcomeVouchers: 0,
         invalidCreditRecords: 0, creditBalanceMismatches: 0, missingCreditRefundRecords: 0, duplicateCreditIds: 0
       };
       const add = (type, message, detail) => issues.push({ type, message, detail: String(detail || '') });
@@ -11634,6 +11635,12 @@
       };
       const treasuryVoucherMap = voucherGroups('treasury','posted');
       const checkVoucherMap = voucherGroups('check','issued');
+      const checkOutcomeVoucherMap = new Map();
+      vouchers.filter(v => v && v.sourceType === 'check' && ['cleared','bounced','voided'].includes(String(v.sourceEvent || 'default'))).forEach(v => {
+        const key = String(v.sourceId || '') + '|' + String(v.sourceEvent || 'default');
+        if (!checkOutcomeVoucherMap.has(key)) checkOutcomeVoucherMap.set(key, []);
+        checkOutcomeVoucherMap.get(key).push(v);
+      });
       const creditVoucherMap = new Map();
       vouchers.filter(v => v && v.sourceType === 'party_credit_apply').forEach(v => {
         const key = String(v.sourceId || '') + '|' + String(v.sourceEvent || 'default');
@@ -11760,6 +11767,45 @@
             counts.ledgerAmountMismatches++; add('check-ledger-mismatch','مبلغ، توازن یا تاریخ سند صدور چک با اطلاعات چک تطبیق ندارد.','چک: '+String(check.id)+' | مبلغ چک: '+String(check.amount)+' | بدهکار: '+debit+' | بستانکار: '+credit);
           }
         }
+        if (['cleared','bounced','voided'].includes(String(check.status))) {
+          const outcomeKey = String(check.id || '') + '|' + String(check.status);
+          const outcomeVouchers = checkOutcomeVoucherMap.get(outcomeKey) || [];
+          if (!outcomeVouchers.length) {
+            counts.missingCheckOutcomeVouchers++;
+            add('check-outcome-voucher-missing','برای تعیین‌تکلیف نهایی چک سند حسابداری متناظر پیدا نشد.','چک: '+String(check.id)+' | وضعیت: '+String(check.status));
+          }
+          if (outcomeVouchers.length > 1) {
+            counts.duplicateCheckOutcomeVouchers++;
+            add('check-outcome-voucher-duplicate','برای تعیین‌تکلیف چک بیش از یک سند حسابداری ثبت شده است.','چک: '+String(check.id)+' | وضعیت: '+String(check.status)+' | اسناد: '+outcomeVouchers.map(v=>v.id).join(', '));
+          }
+          if (outcomeVouchers.length === 1) {
+            const outcomeVoucher = outcomeVouchers[0];
+            const lines = Array.isArray(outcomeVoucher.lines) ? outcomeVoucher.lines : [];
+            const amount = Number(check.amount);
+            const isReceive = check.dir === 'receive';
+            const isCleared = check.status === 'cleared';
+            const accountCode = isCleared ? '1102' : (isReceive ? '1103' : '2102');
+            const partyCode = isCleared ? (isReceive ? '1104' : '2102') : (isReceive ? '1104' : '2101');
+            const accountSide = lines.filter(line => String(line.code) === accountCode &&
+              (accountCode !== '1102' || String(line.bankAccountId || '') === String(check.bankAccountId || '')))
+              .reduce((sum,line)=>sum+(isCleared && isReceive ? Number(line.debit||0) : isCleared || !isReceive ? Number(line.credit||0) : Number(line.debit||0)),0);
+            const partySide = lines.filter(line => String(line.code) === partyCode &&
+              String(line.partyId || '') === String(check.partyId))
+              .reduce((sum,line)=>sum+(isCleared && isReceive ? Number(line.credit||0) : isCleared || !isReceive ? Number(line.debit||0) : Number(line.credit||0)),0);
+            const totalDebit = lines.reduce((sum,line)=>sum+Number(line.debit||0),0);
+            const totalCredit = lines.reduce((sum,line)=>sum+Number(line.credit||0),0);
+            const ledgerLinesValid = validLedgerLines(lines);
+            if (!ledgerLinesValid) {
+              counts.invalidLedgerLines++;
+              add('check-outcome-ledger-line-invalid','ردیف نامعتبر در سند وصول، برگشت یا ابطال چک وجود دارد.','چک: '+String(check.id)+' | سند: '+String(outcomeVoucher.id));
+            }
+            if (!finite(check.amount) || amount <= 0 || !ledgerLinesValid ||
+                !near(accountSide,amount) || !near(partySide,amount) || !near(totalDebit,totalCredit)) {
+              counts.ledgerAmountMismatches++;
+              add('check-outcome-ledger-mismatch','مبلغ یا توازن سند وصول، برگشت یا ابطال چک با مبلغ چک تطبیق ندارد.','چک: '+String(check.id)+' | وضعیت: '+String(check.status)+' | مبلغ: '+String(check.amount)+' | حساب: '+accountSide+' | طرف حساب: '+partySide+' | بدهکار: '+totalDebit+' | بستانکار: '+totalCredit);
+            }
+          }
+        }
         if (!released) addAllocations(check,check.allocations,check.amount,check.dir==='receive'?'sale':check.dir==='pay'?'purchase':null);
       });
       const creditIds = new Set();
@@ -11854,6 +11900,12 @@
       });
       vouchers.filter(v=>v && v.sourceType==='check' && (v.sourceEvent||'default')==='issued').forEach(v=>{
         if (!checks.some(c=>String(c.id)===String(v.sourceId))) { counts.orphanChecks++; add('check-voucher-orphan','سند صدور چک بدون رکورد چک است.','سند: '+String(v.id)+' | چک: '+String(v.sourceId)); }
+      });
+      vouchers.filter(v=>v && v.sourceType==='check' && ['cleared','bounced','voided'].includes(String(v.sourceEvent || 'default'))).forEach(v=>{
+        if (!checks.some(c=>String(c.id)===String(v.sourceId) && String(c.status)===String(v.sourceEvent))) {
+          counts.orphanCheckOutcomeVouchers++;
+          add('check-outcome-voucher-orphan','سند وصول، برگشت یا ابطال چک به وضعیت نهایی متناظر متصل نیست.','سند: '+String(v.id)+' | چک: '+String(v.sourceId)+' | رویداد: '+String(v.sourceEvent));
+        }
       });
       vouchers.filter(v=>v && v.sourceType==='party_credit_apply').forEach(v=>{
         const key=String(v.sourceId||'')+'|'+String(v.sourceEvent||'default');
