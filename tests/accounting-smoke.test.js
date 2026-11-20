@@ -269,7 +269,7 @@ test('party control reconciliation does not net offsetting differences across co
     ], vouchers },
     getPartyLedgerControlCodes(party) { return new Set([party.ledgerAccountCode]); },
     normalizeLedgerDate(value) { return String(value || '').replace(/-/g, '/'); },
-    jalaliDateOrdinal(value) { return /^1405\\/01\\/\\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
+    jalaliDateOrdinal(value) { return /^1405\/01\/\d{2}$/.test(String(value || '')) ? Number(String(value).slice(-2)) : null; },
     countInvalidReportVoucherLines() { return 0; },
     inspectTrialBalanceVoucher() { return { invalidLines: 0, invalidStructure: false, unbalanced: false }; }
   });
