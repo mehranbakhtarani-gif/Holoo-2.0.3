@@ -9610,7 +9610,7 @@
       txs.forEach(tx => add(groups, String(tx.transferId || String(tx.id || '').replace(/-(?:OUT|IN)$/, '')), tx));
       vouchers.forEach(v => add(voucherGroups, String(v.sourceId || ''), v));
       const ids = new Set([...groups.keys(), ...voucherGroups.keys()]);
-      const result = { transfers: ids.size, missingPair: 0, duplicatePair: 0, missingVoucher: 0, duplicateVoucher: 0, invalidVoucher: 0, invalidAccounts: 0, amountMismatch: 0, dateMismatch: 0, orphanVoucher: 0, duplicateTxId: 0, issues: [] };
+      const result = { transfers: ids.size, missingPair: 0, duplicatePair: 0, missingVoucher: 0, duplicateVoucher: 0, invalidVoucher: 0, invalidAccounts: 0, amountMismatch: 0, dateMismatch: 0, orphanVoucher: 0, duplicateTxId: 0, missingTransferId: 0, missingVoucherId: 0, invalidLineAmounts: 0, issues: [] };
       ids.forEach(id => {
         const events = groups.get(id) || [], vs = voucherGroups.get(id) || [];
         const outs = events.filter(tx => tx.dir === 'pay'), ins = events.filter(tx => tx.dir === 'receive');
@@ -9621,14 +9621,35 @@
         }
         if (vs.length === 0) { result.missingVoucher++; issues.push(id + ': سند حسابداری انتقال پیدا نشد.'); }
         if (vs.length > 1) { result.duplicateVoucher++; issues.push(id + ': بیش از یک سند حسابداری برای انتقال ثبت شده است.'); }
+        if (!id) {
+          result.missingTransferId++;
+          issues.push('انتقال بدون شناسه یکتای انتقال ثبت شده است.');
+        }
         if (vs.length !== 1) return;
-        const voucher = vs[0], lines = voucher.lines || [];
+        const voucher = vs[0], lines = Array.isArray(voucher.lines) ? voucher.lines : [];
+        if (voucher.id === null || voucher.id === undefined || String(voucher.id).trim() === '') {
+          result.missingVoucherId++;
+          issues.push(id + ': شناسه سند انتقال ثبت نشده است.');
+        }
+        const invalidLineAmounts = lines.some(line => {
+          if (!line || typeof line !== 'object' || !line.code) return true;
+          const debitPresent = Object.prototype.hasOwnProperty.call(line, 'debit');
+          const creditPresent = Object.prototype.hasOwnProperty.call(line, 'credit');
+          if (!debitPresent || !creditPresent) return true;
+          const debit = line.debit === null || String(line.debit).trim() === '' ? NaN : Number(line.debit);
+          const credit = line.credit === null || String(line.credit).trim() === '' ? NaN : Number(line.credit);
+          return !Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0 || (debit > 0 && credit > 0);
+        });
+        if (invalidLineAmounts) {
+          result.invalidLineAmounts++;
+          issues.push(id + ': حداقل یک ردیف سند انتقال مبلغ خالی، نامعتبر، منفی یا دارای دو سمت مثبت دارد.');
+        }
         const bankLines = lines.filter(line => String(line.code) === '1102');
         const debitLines = bankLines.filter(line => Number(line.debit || 0) > 0);
         const creditLines = bankLines.filter(line => Number(line.credit || 0) > 0);
         const integrity = inspectTrialBalanceVoucher(voucher);
         const invalidBankLine = bankLines.some(line => !Number.isFinite(Number(line.debit || 0)) || !Number.isFinite(Number(line.credit || 0)) || Number(line.debit || 0) < 0 || Number(line.credit || 0) < 0 || (Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0));
-        if (integrity.invalidLines || integrity.invalidStructure || integrity.unbalanced || invalidBankLine || jalaliDateOrdinal(voucher.date || voucher.operationDate) === null || debitLines.length !== 1 || creditLines.length !== 1) {
+        if (integrity.invalidLines || integrity.invalidStructure || integrity.unbalanced || invalidLineAmounts || invalidBankLine || jalaliDateOrdinal(voucher.date || voucher.operationDate) === null || debitLines.length !== 1 || creditLines.length !== 1) {
           result.invalidVoucher++; issues.push(id + ': ساختار، تاریخ، جهت یا توازن سند انتقال نامعتبر است.');
         }
         if (debitLines.length !== 1 || creditLines.length !== 1) return;
@@ -9672,7 +9693,7 @@
       if (result.duplicateTxId) issues.push('شناسه گردش خزانه تکراری: ' + result.duplicateTxId + ' مورد.');
       result.issues = [...new Set(issues)].slice(0, 30);
       result.issueCount = result.missingPair + result.duplicatePair + result.missingVoucher + result.duplicateVoucher +
-        result.invalidVoucher + result.invalidAccounts + result.amountMismatch + result.dateMismatch + result.orphanVoucher + result.duplicateTxId;
+        result.invalidVoucher + result.invalidAccounts + result.amountMismatch + result.dateMismatch + result.orphanVoucher + result.duplicateTxId + result.missingTransferId + result.missingVoucherId + result.invalidLineAmounts;
       return result;
     }
 
