@@ -2631,7 +2631,7 @@
     async function storeRecoveredOperationHistory(rows) {
       const normalized = rows.map(row => {
         if (!row || !row.operation_id || row.company_record_id !== cloudConfig.recordId ||
-            !['mehran', 'ehsan'].includes(row.actor) || !row.device_id ||
+            !['mehran', 'ehsan', 'unknown'].includes(row.actor) || !row.device_id ||
             !row.server_updated_at || !Array.isArray(row.entity_changes) ||
             !row.root_changes || typeof row.root_changes !== 'object' || Array.isArray(row.root_changes)) {
           throw new Error('یکی از سوابق دفتر عملیات ابری ناقص یا نامعتبر است؛ بازیابی متوقف شد.');
