@@ -62,6 +62,7 @@ jobs:
           node tests/fx-revaluation.test.js
           node tests/operation-dates.test.js
           node tests/android-pwa.test.js
+          node tests/service-worker-routing.test.js
           node tests/object-motion.test.js
           node tests/operation-journal-failure.test.js
           node tests/jalali-date-input.test.js
