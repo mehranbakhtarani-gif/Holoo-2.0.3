@@ -92,4 +92,20 @@ assert.ok(idempotency >= 0 && existingLookup > idempotency && baselineWrite > ex
 assert.match(migration.slice(idempotency, baselineWrite), /'status',\s*'already_applied'/,
   'server must return already_applied for a duplicate operation ID');
 
-console.log('Operation journal failure, uncertain RPC retry, and acknowledgement recovery checks passed.');
+const recoveryStart = html.indexOf('async function prepareLocalStorageMirror');
+const recoveryEnd = html.indexOf('function isValidBackupData', recoveryStart);
+assert.ok(recoveryStart >= 0 && recoveryEnd > recoveryStart,
+  'local mirror recovery must be defined before backup validation');
+const recoveryBody = html.slice(recoveryStart, recoveryEnd);
+assert.match(recoveryBody, /try \\{ localData = JSON\\.parse\\(localRaw\\); \\} catch/,
+  'corrupt localStorage JSON must be detected without aborting recovery');
+assert.match(recoveryBody, /const localValid = isValidBackupData\\(localData\\)/);
+assert.match(recoveryBody, /const mirrorValid = isValidBackupData\\(mirror\\?\\.payload\\)/);
+assert.match(recoveryBody, /if \\(!localValid && mirrorValid\\)/,
+  'a valid IndexedDB mirror must be selected when localStorage is invalid');
+assert.match(recoveryBody, /if \\(!localValid\\) \\{[\\s\\S]*?return false;/,
+  'when both local copies are invalid, startup must stop rather than write defaults');
+assert.match(recoveryBody, /await writeLocalMirror\\(localData\\)/,
+  'a validated local snapshot may refresh the IndexedDB mirror');
+
+console.log('Operation journal durability, uncertain RPC retry, and local corruption recovery checks passed.');
