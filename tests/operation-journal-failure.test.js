@@ -127,8 +127,8 @@ assert.ok(cloudRestoreBody.includes('listPendingOperations(1)'), 'cloud recovery
 assert.ok(cloudRestoreBody.includes('CLOUD_OUTBOX_KEY') && cloudRestoreBody.includes('CLOUD_CONFLICT_DB_KEY'), 'cloud recovery must respect local outbox and conflict state');
 assert.ok(cloudRestoreBody.includes('const history = await fetchRemoteOperationHistory()') && cloudRestoreBody.includes('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'complete history must be fetched before atomically persisting it with the snapshot mirror');
 assert.ok(cloudRestoreBody.includes('history.some(row => row.server_updated_at === remote.updated_at)'), 'the recovered snapshot timestamp must match a checkpoint in the operation history');
-assert.ok(cloudRestoreBody.includes('await writeLocalMirror(state, null, remote.updated_at)'), 'restored mirror must retain the server timestamp after audit ID repair');
-assert.ok(cloudRestoreBody.indexOf('ensureAuditLogIds(state)') < cloudRestoreBody.indexOf('await writeLocalMirror(state, null, remote.updated_at)'), 'the normalized recovered state must be mirrored after audit ID repair');
+assert.ok(cloudRestoreBody.includes('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'restored mirror must retain the server timestamp after audit ID repair');
+assert.ok(cloudRestoreBody.indexOf('ensureAuditLogIds(state)') < cloudRestoreBody.indexOf('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'the normalized recovered state must be atomically mirrored after audit ID repair');
 assert.ok(cloudRestoreBody.includes('CLOUD_BASELINE_KEY, remote.updated_at'), 'restored cloud baseline must be recorded');
 
 console.log('Operation journal durability, local/cloud recovery, and idempotent audit restoration checks passed.');
