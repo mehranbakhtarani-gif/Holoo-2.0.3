@@ -67,9 +67,9 @@ const ackStart = html.indexOf('async function acknowledgeOperations');
 const rpcStart = html.indexOf('async function pushOperationJournalToSupabase', ackStart);
 assert.ok(ackStart >= 0 && rpcStart > ackStart, 'operation acknowledgement function must exist');
 const ackBody = html.slice(ackStart, rpcStart);
-assert.match(ackBody, /tx\\.oncomplete = resolve/);
-assert.match(ackBody, /tx\\.onerror = \\(\\) => reject/);
-assert.match(ackBody, /tx\\.onabort = \\(\\) => reject/,
+assert.match(ackBody, /tx\.oncomplete = resolve/);
+assert.match(ackBody, /tx\.onerror = \(\) => reject/);
+assert.match(ackBody, /tx\.onabort = \(\) => reject/,
   'an aborted local acknowledgement transaction must reject and leave the operation pending');
 
 const rpcBody = html.slice(rpcStart, html.indexOf('async function readLocalMirror', rpcStart));
@@ -80,7 +80,7 @@ assert.ok(rpcCall >= 0 && responseParse > rpcCall && ackCall > responseParse,
   'the server response must be interpreted before acknowledging the local operation');
 assert.match(rpcBody.slice(responseParse, ackCall), /already_applied/,
   'a retry after an uncertain network response must accept the server idempotency response');
-assert.match(rpcBody.slice(ackCall), /await acknowledgeOperations\\(\\[operation\\.operationId\\]/,
+assert.match(rpcBody.slice(ackCall), /await acknowledgeOperations\(\[operation\.operationId\]/,
   'each operation must be acknowledged only after the server confirms applied/already_applied');
 
 const migration = fs.readFileSync('supabase/migrations/202611180004_same_device_sequential_merge.sql', 'utf8');
@@ -89,7 +89,7 @@ const existingLookup = migration.indexOf('where operation_id = p_operation_id', 
 const baselineWrite = migration.indexOf('perform set_config', idempotency);
 assert.ok(idempotency >= 0 && existingLookup > idempotency && baselineWrite > existingLookup,
   'server-side duplicate detection must run before applying a snapshot or comparing its baseline');
-assert.match(migration.slice(idempotency, baselineWrite), /'status',\\s*'already_applied'/,
+assert.match(migration.slice(idempotency, baselineWrite), /'status',\s*'already_applied'/,
   'server must return already_applied for a duplicate operation ID');
 
 console.log('Operation journal failure, uncertain RPC retry, and acknowledgement recovery checks passed.');
