@@ -3395,31 +3395,40 @@
           return;
         }
         const inSelectedYear = dateOrdinal >= periodStart && dateOrdinal <= periodEnd;
-        normalizedLines.forEach(line => {
-          if (!map[line.code]) map[line.code] = {
-            code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0
-          };
-          const account = map[line.code];
+        const pending = {};
+        let unsafeTurnover = false;
+        for (const line of normalizedLines) {
           const accountClass = String(line.code).charAt(0);
           // Balance-sheet accounts carry forward; income/expense accounts reset each fiscal year.
-          if (['4', '5', '6'].includes(accountClass) && !inSelectedYear) return;
-          account.debTurn += line.debit;
-          account.credTurn += line.credit;
-          if (!Number.isSafeInteger(account.debTurn) || !Number.isSafeInteger(account.credTurn)) {
-            quality.unsafeAmountVouchers++;
-            account.debTurn -= line.debit;
-            account.credTurn -= line.credit;
-            return;
+          if (['4', '5', '6'].includes(accountClass) && !inSelectedYear) continue;
+          const current = map[line.code] || { code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0 };
+          const delta = pending[line.code] || { debTurn: 0, credTurn: 0, periodDebTurn: 0, periodCredTurn: 0 };
+          const nextDeb = current.debTurn + delta.debTurn + line.debit;
+          const nextCred = current.credTurn + delta.credTurn + line.credit;
+          const nextPeriodDeb = current.periodDebTurn + delta.periodDebTurn + (inSelectedYear ? line.debit : 0);
+          const nextPeriodCred = current.periodCredTurn + delta.periodCredTurn + (inSelectedYear ? line.credit : 0);
+          if (![nextDeb, nextCred, nextPeriodDeb, nextPeriodCred].every(Number.isSafeInteger)) {
+            unsafeTurnover = true;
+            break;
           }
-          if (inSelectedYear) {
-            account.periodDebTurn += line.debit;
-            account.periodCredTurn += line.credit;
-            if (!Number.isSafeInteger(account.periodDebTurn) || !Number.isSafeInteger(account.periodCredTurn)) {
-              quality.unsafeAmountVouchers++;
-              account.periodDebTurn -= line.debit;
-              account.periodCredTurn -= line.credit;
-            }
-          }
+          pending[line.code] = {
+            debTurn: delta.debTurn + line.debit,
+            credTurn: delta.credTurn + line.credit,
+            periodDebTurn: delta.periodDebTurn + (inSelectedYear ? line.debit : 0),
+            periodCredTurn: delta.periodCredTurn + (inSelectedYear ? line.credit : 0),
+            name: line.name
+          };
+        }
+        if (unsafeTurnover) {
+          quality.unsafeAmountVouchers++;
+          return;
+        }
+        Object.entries(pending).forEach(([code, delta]) => {
+          if (!map[code]) map[code] = { code, name: delta.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0 };
+          map[code].debTurn += delta.debTurn;
+          map[code].credTurn += delta.credTurn;
+          map[code].periodDebTurn += delta.periodDebTurn;
+          map[code].periodCredTurn += delta.periodCredTurn;
         });
       });
       Object.values(map).forEach(account => {
