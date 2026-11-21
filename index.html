@@ -14628,7 +14628,7 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
       // اگر IndexedDB پاسخ نداد، رابط برنامه باز می‌شود اما همگام‌سازی خودکار متوقف می‌ماند
       // تا نسخه ابری ناخواسته روی داده محلیِ هنوز بازیابی‌نشده نوشته نشود.
       const localReady = await Promise.race([
-        prepareLocalStorageMirror().then(() => true).catch(error => {
+        prepareLocalStorageMirror().then(ready => ready === true).catch(error => {
           console.warn('Local startup preparation failed:', error);
           return false;
         }),
