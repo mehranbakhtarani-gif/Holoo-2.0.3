@@ -49,3 +49,48 @@ These cannot be proven by static CI alone and must be checked on the actual Andr
 ## Data safety
 
 This stage must not alter company records, production Supabase rows, RLS policies, or existing accounting vouchers. Keep the current no-password requirement visible as a security limitation: actor names and device labels are not verified identities.
+
+
+## Manual recovery drill — isolated test environment only
+
+Do not perform destructive storage tests against the live company or production Supabase record. Use a disposable browser profile and an isolated test company/database with no real vouchers. Export a backup first and record the deployed commit, browser version, device model, and test timestamp.
+
+### Test A — recover from a damaged localStorage snapshot
+
+1. Load the test app online and wait until the local mirror and operation queue are ready.
+2. Create one uniquely identifiable test product and confirm the save completes. Record its ID and expected value.
+3. In browser developer tools, inspect the app's local storage and IndexedDB. Identify the app snapshot and its mirror stores from the running build; do not guess database or key names.
+4. Close the app, then corrupt only the localStorage snapshot value in the disposable profile. Leave IndexedDB intact.
+5. Reopen the app. Pass only if the valid IndexedDB mirror is selected, the product value is unchanged, the app reports readiness, and no duplicate operation is created.
+
+### Test B — recover from a damaged IndexedDB mirror
+
+1. Start from a fresh test profile with a valid snapshot and a completed save.
+2. Close the app and damage only the app's IndexedDB snapshot/mirror record. Keep the localStorage snapshot intact.
+3. Reopen the app. Pass only if the structurally valid localStorage snapshot is retained and the mirror is rebuilt without changing accounting values or inventing a journal operation.
+
+### Test C — both local copies invalid
+
+1. Use a disposable profile and isolated test company only. Ensure there are no pending local operations, outbox markers, or unresolved conflicts.
+2. Create and cloud-confirm a test product change; verify its matching operation-history checkpoint exists on the test backend.
+3. Close the app and invalidate both local snapshot copies in the disposable profile.
+4. Reopen while online. Pass only if the complete remote snapshot and complete operation history are fetched, the snapshot checkpoint matches the journal, and the recovered state plus history are persisted together.
+5. Repeat with an intentionally incomplete/changed history response in a controlled test harness. Pass only if recovery fails closed and does not promote a partial snapshot.
+
+### Test D — pending queue, transport interruption, and conflict
+
+1. Queue at least three distinct test operations on one device.
+2. Interrupt network access during upload of the second operation.
+3. Reopen the app and restore connectivity. Pass only if the first server-confirmed operation is acknowledged, the second and third remain ordered and pending, and retries reuse stable operation IDs.
+4. In a separate test, cause a baseline conflict. Pass only if the conflicting operation and all later operations remain pending and no automatic overwrite or merge occurs.
+
+### Evidence to capture
+
+For every test, record: pass/fail, app commit, device/browser, local snapshot before/after, operation IDs and sequence numbers, cloud checkpoint timestamp, pending queue before/after, and a screenshot or sanitized log. Never include API keys, authorization headers, customer names, or real accounting data in evidence.
+
+| Drill | Required result | Status |
+|---|---|---|
+| A — localStorage damaged, IndexedDB valid | Recover mirror; no duplicate journal operation | Not run on physical browser |
+| B — IndexedDB damaged, localStorage valid | Preserve local snapshot; rebuild mirror | Not run on physical browser |
+| C — both local copies damaged | Complete checkpoint-verified cloud recovery or fail closed | Not run on physical browser |
+| D — mid-queue interruption/conflict | Preserve order and all unacknowledged operations | Simulated CI only |
