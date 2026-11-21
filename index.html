@@ -2682,15 +2682,22 @@
 
       const snapshotUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' +
         encodeURIComponent(cloudConfig.table) + '?id=eq.' + encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
-      const [snapshotResponse, history] = await Promise.all([
-        fetchWithTimeout(snapshotUrl, { method: 'GET', headers: cloudAuthHeaders() }),
-        fetchRemoteOperationHistory()
-      ]);
+      // Read the complete append-only journal first, then read the snapshot.
+      // The snapshot timestamp must be present in that journal, otherwise the two reads
+      // may represent different moments or the audit trail may be incomplete.
+      const history = await fetchRemoteOperationHistory();
+      const snapshotResponse = await fetchWithTimeout(snapshotUrl, {
+        method: 'GET',
+        headers: cloudAuthHeaders()
+      });
       if (!snapshotResponse.ok) throw new Error('دریافت نسخه کامل شرکت از ابر ناموفق بود: HTTP ' + snapshotResponse.status);
       const snapshotRows = await snapshotResponse.json();
       const remote = Array.isArray(snapshotRows) ? snapshotRows[0] : null;
       if (!remote || !isValidBackupData(remote.data) || !remote.updated_at) {
         throw new Error('نسخه ابری شرکت موجود نیست یا ساختار آن معتبر نیست.');
+      }
+      if (!history.some(row => row.server_updated_at === remote.updated_at)) {
+        throw new Error('نسخه شرکت و دفتر عملیات از یک نقطه زمانی قابل تأیید نیستند؛ بازیابی متوقف شد.');
       }
 
       // Commit the restored audit history and snapshot mirror in one IndexedDB transaction.
