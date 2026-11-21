@@ -148,5 +148,81 @@ async function run(harness) {
       actor + ' ordinary save payload must preserve the assigned device operator');
   }
 
-  console.log('PASS: production startup recovery runtime — Ehsan actor, delta, sequence, commit-abort safety, invalid timestamps and no-outbox behavior');
+
+  // Exercise the real production outbox drain: retry after an uncertain network result
+  // must reuse the same operation id and accept the server's idempotent acknowledgement.
+  const pushStart = html.indexOf('async function pushOperationJournalToSupabase()');
+  const pushEnd = html.indexOf('async function readLocalMirror()', pushStart);
+  assert.ok(pushStart >= 0 && pushEnd > pushStart, 'production operation uploader must exist');
+  const pushFunction = html.slice(pushStart, pushEnd).trim();
+  const pendingOperation = {
+    operationId: 'same-operation-id',
+    companyRecordId: 'main_company_state',
+    actor: 'ehsan',
+    deviceId: 'device-writer-123456',
+    sequence: 19,
+    operationType: 'state_snapshot',
+    summary: 'runtime retry test',
+    payload: { activeRole: 'ehsan', vouchers: [] },
+    entityChanges: [],
+    rootChanges: {},
+    createdAt: '2026-11-21T10:10:00.000Z'
+  };
+  const pending = [pendingOperation];
+  const acked = [];
+  const requests = [];
+  let failTransportOnce = true;
+  const pushContext = {
+    listPendingOperations: async limit => pending.slice(0, limit),
+    acknowledgeOperations: async ids => {
+      acked.push(...ids);
+      for (const id of ids) {
+        const index = pending.findIndex(op => op.operationId === id);
+        if (index >= 0) pending.splice(index, 1);
+      }
+    },
+    localStorage: {
+      getItem: key => key === 'outbox' ? 'queued-marker' :
+        key === 'local-updated' ? '2026-11-21T10:10:00.000Z' :
+        key === 'baseline' ? '2026-11-21T10:00:00.000Z' : null,
+      setItem: () => {}, removeItem: () => {}
+    },
+    CLOUD_OUTBOX_KEY: 'outbox', LOCAL_UPDATED_KEY: 'local-updated',
+    CLOUD_BASELINE_KEY: 'baseline',
+    cloudConfig: { url: 'https://example.invalid', recordId: 'main_company_state', table: 'holoo_sync' },
+    fetchWithTimeout: async (url, options) => {
+      requests.push({ url, options });
+      if (failTransportOnce) {
+        failTransportOnce = false;
+        throw new Error('simulated connection loss after request dispatch');
+      }
+      return {
+        status: 200, ok: true,
+        json: async () => ({ status: 'already_applied', operation_id: 'same-operation-id',
+          updated_at: '2026-11-21T10:11:00.000Z' })
+      };
+    },
+    cloudAuthHeaders: () => ({ apikey: 'test', Authorization: 'Bearer test' }),
+    renderCloudSyncStatus: async () => {}, scheduleCloudSync: () => {},
+    setCloudBadge: () => {}, showToast: () => {},
+    state: {}, lastSavedState: {}, lastQueuedAuditId: null,
+    JSON, Date, encodeURIComponent, Error, Promise
+  };
+  const push = vm.runInNewContext('(' + pushFunction + ')', pushContext);
+  await assert.rejects(() => push.call(pushContext), /simulated connection loss/);
+  assert.equal(acked.length, 0, 'a transport failure must never acknowledge the pending operation');
+  assert.equal(pending.length, 1, 'the operation must remain queued after uncertain delivery');
+  assert.equal(requests.length, 1);
+  const retryResult = await push.call(pushContext);
+  assert.equal(retryResult.applied, 1, 'already_applied is a successful idempotent retry');
+  assert.deepEqual(acked, ['same-operation-id']);
+  assert.equal(pending.length, 0, 'the queue drains only after server acknowledgement');
+  assert.equal(requests.length, 2);
+  const firstBody = JSON.parse(requests[0].options.body);
+  const retryBody = JSON.parse(requests[1].options.body);
+  assert.equal(firstBody.p_operation_id, 'same-operation-id');
+  assert.equal(retryBody.p_operation_id, firstBody.p_operation_id,
+    'restart/retry must reuse the exact stable operation id');
+
+  console.log('PASS: production journal recovery and outbox runtime — Ehsan actor, delta, sequence, commit-abort safety, invalid timestamps, no-outbox behavior, transport retry and idempotent acknowledgement');
 })().catch(error => { console.error(error); process.exitCode = 1; });
