@@ -107,7 +107,63 @@ function buildInventoryCostAudit(state){
  });
  const knownReturns=new Set();invoices.forEach(inv=>(Array.isArray(inv&&inv.returnRefs)?inv.returnRefs:[]).forEach(r=>knownReturns.add(String((r&&r.id)??''))));
  vouchers.filter(v=>v&&v.sourceType==='invoice_return').forEach(v=>{if(!knownReturns.has(String(v.sourceId??''))){orphanReturnVouchers++;add('return-voucher-orphan',String(v.sourceEvent??''),'سند برگشت به سابقه برگشت فاکتور متصل نیست.','شناسه برگشت: '+String(v.sourceId??''));}});
- return{salesChecked,purchasesChecked,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,returnKardexMovementMismatches,returnKardexDirectionMismatches,returnKardexDuplicateMovements,returnKardexCostMismatches,returnKardexUnverified,kardexStockMismatches,batchStockMismatches,unverifiedStockTrace,kardexSequenceMismatches,invalidKardexRows,negativeKardexBalances,issueCount:issues.length,issues,details};
+
+ let cancellationVoucherLinksUnverified=0,cancellationAccountMismatches=0,cancellationKardexUnverified=0,cancellationKardexMismatches=0;
+ const cancelledInvoices=invoices.filter(inv=>inv&&inv.status==='cancelled');
+ const compareCancellationSide=(voucher,invoiceId,code,field,expected,counterField,label)=>{
+  const actual=sum(linesFor(voucher,code),field),opposite=sum(linesFor(voucher,code),counterField);
+  if(expected===null||actual===null||opposite===null||Math.abs(actual-expected)>TOLERANCE||opposite>TOLERANCE){
+   cancellationAccountMismatches++;
+   add('cancellation-account-mismatch',invoiceId,'مانده حساب '+code+' در سند ابطال با مبنای ثبت‌شده سازگار نیست.',label+' | انتظار: '+expected+' | حساب: '+actual+' | سمت مقابل: '+opposite);
+  }
+ };
+ cancelledInvoices.forEach(inv=>{
+  const id=String(inv.id??''),matches=vouchers.filter(v=>v&&v.sourceType==='invoice_cancel'&&String(v.sourceId??'')===id);
+  if(matches.length!==1){
+   cancellationVoucherLinksUnverified++;
+   add('cancellation-voucher-link',id,'سند ابطال متناظر یکتا پیدا نشد.','تعداد سند: '+matches.length);
+  }else{
+   const voucher=matches[0];checkBalanced(voucher,id);
+   const amounts=inv.cancellationAmounts&&typeof inv.cancellationAmounts==='object'?inv.cancellationAmounts:{};
+   if(inv.type==='sale'){
+    const expected=amount(inv.cancelledCostOfGoodsSold);
+    compareCancellationSide(voucher,id,'1105','debit',expected,'credit','برگشت موجودی فروش');
+    compareCancellationSide(voucher,id,'5101','credit',expected,'debit','برگشت بهای تمام‌شده فروش');
+   }else if(inv.type==='purchase'){
+    const nonRecoverable=inv.purchaseVatTreatment==='non_recoverable';
+    const expectedInventory=amount(nonRecoverable?amounts.totalAmount:amounts.baseAmount);
+    const expectedVat=nonRecoverable?0:amount(amounts.vatAmount);
+    compareCancellationSide(voucher,id,'1105','credit',expectedInventory,'debit','ابطال ورود موجودی خرید');
+    compareCancellationSide(voucher,id,'1106','credit',expectedVat,'debit','ابطال اعتبار مالیات خرید');
+   }
+  }
+  const expectsMovement=(Array.isArray(inv.items)?inv.items:[]).some(item=>{
+   const q=Number(item&&item.kg||0)-Number(item&&item.returnedKg||0);
+   return Number.isFinite(q)&&q>0.000001;
+  });
+  if(!expectsMovement)return;
+  let foundAny=false;
+  (Array.isArray(inv.items)?inv.items:[]).forEach(item=>{
+   const qty=Number(item&&item.kg||0)-Number(item&&item.returnedKg||0);
+   if(!Number.isFinite(qty)||qty<=0.000001)return;
+   const product=products.find(p=>p&&String(p.id)===String(item&&item.productId));
+   if(!product){cancellationKardexUnverified++;add('cancellation-kardex-unverified',id,'کالای ردیف ابطال برای تطبیق کاردکس پیدا نشد.',String(item&&item.productId||''));return;}
+   const rows=(Array.isArray(product.kardex)?product.kardex:[]).filter(row=>row&&(
+    (row.sourceType==='invoice_cancel'&&(
+      String(row.sourceEvent??'')===id||
+      String(row.sourceRef??'')===String(inv.cancellationVoucherId??'')
+    ))||String(row.doc??'').trim()==='ابطال فاکتور #'+id
+   ));
+   if(!rows.length){cancellationKardexUnverified++;add('cancellation-kardex-missing',id,'گردش کاردکس متناظر با ابطال فاکتور ثبت نشده یا قابل ردیابی نیست.','کالا: '+String(item.productId||'')+' | مقدار مورد انتظار: '+qty);return;}
+   foundAny=true;
+   const isSale=inv.type==='sale',moved=sum(rows,isSale?'inQty':'outQty'),opposite=sum(rows,isSale?'outQty':'inQty');
+   if(moved===null||Math.abs(moved-qty)>0.000001||opposite===null||opposite>0.000001){
+    cancellationKardexMismatches++;
+    add('cancellation-kardex-mismatch',id,'مقدار یا جهت گردش کاردکس ابطال با مقدار باقیمانده فاکتور سازگار نیست.','کالا: '+String(item.productId||'')+' | مقدار مورد انتظار: '+qty+' | گردش: '+moved+' | جهت مقابل: '+opposite);
+   }
+  });
+ });
+ return{salesChecked,purchasesChecked,cancellationVoucherLinksUnverified,cancellationAccountMismatches,cancellationKardexUnverified,cancellationKardexMismatches,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,returnKardexMovementMismatches,returnKardexDirectionMismatches,returnKardexDuplicateMovements,returnKardexCostMismatches,returnKardexUnverified,kardexStockMismatches,batchStockMismatches,unverifiedStockTrace,kardexSequenceMismatches,invalidKardexRows,negativeKardexBalances,issueCount:issues.length,issues,details};
 }
 root.HolooInventoryCostAudit={buildInventoryCostAudit};if(typeof module!=='undefined'&&module.exports)module.exports=root.HolooInventoryCostAudit;
 })(typeof globalThis!=='undefined'?globalThis:this);
