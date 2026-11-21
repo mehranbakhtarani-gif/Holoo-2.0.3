@@ -120,6 +120,7 @@ assert.ok(historyBody.includes('page.length !== pageSize'), 'short pages before 
 const recoveredStoreBody = html.slice(recoveredStoreStart, cloudRestoreStart);
 assert.ok(recoveredStoreBody.includes('recoveredFromServer: true') && recoveredStoreBody.includes('acknowledgedAt: row.server_updated_at'), 'restored history entries must be marked as server-acknowledged');
 assert.ok(recoveredStoreBody.includes('store.put(operation)'), 'recovered operations must be stored idempotently by operationId');
+assert.ok(recoveredStoreBody.includes("'mehran', 'ehsan', 'unknown'"), 'migration checkpoint rows with actor unknown must also be recoverable');
 const cloudRestoreBody = html.slice(cloudRestoreStart, prepareStart);
 assert.ok(cloudRestoreBody.includes('listPendingOperations(1)'), 'cloud recovery must refuse to overwrite unsent local operations');
 assert.ok(cloudRestoreBody.includes('CLOUD_OUTBOX_KEY') && cloudRestoreBody.includes('CLOUD_CONFLICT_DB_KEY'), 'cloud recovery must respect local outbox and conflict state');
