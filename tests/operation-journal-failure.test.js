@@ -108,4 +108,7 @@ assert.match(recoveryBody, /if \\(!localValid\\) \\{[\\s\\S]*?return false;/,
 assert.match(recoveryBody, /await writeLocalMirror\\(localData\\)/,
   'a validated local snapshot may refresh the IndexedDB mirror');
 
+assert.match(html, /prepareLocalStorageMirror\(\)\.then\(ready => ready === true\)/,
+  'a rejected local recovery readiness result must stop automatic cloud sync at startup');
+
 console.log('Operation journal durability, uncertain RPC retry, and local corruption recovery checks passed.');
