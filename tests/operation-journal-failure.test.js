@@ -111,4 +111,36 @@ assert.match(recoveryBody, /await writeLocalMirror\\(localData\\)/,
 assert.match(html, /prepareLocalStorageMirror\(\)\.then\(ready => ready === true\)/,
   'a rejected local recovery readiness result must stop automatic cloud sync at startup');
 
-console.log('Operation journal durability, uncertain RPC retry, and local corruption recovery checks passed.');
+const cloudHistoryStart = html.indexOf('async function fetchRemoteOperationHistory');
+const recoveredStoreStart = html.indexOf('async function storeRecoveredOperationHistory', cloudHistoryStart);
+const cloudRestoreStart = html.indexOf('async function restoreLocalStateFromSupabase', recoveredStoreStart);
+const prepareStart = html.indexOf('async function prepareLocalStorageMirror', cloudRestoreStart);
+assert.ok(cloudHistoryStart >= 0 && recoveredStoreStart > cloudHistoryStart && cloudRestoreStart > recoveredStoreStart && prepareStart > cloudRestoreStart,
+  'cloud history read, durable history restore, and cloud snapshot recovery must be defined before local startup preparation');
+const historyBody = html.slice(cloudHistoryStart, recoveredStoreStart);
+assert.match(historyBody, /holoo_operation_log/);
+assert.match(historyBody, /company_record_id=eq\\./);
+assert.match(historyBody, /server_updated_at\\.asc/);
+assert.match(historyBody, /offset=\\' \\+ offset/);
+assert.match(historyBody, /20000/);
+const recoveredStoreBody = html.slice(recoveredStoreStart, cloudRestoreStart);
+assert.match(recoveredStoreBody, /recoveredFromServer: true/);
+assert.match(recoveredStoreBody, /acknowledgedAt: row\\.server_updated_at/);
+assert.match(recoveredStoreBody, /store\\.put\\(operation\\)/,
+  'recovered server operations must be stored by operationId without becoming pending uploads');
+const cloudRestoreBody = html.slice(cloudRestoreStart, prepareStart);
+assert.match(cloudRestoreBody, /listPendingOperations\\(1\\)/,
+  'cloud recovery must refuse to overwrite unsent local operations');
+assert.match(cloudRestoreBody, /CLOUD_OUTBOX_KEY/);
+assert.match(cloudRestoreBody, /CLOUD_CONFLICT_DB_KEY/);
+assert.match(cloudRestoreBody, /Promise\\.all\\(/,
+  'the cloud snapshot and operation history must both be fetched before recovery');
+assert.match(cloudRestoreBody, /await storeRecoveredOperationHistory\\(history\\)/,
+  'the server audit history must be persisted before replacing the local state');
+assert.match(cloudRestoreBody, /await writeLocalMirror\\(remote\\.data, null, remote\\.updated_at\\)/,
+  'the restored mirror must retain the server snapshot timestamp');
+assert.match(cloudRestoreBody, /CLOUD_BASELINE_KEY, remote\\.updated_at/);
+assert.match(html, /if \\(!localValid\\) \\{\\s*try \\{\\s*return await restoreLocalStateFromSupabase\\(\\)/,
+  'when local state and mirror are invalid, startup must attempt guarded cloud recovery');
+
+console.log('Operation journal durability, local/cloud recovery, and idempotent audit restoration checks passed.');
