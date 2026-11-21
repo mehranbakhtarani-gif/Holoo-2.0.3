@@ -132,4 +132,17 @@ assert.ok(cloudRestoreBody.includes('await storeRecoveredOperationHistory(histor
 assert.ok(cloudRestoreBody.indexOf('ensureAuditLogIds(state)') < cloudRestoreBody.indexOf('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'the normalized recovered state must be atomically mirrored after audit ID repair');
 assert.ok(cloudRestoreBody.includes('CLOUD_BASELINE_KEY, remote.updated_at'), 'restored cloud baseline must be recorded');
 
-console.log('Operation journal durability, local/cloud recovery, and idempotent audit restoration checks passed.');
+
+const interruptedSaveGuard = recoveryBody.indexOf('const localOutboxPending = !!localStorage.getItem(CLOUD_OUTBOX_KEY)');
+const interruptedSaveRepair = recoveryBody.indexOf('const recoveredOperation = {', interruptedSaveGuard);
+const interruptedSaveCommit = recoveryBody.indexOf('await writeLocalMirror(localData, recoveredOperation, localUpdatedAtText)', interruptedSaveRepair);
+assert.ok(interruptedSaveGuard >= 0 && interruptedSaveRepair > interruptedSaveGuard && interruptedSaveCommit > interruptedSaveRepair,
+  'a newer local snapshot with a pending outbox must recreate the journal entry after an interrupted IndexedDB commit');
+assert.ok(recoveryBody.includes('buildEntityChangeSet(mirror.payload, localData, sequence)'),
+  'the recovered journal entry must contain the delta from the last durable mirror');
+assert.ok(recoveryBody.includes('!Number.isFinite(localUpdatedAt) || !Number.isFinite(mirrorUpdatedAt)'),
+  'ambiguous timestamps must fail closed instead of guessing which snapshot is newer');
+assert.ok(recoveryBody.includes("operationType: 'state_snapshot_recovered'"),
+  'interrupted saves must be distinguishable in the operation journal');
+
+console.log('Operation journal durability, interrupted-save repair, local/cloud recovery, and idempotent audit restoration checks passed.');
