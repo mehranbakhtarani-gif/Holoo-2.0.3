@@ -2628,7 +2628,7 @@
       throw new Error('تاریخچه دفتر عملیات کامل دریافت نشد؛ بازیابی متوقف شد.');
     }
 
-    async function storeRecoveredOperationHistory(rows) {
+    async function storeRecoveredOperationHistory(rows, snapshot = null, mirrorUpdatedAt = null) {
       const normalized = rows.map(row => {
         if (!row || !row.operation_id || row.company_record_id !== cloudConfig.recordId ||
             !['mehran', 'ehsan', 'unknown'].includes(row.actor) || !row.device_id ||
@@ -2651,13 +2651,15 @@
           recoveredFromServer: true
         };
       });
-      if (!normalized.length) return 0;
       const db = await openLocalDatabase();
       try {
         await new Promise((resolve, reject) => {
-          const tx = db.transaction(OPERATION_DB_STORE, 'readwrite');
+          const tx = db.transaction([LOCAL_DB_STORE, OPERATION_DB_STORE], 'readwrite');
           const store = tx.objectStore(OPERATION_DB_STORE);
           normalized.forEach(operation => store.put(operation));
+          if (snapshot) {
+            tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: mirrorUpdatedAt || new Date().toISOString() }, STORE_KEY);
+          }
           tx.oncomplete = resolve;
           tx.onerror = () => reject(tx.error || new Error('ذخیره تاریخچه بازیابی‌شده دفتر عملیات ناموفق بود.'));
           tx.onabort = () => reject(tx.error || new Error('ذخیره تاریخچه بازیابی‌شده دفتر عملیات لغو شد.'));
@@ -2691,11 +2693,10 @@
         throw new Error('نسخه ابری شرکت موجود نیست یا ساختار آن معتبر نیست.');
       }
 
-      // Restore the audit history first. Repeating this step is safe because operationId is the key.
-      const recoveredCount = await storeRecoveredOperationHistory(history);
+      // Commit the restored audit history and snapshot mirror in one IndexedDB transaction.
       state = remote.data;
       ensureAuditLogIds(state);
-      await writeLocalMirror(state, null, remote.updated_at);
+      const recoveredCount = await storeRecoveredOperationHistory(history, state, remote.updated_at);
       lastSavedState = JSON.parse(JSON.stringify(state));
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       localStorage.setItem(LOCAL_UPDATED_KEY, remote.updated_at);
