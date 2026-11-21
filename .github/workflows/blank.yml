@@ -45,7 +45,6 @@ jobs:
           node tests/actual-cash-flow.test.js
           node tests/accounting-reports-cross-validation.test.js
           node tests/revenue-expense-audit.test.js
-          node tests/trial-balance-print.test.js
           node tests/trial-balance.test.js
           node tests/trial-balance-print.test.js
           node tests/trial-balance-ledger-reconciliation.test.js
