@@ -7590,14 +7590,15 @@
           if (inv.type === 'sale') {
             entry.inventoryCost = getReturnCostOfGoods(entry.item, entry.quantity, simulated.buyPrice || 0);
             if (!Number.isSafeInteger(entry.inventoryCost) || entry.inventoryCost < 0) throw new Error('بهای دفتری ابطال فروش معتبر نیست.');
-            restoreFifoAllocations(
+            entry.batchAllocations = restoreFifoAllocations(
               simulated, entry.item.fifoAllocations || [], entry.quantity,
               entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice,
               'CANCEL-' + invId, entry.item.fifoReturnedAllocations || []
             );
           } else {
-            const consumption = consumeFifoStock(simulated, entry.quantity);
+            const consumption = consumePurchaseReturnBatches(simulated, invId, entry.item, entry.quantity);
             entry.inventoryCost = consumption.totalCost;
+            entry.batchAllocations = consumption.allocations;
             if (!Number.isSafeInteger(entry.inventoryCost) || entry.inventoryCost < 0) throw new Error('بهای دفتری ابطال خرید معتبر نیست.');
           }
         }
@@ -7669,7 +7670,8 @@
             )
           ];
         } else {
-          consumeFifoStock(product, quantity);
+          const consumption = consumePurchaseReturnBatches(product, invId, item, quantity);
+          if (consumption.totalCost !== entry.inventoryCost) throw new Error('بهای خروج سری ساخت خرید با مقدار اعتبارسنجی‌شده برابر نیست.');
           product.stock -= quantity;
         }
         product.kardex = Array.isArray(product.kardex) ? product.kardex : [];
@@ -7688,7 +7690,8 @@
           sourceType: 'invoice_cancel',
           sourceRef: cancellationVoucherId ? String(cancellationVoucherId) : 'CANCEL-' + invId,
           sourceEvent: String(invId),
-          sourceLineIndex: lineIndex
+          sourceLineIndex: lineIndex,
+          batchAllocations: Array.isArray(entry.batchAllocations) ? entry.batchAllocations.map(allocation => ({...allocation})) : []
         });
       }
       inv.status = 'cancelled';
