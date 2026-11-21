@@ -2769,7 +2769,7 @@
           const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
           const recoveredSnapshot = JSON.stringify(localData);
           const recoveredPayload = JSON.parse(recoveredSnapshot);
-          recoveredPayload.activeRole = 'mehran';
+          recoveredPayload.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
           const changeSet = buildEntityChangeSet(mirror.payload, localData, sequence);
           const recoveredOperation = {
             operationId: createStableId('op').slice(3),
