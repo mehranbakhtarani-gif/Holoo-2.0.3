@@ -2602,7 +2602,7 @@
         const response = await fetchWithTimeout(endpoint, { method: 'GET', headers: cloudAuthHeaders({ Prefer: 'count=exact' }) });
         if (!response.ok) throw new Error('خواندن تاریخچه دفتر عملیات از ابر ناموفق بود: HTTP ' + response.status);
         const range = response.headers.get('content-range') || '';
-        const totalMatch = /\\/(\\d+)$/.exec(range);
+        const totalMatch = /\/(\d+)$/.exec(range);
         if (!totalMatch) throw new Error('تعداد کل سوابق دفتر عملیات از پاسخ ابر قابل تأیید نیست.');
         const expectedTotal = Number(totalMatch[1]);
         const page = await response.json();
