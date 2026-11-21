@@ -2598,13 +2598,18 @@
       const pageSize = 1000;
       for (let offset = 0; offset < 20000; offset += pageSize) {
         const endpoint = baseUrl + '?company_record_id=eq.' + encodeURIComponent(recordId) +
-          '&select=' + columns + '&order=server_updated_at.asc&limit=' + pageSize + '&offset=' + offset;
-        const response = await fetchWithTimeout(endpoint, { method: 'GET', headers: cloudAuthHeaders() });
+          '&select=' + columns + '&order=server_updated_at.asc,operation_id.asc&limit=' + pageSize + '&offset=' + offset;
+        const response = await fetchWithTimeout(endpoint, { method: 'GET', headers: cloudAuthHeaders({ Prefer: 'count=exact' }) });
         if (!response.ok) throw new Error('خواندن تاریخچه دفتر عملیات از ابر ناموفق بود: HTTP ' + response.status);
+        const range = response.headers.get('content-range') || '';
+        const totalMatch = /\\/(\\d+)$/.exec(range);
+        if (!totalMatch) throw new Error('تعداد کل سوابق دفتر عملیات از پاسخ ابر قابل تأیید نیست.');
+        const expectedTotal = Number(totalMatch[1]);
         const page = await response.json();
-        if (!Array.isArray(page)) throw new Error('ساختار تاریخچه دفتر عملیات از ابر معتبر نیست.');
+        if (!Array.isArray(page) || !Number.isSafeInteger(expectedTotal)) throw new Error('ساختار تاریخچه دفتر عملیات از ابر معتبر نیست.');
         allRows.push(...page);
-        if (page.length < pageSize) return allRows;
+        if (allRows.length === expectedTotal) return allRows;
+        if (page.length < pageSize || allRows.length > expectedTotal) throw new Error('تاریخچه دفتر عملیات ناقص یا ناسازگار دریافت شد.');
       }
       throw new Error('تاریخچه دفتر عملیات بیش از سقف بازیابی است؛ برای جلوگیری از بازیابی ناقص، عملیات متوقف شد.');
     }
