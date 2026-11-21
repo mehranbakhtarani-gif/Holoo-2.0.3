@@ -3723,7 +3723,7 @@
       if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند ناقص یا بدون جمع بدهکار و بستانکار معتبر از محاسبه شاخص‌ها کنار گذاشته شد.</div>');
       if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن از محاسبه تمام شاخص‌های حسابداری کنار گذاشته شد.</div>');
       if (balanceQuality.unsafeAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unsafeAmountVouchers) + ' سند دارای مبلغ اعشاری، خارج از محدوده عدد امن یا گردش حساب سرریز شده است؛ برای جلوگیری از عدد نادرست کنار گذاشته/محدود شده است.</div>');
-      if (balanceQuality.unknownAccountCodes.length) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ کد حساب‌های خارج از کدینگ تعریف‌شده: ' + balanceQuality.unknownAccountCodes.map(escapeKardexText).join('، ') + '؛ نگاشت کدینگ بررسی شود.</div>');
+      if (balanceQuality.unknownAccountCodes.length) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ کد حساب‌های خارج از فهرست پایه (ممکن است حساب سفارشی باشد): ' + balanceQuality.unknownAccountCodes.map(escapeKardexText).join('، ') + '؛ نگاشت کدینگ بررسی شود.</div>');
       if (!inventoryValueVerified) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ارزش کل موجودی نمایش داده نشد؛ حداقل یک کالا دارای مغایرت سری ساخت یا بهای تمام‌شده تأییدنشده است. گزارش تطبیق موجودی را اجرا کنید.</div>');
       (Array.isArray(state.checks) ? state.checks : []).filter(c => c.status === 'overdue' || c.status === 'in_progress').forEach(c => {
         alerts.push(`<div class="p-2.5 rounded-xl ${c.status === 'overdue' ? 'bg-rose-50 border-rose-300 text-rose-950' : 'bg-amber-50 border-amber-200 text-amber-950'} border flex justify-between items-center">
@@ -8865,7 +8865,7 @@
         const faIndex = fa.indexOf(ch); return String(faIndex >= 0 ? faIndex : ar.indexOf(ch));
       });
       const parts = digits.replace(/-/g, '/').split('/');
-      if (parts.length !== 3 || parts.some(part => !/^\\d{1,4}$/.test(part.trim()))) return null;
+      if (parts.length !== 3 || parts.some(part => !/^\d{1,4}$/.test(part.trim()))) return null;
       const isDayFirst = Number(parts[2]) >= 1000 && Number(parts[0]) <= 31;
       const year = Number(isDayFirst ? parts[2] : parts[0]);
       if (!Number.isInteger(year) || year < 1 || year > 9999) return null;
