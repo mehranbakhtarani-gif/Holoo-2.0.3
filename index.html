@@ -2674,9 +2674,9 @@
 
       // Restore the audit history first. Repeating this step is safe because operationId is the key.
       const recoveredCount = await storeRecoveredOperationHistory(history);
-      await writeLocalMirror(remote.data, null, remote.updated_at);
       state = remote.data;
       ensureAuditLogIds(state);
+      await writeLocalMirror(state, null, remote.updated_at);
       lastSavedState = JSON.parse(JSON.stringify(state));
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       localStorage.setItem(LOCAL_UPDATED_KEY, remote.updated_at);
