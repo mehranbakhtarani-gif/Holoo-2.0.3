@@ -2960,7 +2960,7 @@
       const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
       const operationPayload = JSON.parse(snapshot);
-      operationPayload.activeRole = 'mehran';
+      operationPayload.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
       const previousAuditId = lastQueuedAuditId ?? lastSavedState?.auditLogs?.[0]?.id ?? null;
       const hasNewAuditEvent = !!lastAudit && lastAudit.id !== previousAuditId;
