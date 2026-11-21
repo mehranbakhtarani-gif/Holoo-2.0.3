@@ -2606,9 +2606,10 @@
         });
         if (!response.ok) throw new Error('خواندن تاریخچه دفتر عملیات از ابر ناموفق بود: HTTP ' + response.status);
         const contentRange = response.headers.get('content-range') || '';
-        const countMatch = contentRange.match(/\\/([0-9]+)$/);
-        if (!countMatch) throw new Error('سرور تعداد کامل سوابق دفتر عملیات را اعلام نکرد؛ بازیابی ناقص پذیرفته نمی‌شود.');
-        const pageCount = Number(countMatch[1]);
+        const rangeSlash = contentRange.lastIndexOf('/');
+        const pageCountText = rangeSlash >= 0 ? contentRange.slice(rangeSlash + 1) : '';
+        if (!/^[0-9]+$/.test(pageCountText)) throw new Error('سرور تعداد کامل سوابق دفتر عملیات را اعلام نکرد؛ بازیابی ناقص پذیرفته نمی‌شود.');
+        const pageCount = Number(pageCountText);
         if (!Number.isSafeInteger(pageCount) || pageCount < 0) throw new Error('تعداد سوابق دفتر عملیات از سرور معتبر نیست.');
         if (expectedCount === null) {
           expectedCount = pageCount;
