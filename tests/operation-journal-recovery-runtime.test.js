@@ -277,5 +277,57 @@ async function run(harness) {
   assert.deepEqual(conflictPending.map(op => op.operationId), ['conflict-op-1', 'must-wait-op-2'],
     'neither the conflicting operation nor later operations may be acknowledged or dropped');
 
+
+  // If a later operation encounters a transport failure, only earlier server-
+  // acknowledged work may leave the durable queue; the failed and later work stay pending.
+  const orderedOps = [1, 2, 3].map(n => ({
+    ...pendingOperation,
+    operationId: 'ordered-op-' + n,
+    sequence: n,
+    createdAt: '2026-11-21T10:20:0' + n + '.000Z'
+  }));
+  const orderedPending = orderedOps.slice();
+  const orderedAcknowledged = [];
+  let orderedRequests = 0;
+  const orderedContext = {
+    listPendingOperations: async limit => orderedPending.slice(0, limit),
+    acknowledgeOperations: async ids => {
+      orderedAcknowledged.push(...ids);
+      for (const id of ids) {
+        const index = orderedPending.findIndex(op => op.operationId === id);
+        if (index >= 0) orderedPending.splice(index, 1);
+      }
+    },
+    localStorage: {
+      getItem: key => key === 'outbox' ? 'queued-marker' :
+        key === 'local-updated' ? '2026-11-21T10:20:03.000Z' :
+        key === 'baseline' ? '2026-11-21T10:00:00.000Z' : null,
+      setItem: () => {}, removeItem: () => {}
+    },
+    CLOUD_OUTBOX_KEY: 'outbox', LOCAL_UPDATED_KEY: 'local-updated',
+    CLOUD_BASELINE_KEY: 'baseline',
+    cloudConfig: { url: 'https://example.invalid', recordId: 'main_company_state', table: 'holoo_sync' },
+    fetchWithTimeout: async () => {
+      orderedRequests++;
+      if (orderedRequests === 1) return {
+        status: 200, ok: true,
+        json: async () => ({ status: 'applied', updated_at: '2026-11-21T10:21:00.000Z' })
+      };
+      throw new Error('simulated network failure on second queued operation');
+    },
+    cloudAuthHeaders: () => ({ apikey: 'test', Authorization: 'Bearer test' }),
+    setCloudBadge: () => {}, showToast: () => {}, scheduleCloudSync: () => {},
+    renderCloudSyncStatus: async () => {},
+    state: {}, lastSavedState: {}, lastQueuedAuditId: null,
+    JSON, Date, encodeURIComponent, Error, Promise
+  };
+  const orderedPush = vm.runInNewContext('(' + pushFunction + ')', orderedContext);
+  await assert.rejects(() => orderedPush(), /simulated network failure on second queued operation/);
+  assert.deepEqual(orderedAcknowledged, ['ordered-op-1'],
+    'only the first operation, acknowledged by the server, may leave the queue');
+  assert.deepEqual(orderedPending.map(op => op.operationId), ['ordered-op-2', 'ordered-op-3'],
+    'failed and not-yet-sent operations must remain durable and ordered');
+  assert.equal(orderedRequests, 2, 'the uploader must stop immediately at the first transport failure');
+
   console.log('PASS: production journal recovery and outbox runtime — Ehsan actor, delta, sequence, commit-abort safety, invalid timestamps, no-outbox behavior, transport retry and idempotent acknowledgement');
 })().catch(error => { console.error(error); process.exitCode = 1; });
