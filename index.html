@@ -2747,6 +2747,21 @@
           }
         }
 
+        // A cloud restore commits the IndexedDB mirror before updating localStorage.
+        // If the app closed between those writes, prefer the newer timestamped mirror.
+        const localUpdatedAt = Date.parse(localStorage.getItem(LOCAL_UPDATED_KEY) || '');
+        const mirrorUpdatedAt = Date.parse(mirror?.updatedAt || '');
+        if (mirrorValid && Number.isFinite(localUpdatedAt) &&
+            Number.isFinite(mirrorUpdatedAt) && mirrorUpdatedAt > localUpdatedAt) {
+          state = mirror.payload;
+          ensureAuditLogIds(state);
+          lastSavedState = JSON.parse(JSON.stringify(state));
+          localStorage.setItem(STORE_KEY, JSON.stringify(state));
+          localStorage.setItem(LOCAL_UPDATED_KEY, mirror.updatedAt);
+          setCloudBadge('💾 نسخه جدیدتر حافظه داخلی بازیابی شد', 'text-emerald-300');
+          return true;
+        }
+
         state = localData;
         lastSavedState = JSON.parse(JSON.stringify(state));
         await writeLocalMirror(localData);
