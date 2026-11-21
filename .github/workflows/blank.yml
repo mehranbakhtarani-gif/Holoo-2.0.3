@@ -65,6 +65,7 @@ jobs:
           node tests/service-worker-routing.test.js
           node tests/object-motion.test.js
           node tests/operation-journal-failure.test.js
+          node tests/operation-journal-recovery-runtime.test.js
           node tests/jalali-date-input.test.js
           node tests/device-actor-assignment.test.js
           node tests/product-editing.test.js

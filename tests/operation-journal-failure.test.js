@@ -92,4 +92,57 @@ assert.ok(idempotency >= 0 && existingLookup > idempotency && baselineWrite > ex
 assert.match(migration.slice(idempotency, baselineWrite), /'status',\s*'already_applied'/,
   'server must return already_applied for a duplicate operation ID');
 
-console.log('Operation journal failure, uncertain RPC retry, and acknowledgement recovery checks passed.');
+const recoveryStart = html.indexOf('async function prepareLocalStorageMirror');
+const recoveryEnd = html.indexOf('function isValidBackupData', recoveryStart);
+assert.ok(recoveryStart >= 0 && recoveryEnd > recoveryStart, 'local mirror recovery must be defined before backup validation');
+const recoveryBody = html.slice(recoveryStart, recoveryEnd);
+assert.ok(recoveryBody.includes('try { localData = JSON.parse(localRaw); } catch'), 'corrupt localStorage JSON must be detected');
+assert.ok(recoveryBody.includes('const localValid = isValidBackupData(localData)'), 'local data must be structurally validated');
+assert.ok(recoveryBody.includes('const mirrorValid = isValidBackupData(mirror?.payload)'), 'IndexedDB mirror must be structurally validated');
+assert.ok(recoveryBody.includes('if (!localValid && mirrorValid)'), 'a valid IndexedDB mirror must be selected when localStorage is invalid');
+assert.ok(recoveryBody.includes('if (!localValid) {') && recoveryBody.includes('return await restoreLocalStateFromSupabase()'), 'invalid local copies must trigger guarded cloud recovery');
+assert.ok(recoveryBody.includes('await writeLocalMirror(localData)'), 'a validated local snapshot may refresh the IndexedDB mirror');
+assert.ok(recoveryBody.includes('mirrorUpdatedAt > localUpdatedAt') && recoveryBody.includes('state = mirror.payload'), 'a newer durable mirror must win if the app stopped between mirror and localStorage writes');
+assert.ok(html.includes('prepareLocalStorageMirror().then(ready => ready === true)'), 'failed recovery readiness must stop automatic cloud sync');
+
+const cloudHistoryStart = html.indexOf('async function fetchRemoteOperationHistory');
+const recoveredStoreStart = html.indexOf('async function storeRecoveredOperationHistory', cloudHistoryStart);
+const cloudRestoreStart = html.indexOf('async function restoreLocalStateFromSupabase', recoveredStoreStart);
+const prepareStart = html.indexOf('async function prepareLocalStorageMirror', cloudRestoreStart);
+assert.ok(cloudHistoryStart >= 0 && recoveredStoreStart > cloudHistoryStart && cloudRestoreStart > recoveredStoreStart && prepareStart > cloudRestoreStart, 'cloud history read and restore must precede startup preparation');
+const historyBody = html.slice(cloudHistoryStart, recoveredStoreStart);
+assert.ok(historyBody.includes('holoo_operation_log') && historyBody.includes('company_record_id=eq.') && historyBody.includes('server_updated_at.asc'), 'history fetch must be scoped to the company and ordered');
+assert.ok(historyBody.includes('operation_id.asc') && historyBody.includes("Prefer: 'count=exact'") && historyBody.includes("response.headers.get('content-range')"), 'history pagination must be deterministic and prove the complete row count');
+assert.ok(historyBody.includes('offset=') && historyBody.includes('20000'), 'history fetch must paginate and enforce a completeness cap');
+assert.ok(historyBody.includes("contentRange.lastIndexOf('/')") && historyBody.includes("pageCountText"), 'exact row count must be parsed from the PostgREST Content-Range header');
+assert.ok(historyBody.includes('expectedCount !== pageCount'), 'recovery must stop if the reported total changes between pages');
+assert.ok(historyBody.includes('allRows.length === expectedCount'), 'recovery must finish only after every reported row is fetched');
+assert.ok(historyBody.includes('page.length !== pageSize'), 'short pages before the reported total must be treated as truncation');
+const recoveredStoreBody = html.slice(recoveredStoreStart, cloudRestoreStart);
+assert.ok(recoveredStoreBody.includes('recoveredFromServer: true') && recoveredStoreBody.includes('acknowledgedAt: row.server_updated_at'), 'restored history entries must be marked as server-acknowledged');
+assert.ok(recoveredStoreBody.includes('store.put(operation)'), 'recovered operations must be stored idempotently by operationId');
+assert.ok(recoveredStoreBody.includes("db.transaction([LOCAL_DB_STORE, OPERATION_DB_STORE], 'readwrite')") && recoveredStoreBody.includes("objectStore(LOCAL_DB_STORE).put({ payload: snapshot"), 'recovered history and state mirror must commit atomically in IndexedDB');
+assert.ok(recoveredStoreBody.includes("'mehran', 'ehsan', 'unknown'"), 'migration checkpoint rows with actor unknown must also be recoverable');
+const cloudRestoreBody = html.slice(cloudRestoreStart, prepareStart);
+assert.ok(cloudRestoreBody.includes('listPendingOperations(1)'), 'cloud recovery must refuse to overwrite unsent local operations');
+assert.ok(cloudRestoreBody.includes('CLOUD_OUTBOX_KEY') && cloudRestoreBody.includes('CLOUD_CONFLICT_DB_KEY'), 'cloud recovery must respect local outbox and conflict state');
+assert.ok(cloudRestoreBody.includes('const history = await fetchRemoteOperationHistory()') && cloudRestoreBody.includes('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'complete history must be fetched before atomically persisting it with the snapshot mirror');
+assert.ok(cloudRestoreBody.includes('history.some(row => row.server_updated_at === remote.updated_at)'), 'the recovered snapshot timestamp must match a checkpoint in the operation history');
+assert.ok(cloudRestoreBody.includes('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'restored mirror must retain the server timestamp after audit ID repair');
+assert.ok(cloudRestoreBody.indexOf('ensureAuditLogIds(state)') < cloudRestoreBody.indexOf('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'the normalized recovered state must be atomically mirrored after audit ID repair');
+assert.ok(cloudRestoreBody.includes('CLOUD_BASELINE_KEY, remote.updated_at'), 'restored cloud baseline must be recorded');
+
+
+const interruptedSaveGuard = recoveryBody.indexOf('const localOutboxPending = !!localStorage.getItem(CLOUD_OUTBOX_KEY)');
+const interruptedSaveRepair = recoveryBody.indexOf('const recoveredOperation = {', interruptedSaveGuard);
+const interruptedSaveCommit = recoveryBody.indexOf('await writeLocalMirror(localData, recoveredOperation, localUpdatedAtText)', interruptedSaveRepair);
+assert.ok(interruptedSaveGuard >= 0 && interruptedSaveRepair > interruptedSaveGuard && interruptedSaveCommit > interruptedSaveRepair,
+  'a newer local snapshot with a pending outbox must recreate the journal entry after an interrupted IndexedDB commit');
+assert.ok(recoveryBody.includes('buildEntityChangeSet(mirror.payload, localData, sequence)'),
+  'the recovered journal entry must contain the delta from the last durable mirror');
+assert.ok(recoveryBody.includes('!Number.isFinite(localUpdatedAt) || !Number.isFinite(mirrorUpdatedAt)'),
+  'ambiguous timestamps must fail closed instead of guessing which snapshot is newer');
+assert.ok(recoveryBody.includes("operationType: 'state_snapshot_recovered'"),
+  'interrupted saves must be distinguishable in the operation journal');
+
+console.log('Operation journal durability, interrupted-save repair, local/cloud recovery, and idempotent audit restoration checks passed.');

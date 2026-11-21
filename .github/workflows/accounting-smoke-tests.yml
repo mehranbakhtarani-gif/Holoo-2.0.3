@@ -26,6 +26,7 @@ jobs:
         run: |
           set -e
           node tests/manual-voucher-correction-atomicity.test.js
+          node tests/operation-journal-recovery-runtime.test.js
           node tests/invoice-posting-atomicity.test.js
           node tests/inventory-costing-precision.test.js
           node tests/invoice-integrity-audit.test.js

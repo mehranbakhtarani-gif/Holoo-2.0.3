@@ -2398,12 +2398,12 @@
         request.onblocked = () => finish(new Error('باز کردن حافظه محلی مسدود شده است؛ یک نسخه قدیمی برنامه هنوز پایگاه داده را باز نگه داشته است.'));
       });
     }
-    async function writeLocalMirror(snapshot, operation = null) {
+    async function writeLocalMirror(snapshot, operation = null, mirrorUpdatedAt = null) {
       const db = await openLocalDatabase();
       try {
         await new Promise((resolve, reject) => {
           const tx = db.transaction([LOCAL_DB_STORE, OPERATION_DB_STORE], 'readwrite');
-          tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: operation?.createdAt || new Date().toISOString() }, STORE_KEY);
+          tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: mirrorUpdatedAt || operation?.createdAt || new Date().toISOString() }, STORE_KEY);
           if (operation) tx.objectStore(OPERATION_DB_STORE).add(operation);
           tx.oncomplete = resolve;
           tx.onerror = () => reject(tx.error || new Error('ذخیره نسخه محلی/دفتر عملیات ناموفق بود.'));
@@ -2590,23 +2590,230 @@
         });
       } finally { db.close(); }
     }
+    async function fetchRemoteOperationHistory() {
+      const baseUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/holoo_operation_log';
+      const recordId = cloudConfig.recordId;
+      const columns = 'operation_id,company_record_id,actor,device_id,device_sequence,operation_type,summary,entity_changes,root_changes,client_created_at,server_updated_at';
+      const allRows = [];
+      const pageSize = 1000;
+      let expectedCount = null;
+      for (let offset = 0; offset < 20000; offset += pageSize) {
+        const endpoint = baseUrl + '?company_record_id=eq.' + encodeURIComponent(recordId) +
+          '&select=' + columns + '&order=server_updated_at.asc,operation_id.asc&limit=' + pageSize + '&offset=' + offset;
+        const response = await fetchWithTimeout(endpoint, {
+          method: 'GET',
+          headers: { ...cloudAuthHeaders(), Prefer: 'count=exact' }
+        });
+        if (!response.ok) throw new Error('خواندن تاریخچه دفتر عملیات از ابر ناموفق بود: HTTP ' + response.status);
+        const contentRange = response.headers.get('content-range') || '';
+        const rangeSlash = contentRange.lastIndexOf('/');
+        const pageCountText = rangeSlash >= 0 ? contentRange.slice(rangeSlash + 1) : '';
+        if (!/^[0-9]+$/.test(pageCountText)) throw new Error('سرور تعداد کامل سوابق دفتر عملیات را اعلام نکرد؛ بازیابی ناقص پذیرفته نمی‌شود.');
+        const pageCount = Number(pageCountText);
+        if (!Number.isSafeInteger(pageCount) || pageCount < 0) throw new Error('تعداد سوابق دفتر عملیات از سرور معتبر نیست.');
+        if (expectedCount === null) {
+          expectedCount = pageCount;
+          if (expectedCount > 20000) throw new Error('تاریخچه دفتر عملیات از سقف ایمن بازیابی بیشتر است؛ بازیابی متوقف شد.');
+        } else if (expectedCount !== pageCount) {
+          throw new Error('تعداد سوابق دفتر عملیات حین بازیابی تغییر کرد؛ برای جلوگیری از تاریخچه ناسازگار، عملیات متوقف شد.');
+        }
+        const page = await response.json();
+        if (!Array.isArray(page)) throw new Error('ساختار تاریخچه دفتر عملیات از ابر معتبر نیست.');
+        allRows.push(...page);
+        if (allRows.length === expectedCount) return allRows;
+        if (page.length !== pageSize || allRows.length > expectedCount) {
+          throw new Error('دریافت تاریخچه دفتر عملیات ناقص یا ناسازگار است؛ بازیابی متوقف شد.');
+        }
+      }
+      throw new Error('تاریخچه دفتر عملیات کامل دریافت نشد؛ بازیابی متوقف شد.');
+    }
+
+    async function storeRecoveredOperationHistory(rows, snapshot = null, mirrorUpdatedAt = null) {
+      const normalized = rows.map(row => {
+        if (!row || !row.operation_id || row.company_record_id !== cloudConfig.recordId ||
+            !['mehran', 'ehsan', 'unknown'].includes(row.actor) || !row.device_id ||
+            !row.server_updated_at || !Array.isArray(row.entity_changes) ||
+            !row.root_changes || typeof row.root_changes !== 'object' || Array.isArray(row.root_changes)) {
+          throw new Error('یکی از سوابق دفتر عملیات ابری ناقص یا نامعتبر است؛ بازیابی متوقف شد.');
+        }
+        return {
+          operationId: row.operation_id,
+          companyRecordId: row.company_record_id,
+          actor: row.actor,
+          deviceId: row.device_id,
+          sequence: Number(row.device_sequence || 0),
+          operationType: row.operation_type || 'state_snapshot',
+          summary: row.summary || '',
+          entityChanges: row.entity_changes,
+          rootChanges: row.root_changes,
+          createdAt: row.client_created_at || row.server_updated_at,
+          acknowledgedAt: row.server_updated_at,
+          recoveredFromServer: true
+        };
+      });
+      const db = await openLocalDatabase();
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction([LOCAL_DB_STORE, OPERATION_DB_STORE], 'readwrite');
+          const store = tx.objectStore(OPERATION_DB_STORE);
+          normalized.forEach(operation => store.put(operation));
+          if (snapshot) {
+            tx.objectStore(LOCAL_DB_STORE).put({ payload: snapshot, updatedAt: mirrorUpdatedAt || new Date().toISOString() }, STORE_KEY);
+          }
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('ذخیره تاریخچه بازیابی‌شده دفتر عملیات ناموفق بود.'));
+          tx.onabort = () => reject(tx.error || new Error('ذخیره تاریخچه بازیابی‌شده دفتر عملیات لغو شد.'));
+        });
+      } finally { db.close(); }
+      return normalized.length;
+    }
+
+    async function restoreLocalStateFromSupabase() {
+      if (!cloudConfig.url || !cloudConfig.key || !cloudConfig.table || !cloudConfig.recordId) {
+        throw new Error('تنظیمات اتصال ابر برای بازیابی کامل نیست.');
+      }
+      if (localStorage.getItem(CLOUD_OUTBOX_KEY) || localStorage.getItem(CLOUD_CONFLICT_DB_KEY)) {
+        throw new Error('صف ارسال یا تعارض محلی وجود دارد؛ بازیابی خودکار مجاز نیست تا اطلاعات تأییدنشده بازنویسی نشود.');
+      }
+      const pending = await listPendingOperations(1);
+      if (pending.length) {
+        throw new Error('عملیات محلی تأییدنشده وجود دارد؛ ابتدا باید این عملیات تعیین تکلیف شوند.');
+      }
+
+      const snapshotUrl = cloudConfig.url.replace(/\/$/, '') + '/rest/v1/' +
+        encodeURIComponent(cloudConfig.table) + '?id=eq.' + encodeURIComponent(cloudConfig.recordId) + '&select=data,updated_at';
+      // Read the complete append-only journal first, then read the snapshot.
+      // The snapshot timestamp must be present in that journal, otherwise the two reads
+      // may represent different moments or the audit trail may be incomplete.
+      const history = await fetchRemoteOperationHistory();
+      const snapshotResponse = await fetchWithTimeout(snapshotUrl, {
+        method: 'GET',
+        headers: cloudAuthHeaders()
+      });
+      if (!snapshotResponse.ok) throw new Error('دریافت نسخه کامل شرکت از ابر ناموفق بود: HTTP ' + snapshotResponse.status);
+      const snapshotRows = await snapshotResponse.json();
+      const remote = Array.isArray(snapshotRows) ? snapshotRows[0] : null;
+      if (!remote || !isValidBackupData(remote.data) || !remote.updated_at) {
+        throw new Error('نسخه ابری شرکت موجود نیست یا ساختار آن معتبر نیست.');
+      }
+      if (!history.some(row => row.server_updated_at === remote.updated_at)) {
+        throw new Error('نسخه شرکت و دفتر عملیات از یک نقطه زمانی قابل تأیید نیستند؛ بازیابی متوقف شد.');
+      }
+
+      // Commit the restored audit history and snapshot mirror in one IndexedDB transaction.
+      state = remote.data;
+      ensureAuditLogIds(state);
+      const recoveredCount = await storeRecoveredOperationHistory(history, state, remote.updated_at);
+      lastSavedState = JSON.parse(JSON.stringify(state));
+      localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      localStorage.setItem(LOCAL_UPDATED_KEY, remote.updated_at);
+      localStorage.setItem(CLOUD_BASELINE_KEY, remote.updated_at);
+      setCloudBadge('💾 بازیابی کامل از ابر انجام شد؛ ' + recoveredCount + ' سابقه دفتر عملیات دریافت شد', 'text-emerald-300');
+      return true;
+    }
+
     async function prepareLocalStorageMirror() {
       try {
         const localRaw = localStorage.getItem(STORE_KEY);
         const mirror = await readLocalMirror();
-        if (!localRaw && mirror && mirror.payload && typeof mirror.payload === 'object') {
+        let localData = null;
+        if (localRaw) {
+          try { localData = JSON.parse(localRaw); } catch (_) { localData = null; }
+        }
+        const localValid = isValidBackupData(localData);
+        const mirrorValid = isValidBackupData(mirror?.payload);
+
+        // Never copy malformed or structurally incomplete local data over a good mirror.
+        // A valid IndexedDB mirror is the recovery source when localStorage is corrupt.
+        if (!localValid && mirrorValid) {
           state = mirror.payload;
-          lastSavedState = JSON.parse(JSON.stringify(state));
           ensureAuditLogIds(state);
+          lastSavedState = JSON.parse(JSON.stringify(state));
           localStorage.setItem(STORE_KEY, JSON.stringify(state));
           localStorage.setItem(LOCAL_UPDATED_KEY, mirror.updatedAt || new Date().toISOString());
-          setCloudBadge('💾 بازیابی از حافظه داخلی گوشی', 'text-emerald-300');
-        } else if (localRaw) {
-          await writeLocalMirror(JSON.parse(localRaw));
+          setCloudBadge('💾 اطلاعات از نسخه سالم حافظه داخلی بازیابی شد', 'text-emerald-300');
+          return true;
         }
+
+        // If both local copies are missing/invalid, restore only from a validated cloud snapshot
+        // and its complete server-side operation history. Never overwrite an unsent local queue.
+        if (!localValid) {
+          try {
+            return await restoreLocalStateFromSupabase();
+          } catch (recoveryError) {
+            console.warn('Cloud recovery was not completed:', recoveryError);
+            setCloudBadge('⚠️ بازیابی کامل نشد؛ همگام‌سازی متوقف است', 'text-amber-300');
+            return false;
+          }
+        }
+
+        // A cloud restore commits the IndexedDB mirror before updating localStorage.
+        // If the app closed between those writes, prefer the newer timestamped mirror.
+        const localUpdatedAtText = localStorage.getItem(LOCAL_UPDATED_KEY) || '';
+        const localUpdatedAt = Date.parse(localUpdatedAtText);
+        const mirrorUpdatedAt = Date.parse(mirror?.updatedAt || '');
+        const localOutboxPending = !!localStorage.getItem(CLOUD_OUTBOX_KEY);
+
+        // A crash can occur after localStorage is written but before the IndexedDB
+        // transaction commits. If the durable mirror is older and the outbox remains,
+        // recreate the missing journal entry from the last durable mirror to local state.
+        // Do not infer an operation from timestamps when either timestamp is invalid.
+        if (localOutboxPending && mirrorValid &&
+            (!Number.isFinite(localUpdatedAt) || !Number.isFinite(mirrorUpdatedAt))) {
+          setCloudBadge('⚠️ زمان نسخه محلی قابل تأیید نیست؛ ترمیم دفتر عملیات متوقف شد', 'text-amber-300');
+          return false;
+        }
+        if (localOutboxPending && mirrorValid && localUpdatedAt > mirrorUpdatedAt &&
+            JSON.stringify(mirror.payload) !== JSON.stringify(localData)) {
+          ensureAuditLogIds(localData);
+          const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
+          const recoveredSnapshot = JSON.stringify(localData);
+          const recoveredPayload = JSON.parse(recoveredSnapshot);
+          recoveredPayload.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
+          const changeSet = buildEntityChangeSet(mirror.payload, localData, sequence);
+          const recoveredOperation = {
+            operationId: createStableId('op').slice(3),
+            sequence,
+            schemaVersion: OPERATION_SCHEMA_VERSION,
+            companyRecordId: cloudConfig.recordId,
+            actor: localStorage.getItem(DEVICE_ACTOR_KEY) || localData.activeRole || 'mehran',
+            deviceId: OPERATION_SOURCE_ID,
+            createdAt: localUpdatedAtText,
+            operationType: 'state_snapshot_recovered',
+            summary: 'بازیابی عملیات ذخیره‌شده پس از توقف ناگهانی برنامه',
+            payload: recoveredPayload,
+            entityChanges: changeSet.entityChanges,
+            rootChanges: changeSet.rootChanges,
+            expectedUpdatedAt: localStorage.getItem(CLOUD_BASELINE_KEY) || null,
+            acknowledgedAt: null
+          };
+          await writeLocalMirror(localData, recoveredOperation, localUpdatedAtText);
+          localStorage.setItem(OPERATION_SOURCE_SEQUENCE_KEY, String(sequence));
+          state = localData;
+          lastSavedState = JSON.parse(JSON.stringify(state));
+          setCloudBadge('💾 عملیات ناتمام پس از توقف برنامه به دفتر محلی بازسازی شد', 'text-emerald-300');
+          return true;
+        }
+
+        if (mirrorValid && Number.isFinite(localUpdatedAt) &&
+            Number.isFinite(mirrorUpdatedAt) && mirrorUpdatedAt > localUpdatedAt) {
+          state = mirror.payload;
+          ensureAuditLogIds(state);
+          lastSavedState = JSON.parse(JSON.stringify(state));
+          localStorage.setItem(STORE_KEY, JSON.stringify(state));
+          localStorage.setItem(LOCAL_UPDATED_KEY, mirror.updatedAt);
+          setCloudBadge('💾 نسخه جدیدتر حافظه داخلی بازیابی شد', 'text-emerald-300');
+          return true;
+        }
+
+        state = localData;
+        lastSavedState = JSON.parse(JSON.stringify(state));
+        await writeLocalMirror(localData);
+        return true;
       } catch (e) {
         console.warn('Local IndexedDB mirror unavailable:', e);
         setCloudBadge('⚠️ پشتیبان دوم محلی در دسترس نیست', 'text-amber-300');
+        return false;
       }
     }
     function isValidBackupData(data) {
@@ -2753,7 +2960,7 @@
       const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
       const snapshot = JSON.stringify(state);
       const operationPayload = JSON.parse(snapshot);
-      operationPayload.activeRole = 'mehran';
+      operationPayload.activeRole = localStorage.getItem(DEVICE_ACTOR_KEY) === 'ehsan' ? 'ehsan' : 'mehran';
       const lastAudit = Array.isArray(state.auditLogs) && state.auditLogs.length ? state.auditLogs[0] : null;
       const previousAuditId = lastQueuedAuditId ?? lastSavedState?.auditLogs?.[0]?.id ?? null;
       const hasNewAuditEvent = !!lastAudit && lastAudit.id !== previousAuditId;
@@ -14607,7 +14814,7 @@ function buildAccountHierarchyRollupReconciliation(fromDate, toDate) {
       // اگر IndexedDB پاسخ نداد، رابط برنامه باز می‌شود اما همگام‌سازی خودکار متوقف می‌ماند
       // تا نسخه ابری ناخواسته روی داده محلیِ هنوز بازیابی‌نشده نوشته نشود.
       const localReady = await Promise.race([
-        prepareLocalStorageMirror().then(() => true).catch(error => {
+        prepareLocalStorageMirror().then(ready => ready === true).catch(error => {
           console.warn('Local startup preparation failed:', error);
           return false;
         }),
