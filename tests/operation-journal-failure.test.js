@@ -28,4 +28,38 @@ assert.match(pushBody.slice(blockedGuard, atomicJournalPush),
   /return false;/,
   'a blocked journal must exit without sending a cloud snapshot');
 
-console.log('Operation journal failure guard checks passed.');
+
+const mirrorStart = html.indexOf('async function writeLocalMirror');
+const pendingStart = html.indexOf('async function listPendingOperations', mirrorStart);
+assert.ok(mirrorStart >= 0 && pendingStart > mirrorStart,
+  'the durable mirror writer must be defined before the pending-operation reader');
+const mirrorBody = html.slice(mirrorStart, pendingStart);
+assert.match(mirrorBody, /db\.transaction\(\[LOCAL_DB_STORE, OPERATION_DB_STORE\], 'readwrite'\)/,
+  'the state mirror and operation record must share one atomic IndexedDB transaction');
+assert.match(mirrorBody, /tx\.oncomplete = resolve/);
+assert.match(mirrorBody, /tx\.onerror = \(\) => reject/);
+assert.match(mirrorBody, /tx\.onabort = \(\) => reject/,
+  'an aborted mirror/journal transaction must be treated as a failed durable save');
+
+const saveStart = html.indexOf('function saveState()');
+const saveEnd = html.indexOf('// =========================================================================', saveStart);
+assert.ok(saveStart >= 0 && saveEnd > saveStart, 'saveState must be present');
+const saveBody = html.slice(saveStart, saveEnd);
+const durableSuccess = saveBody.indexOf('journalWrite.then(() =>');
+const durableFailure = saveBody.indexOf('journalWrite.catch(e =>');
+assert.ok(durableSuccess >= 0 && durableFailure > durableSuccess,
+  'durable journal success and failure must have separate continuations');
+assert.ok(saveBody.indexOf('lastSavedState = JSON.parse(snapshot);') > durableSuccess
+  && saveBody.indexOf('lastSavedState = JSON.parse(snapshot);') < durableFailure,
+  'the comparison baseline may advance only after the IndexedDB transaction commits');
+assert.match(saveBody.slice(durableSuccess, durableFailure), /operationJournalBlocked = false/);
+assert.match(saveBody.slice(durableFailure), /operationJournalBlocked = true/);
+assert.ok(!/lastSavedState\s*=/.test(saveBody.slice(durableFailure)),
+  'a failed IndexedDB write must not be recorded as the last durable state');
+assert.ok(saveBody.slice(durableSuccess, durableFailure).indexOf('scheduleCloudSync()') > 0,
+  'cloud sync is scheduled after the journal transaction commits');
+assert.ok(saveBody.slice(durableFailure).indexOf('scheduleCloudSync()') > 0,
+  'a failed journal write may trigger the sync guard, but must not advance the durable baseline');
+
+
+console.log('Operation journal failure and durable-baseline guard checks passed.');
