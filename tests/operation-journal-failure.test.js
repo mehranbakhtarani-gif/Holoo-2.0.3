@@ -120,6 +120,7 @@ assert.ok(cloudRestoreBody.includes('listPendingOperations(1)'), 'cloud recovery
 assert.ok(cloudRestoreBody.includes('CLOUD_OUTBOX_KEY') && cloudRestoreBody.includes('CLOUD_CONFLICT_DB_KEY'), 'cloud recovery must respect local outbox and conflict state');
 assert.ok(cloudRestoreBody.includes('Promise.all([') && cloudRestoreBody.includes('await storeRecoveredOperationHistory(history)'), 'snapshot and history must both be fetched and history persisted first');
 assert.ok(cloudRestoreBody.includes('await writeLocalMirror(remote.data, null, remote.updated_at)'), 'restored mirror must retain the server timestamp');
+assert.ok(cloudRestoreBody.indexOf('ensureAuditLogIds(state)') < cloudRestoreBody.indexOf('await writeLocalMirror(state, null, remote.updated_at)'), 'the normalized recovered state must be mirrored after audit ID repair');
 assert.ok(cloudRestoreBody.includes('CLOUD_BASELINE_KEY, remote.updated_at'), 'restored cloud baseline must be recorded');
 
 console.log('Operation journal durability, local/cloud recovery, and idempotent audit restoration checks passed.');
