@@ -209,11 +209,11 @@ async function run(harness) {
     JSON, Date, encodeURIComponent, Error, Promise
   };
   const push = vm.runInNewContext('(' + pushFunction + ')', pushContext);
-  await assert.rejects(() => push.call(pushContext), /simulated connection loss/);
+  await assert.rejects(() => push(), /simulated connection loss/);
   assert.equal(acked.length, 0, 'a transport failure must never acknowledge the pending operation');
   assert.equal(pending.length, 1, 'the operation must remain queued after uncertain delivery');
   assert.equal(requests.length, 1);
-  const retryResult = await push.call(pushContext);
+  const retryResult = await push();
   assert.equal(retryResult.applied, 1, 'already_applied is a successful idempotent retry');
   assert.deepEqual(acked, ['same-operation-id']);
   assert.equal(pending.length, 0, 'the queue drains only after server acknowledgement');
