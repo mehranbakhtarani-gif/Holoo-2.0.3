@@ -105,7 +105,7 @@ async function run(harness) {
   const noOutbox = makeHarness({ outbox: null });
   assert.equal(await run(noOutbox), true);
   assert.equal(noOutbox.writes.length, 1);
-  assert.equal(noOutbox.writes[0].operation, null);
+  assert.equal(noOutbox.writes[0].operation, undefined);
 
   console.log('PASS: production startup recovery runtime — Ehsan actor, delta, sequence, commit-abort safety, invalid timestamps and no-outbox behavior');
 })().catch(error => { console.error(error); process.exitCode = 1; });
