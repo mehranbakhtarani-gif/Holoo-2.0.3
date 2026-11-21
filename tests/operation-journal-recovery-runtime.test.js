@@ -108,5 +108,45 @@ async function run(harness) {
   assert.equal(noOutbox.writes.length, 1);
   assert.equal(noOutbox.writes[0].operation, undefined);
 
+
+  // Exercise the ordinary production saveState path for both fixed device identities.
+  const saveStart = html.indexOf('function saveState()');
+  const saveEnd = html.indexOf('// =========================================================================', saveStart);
+  assert.ok(saveStart >= 0 && saveEnd > saveStart, 'production saveState function must exist');
+  const saveFunction = html.slice(saveStart, saveEnd).trim();
+  for (const actor of ['mehran', 'ehsan']) {
+    const stored = new Map([
+      ['actor', actor], ['state', ''], ['updated', ''], ['sequence', '2'], ['outbox', '']
+    ]);
+    const saveWrites = [];
+    const saveContext = {
+      state: { activeRole: actor, products: [{ id: 'p1', price: 42 }], auditLogs: [] },
+      lastSavedState: { activeRole: actor, products: [{ id: 'p1', price: 41 }], auditLogs: [] },
+      lastQueuedAuditId: null,
+      localStorage: {
+        getItem: key => stored.has(key) ? stored.get(key) : null,
+        setItem: (key, value) => stored.set(key, String(value)),
+        removeItem: key => stored.delete(key)
+      },
+      STORE_KEY: 'state', LOCAL_UPDATED_KEY: 'updated', OPERATION_SOURCE_SEQUENCE_KEY: 'sequence',
+      CLOUD_OUTBOX_KEY: 'outbox', DEVICE_ACTOR_KEY: 'actor', OPERATION_SCHEMA_VERSION: 1,
+      OPERATION_SOURCE_ID: 'writer-' + actor, cloudConfig: { recordId: 'main_company_state' },
+      createStableId: () => 'op_save_runtime_id',
+      buildEntityChangeSet: () => ({ entityChanges: [], rootChanges: {} }),
+      writeLocalMirror: async (snapshot, operation) => { saveWrites.push({ snapshot, operation }); },
+      operationJournalBarrier: Promise.resolve(),
+      renderDeviceIdentityStatus: () => {}, scheduleCloudSync: () => {},
+      renderCloudSyncStatus: () => {}, setCloudBadge: () => {}, showToast: () => {},
+      console: { error: () => {} }, JSON, Date, Number, Promise
+    };
+    assert.equal(vm.runInNewContext('(' + saveFunction + ')()', saveContext), true);
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(saveWrites.length, 1, actor + ' ordinary save must write one journal operation');
+    assert.equal(saveWrites[0].operation.actor, actor);
+    assert.equal(saveWrites[0].operation.payload.activeRole, actor,
+      actor + ' ordinary save payload must preserve the assigned device operator');
+  }
+
   console.log('PASS: production startup recovery runtime — Ehsan actor, delta, sequence, commit-abort safety, invalid timestamps and no-outbox behavior');
 })().catch(error => { console.error(error); process.exitCode = 1; });
