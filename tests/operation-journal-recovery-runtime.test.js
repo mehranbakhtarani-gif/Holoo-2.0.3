@@ -129,7 +129,7 @@ async function run(harness) {
         removeItem: key => stored.delete(key)
       },
       STORE_KEY: 'state', LOCAL_UPDATED_KEY: 'updated', OPERATION_SOURCE_SEQUENCE_KEY: 'sequence',
-      CLOUD_OUTBOX_KEY: 'outbox', DEVICE_ACTOR_KEY: 'actor', OPERATION_SCHEMA_VERSION: 1,
+      CLOUD_OUTBOX_KEY: 'outbox', DEVICE_ACTOR_KEY: 'actor', CLOUD_BASELINE_KEY: 'baseline', OPERATION_SCHEMA_VERSION: 1,
       OPERATION_SOURCE_ID: 'writer-' + actor, cloudConfig: { recordId: 'main_company_state' },
       createStableId: () => 'op_save_runtime_id',
       buildEntityChangeSet: () => ({ entityChanges: [], rootChanges: {} }),
