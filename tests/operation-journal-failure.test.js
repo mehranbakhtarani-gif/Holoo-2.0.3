@@ -102,6 +102,7 @@ assert.ok(recoveryBody.includes('const mirrorValid = isValidBackupData(mirror?.p
 assert.ok(recoveryBody.includes('if (!localValid && mirrorValid)'), 'a valid IndexedDB mirror must be selected when localStorage is invalid');
 assert.ok(recoveryBody.includes('if (!localValid) {') && recoveryBody.includes('return await restoreLocalStateFromSupabase()'), 'invalid local copies must trigger guarded cloud recovery');
 assert.ok(recoveryBody.includes('await writeLocalMirror(localData)'), 'a validated local snapshot may refresh the IndexedDB mirror');
+assert.ok(recoveryBody.includes('mirrorUpdatedAt > localUpdatedAt') && recoveryBody.includes('state = mirror.payload'), 'a newer durable mirror must win if the app stopped between mirror and localStorage writes');
 assert.ok(html.includes('prepareLocalStorageMirror().then(ready => ready === true)'), 'failed recovery readiness must stop automatic cloud sync');
 
 const cloudHistoryStart = html.indexOf('async function fetchRemoteOperationHistory');
