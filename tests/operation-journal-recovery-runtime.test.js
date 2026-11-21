@@ -224,5 +224,58 @@ async function run(harness) {
   assert.equal(retryBody.p_operation_id, firstBody.p_operation_id,
     'restart/retry must reuse the exact stable operation id');
 
+
+  // A server conflict must stop the drain at that operation, preserve it and all
+  // later operations, and surface the remote version for explicit reconciliation.
+  const conflictOps = [
+    { ...pendingOperation, operationId: 'conflict-op-1', createdAt: '2026-11-21T10:12:00.000Z' },
+    { ...pendingOperation, operationId: 'must-wait-op-2', createdAt: '2026-11-21T10:13:00.000Z' }
+  ];
+  const conflictPending = conflictOps.slice();
+  const conflictCalls = [];
+  const savedConflicts = [];
+  const conflictContext = {
+    listPendingOperations: async limit => conflictPending.slice(0, limit),
+    acknowledgeOperations: async ids => {
+      for (const id of ids) {
+        const index = conflictPending.findIndex(op => op.operationId === id);
+        if (index >= 0) conflictPending.splice(index, 1);
+      }
+    },
+    localStorage: {
+      getItem: key => key === 'outbox' ? 'queued-marker' :
+        key === 'local-updated' ? '2026-11-21T10:13:00.000Z' :
+        key === 'baseline' ? '2026-11-21T10:00:00.000Z' : null,
+      setItem: () => {}, removeItem: () => {}
+    },
+    CLOUD_OUTBOX_KEY: 'outbox', LOCAL_UPDATED_KEY: 'local-updated',
+    CLOUD_BASELINE_KEY: 'baseline',
+    cloudConfig: { url: 'https://example.invalid', recordId: 'main_company_state', table: 'holoo_sync' },
+    fetchWithTimeout: async (url, options) => {
+      conflictCalls.push({ url, options });
+      if (conflictCalls.length === 1) return {
+        status: 200, ok: true, json: async () => ({ status: 'conflict', updated_at: '2026-11-21T10:14:00.000Z' })
+      };
+      return {
+        status: 200, ok: true,
+        json: async () => ([{ data: { vouchers: [], products: [] }, updated_at: '2026-11-21T10:14:00.000Z' }])
+      };
+    },
+    cloudAuthHeaders: () => ({ apikey: 'test', Authorization: 'Bearer test' }),
+    saveCloudConflict: async value => { savedConflicts.push(value); },
+    setCloudBadge: () => {}, showToast: () => {}, scheduleCloudSync: () => {},
+    renderCloudSyncStatus: async () => {},
+    state: {}, lastSavedState: {}, lastQueuedAuditId: null,
+    JSON, Date, encodeURIComponent, Error, Promise
+  };
+  const conflictPush = vm.runInNewContext('(' + pushFunction + ')', conflictContext);
+  const conflictResult = await conflictPush();
+  assert.equal(conflictResult.conflict, true, 'RPC conflict must stop the queue drain');
+  assert.equal(conflictResult.applied, 0);
+  assert.equal(conflictCalls.length, 2, 'only the conflict RPC and remote snapshot read may run');
+  assert.equal(savedConflicts.length, 1, 'the remote state must be captured for explicit reconciliation');
+  assert.deepEqual(conflictPending.map(op => op.operationId), ['conflict-op-1', 'must-wait-op-2'],
+    'neither the conflicting operation nor later operations may be acknowledged or dropped');
+
   console.log('PASS: production journal recovery and outbox runtime — Ehsan actor, delta, sequence, commit-abort safety, invalid timestamps, no-outbox behavior, transport retry and idempotent acknowledgement');
 })().catch(error => { console.error(error); process.exitCode = 1; });
