@@ -7,12 +7,17 @@ const start=html.indexOf('function buildRevenueExpenseAuditSummary()');
 const end=html.indexOf('function buildTreasurySettlementAuditSummary()',start);
 assert.ok(start>=0&&end>start,'revenue/expense audit function exists');
 const state={
- invoices:[{id:'S-1',type:'sale',status:'active'},{id:'S-2',type:'sale',status:'active'}],
+ invoices:[
+  {id:'S-1',type:'sale',status:'active',returnRefs:[{id:'RET-S1'}]},
+  {id:'S-2',type:'sale',status:'active'}
+ ],
  vouchers:[
   {id:'V-S1',sourceType:'invoice',sourceId:'S-1',date:'1405/09/01',lines:[{code:'4101',debit:0,credit:1000},{code:'5101',debit:400,credit:0}]},
   {id:'V-E1',sourceType:'treasury',sourceId:'T-1',date:'1405/09/02',lines:[{code:'6101',desc:'هزینه بانکی',debit:30,credit:0}]},
   {id:'V-E2',sourceType:'manual',sourceId:'M-1',date:'1405/09/02',lines:[{code:'6101',desc:'هزینه بانکی',debit:30,credit:0}]},
   {id:'V-E3',date:'1405/09/03',lines:[{code:'6102',debit:100,credit:0}]},
+  {id:'V-RETURN',sourceType:'invoice_return',sourceId:'RET-S1',sourceEvent:'S-1',date:'1405/09/03',lines:[{code:'4103',debit:100,credit:0}]},
+  {id:'V-FX',sourceType:'fx_revaluation',sourceId:'FX-1',date:'1405/09/03',lines:[{code:'4104',debit:0,credit:25}]},
   {id:'V-OTHER',date:'1405/09/03',lines:[{code:'4199',debit:0,credit:50}]}
  ]
 };
@@ -22,10 +27,10 @@ vm.createContext(sandbox);
 vm.runInContext(html.slice(start,end)+';this.audit=buildRevenueExpenseAuditSummary;',sandbox);
 const r=sandbox.audit();
 assert.equal(r.invoiceRevenueVoucherMissing,1);
-assert.equal(r.revenueCredit,1050);
+assert.equal(r.revenueCredit,1075);
 assert.equal(r.expenseDebit,160);
 assert.equal(r.cogsDebit,400);
-assert.equal(r.unlinkedRevenueLines,1);
+assert.equal(r.unlinkedRevenueLines,1,'valid linked sales returns and independent FX gains are not misclassified as unlinked revenue');
 assert.equal(r.unlinkedExpenseLines,1);
 assert.equal(r.expenseLinesMissingDescription,1);
 assert.ok(r.duplicateExpenseEntries>=1);

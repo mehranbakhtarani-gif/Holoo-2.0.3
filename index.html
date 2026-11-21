@@ -10039,8 +10039,13 @@
       const invoices = Array.isArray(state.invoices) ? state.invoices : [];
       const result = { revenueVoucherCount:0, expenseVoucherCount:0, revenueCredit:0, revenueDebit:0, expenseDebit:0, expenseCredit:0, cogsDebit:0, invoiceRevenueVoucherMissing:0, duplicateInvoiceRevenueVouchers:0, unlinkedRevenueLines:0, unlinkedExpenseLines:0, expenseLinesMissingDescription:0, invalidRevenueExpenseLines:0, duplicateExpenseEntries:0, expenseLines:0, revenueLines:0, issues:[] };
       const saleInvoices=invoices.filter(inv=>inv&&inv.type==='sale'&&inv.status!=='cancelled');
+      const allInvoices=invoices.filter(inv=>inv&&['sale','purchase'].includes(inv.type));
       const invoiceVouchers=new Map();
       vouchers.filter(v=>v&&v.sourceType==='invoice').forEach(v=>{const key=String(v.sourceId||'');if(!invoiceVouchers.has(key))invoiceVouchers.set(key,[]);invoiceVouchers.get(key).push(v);});
+      const returnOwners = new Map();
+      allInvoices.forEach(inv => (Array.isArray(inv.returnRefs) ? inv.returnRefs : []).forEach(ref => {
+        if (ref?.id != null) returnOwners.set(String(ref.id), inv);
+      }));
       saleInvoices.forEach(inv=>{const linked=invoiceVouchers.get(String(inv.id))||[];if(!linked.length)result.invoiceRevenueVoucherMissing++;else if(linked.length>1)result.duplicateInvoiceRevenueVouchers++;});
       const fingerprints=new Map();
       vouchers.forEach(v=>{
@@ -10053,7 +10058,17 @@
           const debit=Number(line.debit||0),credit=Number(line.credit||0);result.revenueLines++;
           if(!Number.isFinite(debit)||!Number.isFinite(credit)||debit<0||credit<0||(debit>0&&credit>0))result.invalidRevenueExpenseLines++;
           else{result.revenueDebit+=debit;result.revenueCredit+=credit;}
-          if(v.sourceType!=='invoice'||!saleInvoices.some(inv=>String(inv.id)===String(v.sourceId)))result.unlinkedRevenueLines++;
+          const code = String(line?.code || '');
+          const sourceInvoice = v.sourceType === 'invoice' ? saleInvoices.find(inv => String(inv.id) === String(v.sourceId)) : null;
+          const returnOwner = v.sourceType === 'invoice_return' ? returnOwners.get(String(v.sourceId || '')) : null;
+          const isLinkedSalesRevenue = ['4101','4102'].includes(code) && !!sourceInvoice;
+          const isLinkedSalesReturn = code === '4103' && returnOwner?.type === 'sale' &&
+            String(v.sourceEvent || '') === String(returnOwner.id);
+          const isLinkedPurchaseReturnGain = code === '4198' && returnOwner?.type === 'purchase' &&
+            String(v.sourceEvent || '') === String(returnOwner.id);
+          // 4104 is non-operating FX gain; it is not expected to originate from a sales invoice.
+          const isIndependentFxGain = code === '4104';
+          if (!(isLinkedSalesRevenue || isLinkedSalesReturn || isLinkedPurchaseReturnGain || isIndependentFxGain)) result.unlinkedRevenueLines++;
         });
         expenses.forEach(line=>{
           const debit=Number(line.debit||0),credit=Number(line.credit||0);result.expenseLines++;
@@ -13226,6 +13241,7 @@
               add('return-cogs', invoice, returnId, 'بهای تمام‌شده برگشت فروش با مجموع ارزش دفتری ردیف‌ها برابر نیست.', 'سربرگ: ' + String(ref?.costOfGoodsSold) + ' | ردیف‌ها: ' + refInventoryCost);
             }
           }
+          const expectedCredit = Number(ref?.partyCreditAmount || 0);
           const linkedVouchers = vouchers.filter(voucher => voucher && voucher.sourceType === 'invoice_return' &&
             String(voucher.sourceId || '') === returnId && String(voucher.sourceEvent || '') === invoiceId);
           if (linkedVouchers.length === 0) {
@@ -13243,16 +13259,41 @@
               if (!journalLine?.code || !Number.isFinite(d) || !Number.isFinite(c) || d < 0 || c < 0 || (d > 0 && c > 0)) invalid = true;
               else { debit += d; credit += c; }
             });
-            const inventoryDebit = lines.filter(line => String(line.code) === '1105').reduce((sum, line) => sum + Number(line.debit || 0), 0);
-            const inventoryCredit = lines.filter(line => String(line.code) === '1105').reduce((sum, line) => sum + Number(line.credit || 0), 0);
+            const accountTotal = (code, side) => lines.filter(line => String(line.code) === code)
+              .reduce((sum, line) => sum + Number(line[side] || 0), 0);
+            const inventoryDebit = accountTotal('1105', 'debit');
+            const inventoryCredit = accountTotal('1105', 'credit');
             const expectedInventoryDebit = invoice.type === 'sale' ? refInventoryCost : 0;
             const expectedInventoryCredit = invoice.type === 'purchase' ? refInventoryCost : 0;
-            if (invalid || Math.abs(debit - credit) > 1 || Math.abs(inventoryDebit - expectedInventoryDebit) > 1 || Math.abs(inventoryCredit - expectedInventoryCredit) > 1) {
+            // A balanced journal is not necessarily a correct journal. Reconcile each
+            // material sales-return account to the immutable return snapshot.
+            const expectedSalesReturn = invoice.type === 'sale' ? refBase : 0;
+            const expectedSalesVatReturn = invoice.type === 'sale' ? refVat : 0;
+            const expectedCustomerReceivableCredit = invoice.type === 'sale' ? Math.max(0, refAmount - expectedCredit) : 0;
+            const expectedCustomerCredit = invoice.type === 'sale' ? expectedCredit : 0;
+            const salesReturnMismatch = invoice.type === 'sale' && (
+              Math.abs(accountTotal('4103', 'debit') - expectedSalesReturn) > 1 ||
+              Math.abs(accountTotal('4103', 'credit')) > 1 ||
+              Math.abs(accountTotal('2103', 'debit') - expectedSalesVatReturn) > 1 ||
+              Math.abs(accountTotal('2103', 'credit')) > 1 ||
+              Math.abs(accountTotal('1103', 'credit') - expectedCustomerReceivableCredit) > 1 ||
+              Math.abs(accountTotal('1103', 'debit')) > 1 ||
+              Math.abs(accountTotal('2101', 'credit') - expectedCustomerCredit) > 1 ||
+              Math.abs(accountTotal('2101', 'debit')) > 1
+            );
+            if (invalid || Math.abs(debit - credit) > 1 ||
+                Math.abs(inventoryDebit - expectedInventoryDebit) > 1 ||
+                Math.abs(inventoryCredit - expectedInventoryCredit) > 1 || salesReturnMismatch) {
               ledgerMismatches++;
-              add('return-ledger', invoice, returnId, 'سند برگشت نامتوازن یا گردش حساب کنترل موجودی آن با ارزش دفتری ردیف‌ها ناسازگار است.', 'بدهکار: ' + debit + ' | بستانکار: ' + credit + ' | ۱۱۰۵ بدهکار: ' + inventoryDebit + ' | ۱۱۰۵ بستانکار: ' + inventoryCredit);
+              add('return-ledger', invoice, returnId, 'سند برگشت نامتوازن است یا گردش حساب‌های موجودی، برگشت فروش، مالیات و مانده مشتری با سابقه برگشت سازگار نیست.',
+                'بدهکار: ' + debit + ' | بستانکار: ' + credit +
+                ' | ۱۱۰۵ بدهکار: ' + inventoryDebit + ' | ۱۱۰۵ بستانکار: ' + inventoryCredit +
+                (invoice.type === 'sale' ? ' | ۴۱۰۳ بدهکار: ' + accountTotal('4103','debit') + ' (انتظار ' + expectedSalesReturn +
+                  ') | ۲۱۰۳ بدهکار: ' + accountTotal('2103','debit') + ' (انتظار ' + expectedSalesVatReturn +
+                  ') | ۱۱۰۳ بستانکار: ' + accountTotal('1103','credit') + ' (انتظار ' + expectedCustomerReceivableCredit +
+                  ') | ۲۱۰۱ بستانکار: ' + accountTotal('2101','credit') + ' (انتظار ' + expectedCustomerCredit + ')' : ''));
             }
           }
-          const expectedCredit = Number(ref?.partyCreditAmount || 0);
           const linkedCredits = treasuryTxs.filter(tx => String(tx?.sourceReturnId || '') === returnId && String(tx?.sourceInvoiceId || '') === invoiceId);
           if (expectedCredit > 0) {
             if (linkedCredits.length !== 1 || Math.abs(Number(linkedCredits[0]?.amount || 0) - expectedCredit) > 1) {

@@ -613,6 +613,34 @@ test('invoice return audit reconciles sale returns across source invoice, ledger
   assert.equal(result.invoicesChecked, 1);
   assert.equal(result.returnsChecked, 1);
   assert.equal(result.issueCount, 0);
+
+  // A balanced journal can still be materially wrong: shift the return base
+  // and VAT between their accounts while preserving total debits and credits.
+  const broken = {
+    costingMethod: 'AVG',
+    invoices: [{
+      id: 100, type: 'sale', items: [{ productId: 'P1', kg: 10, returnedKg: 2 }],
+      returnRefs: [{
+        id: 'RET-100', amount: 220, costOfGoodsSold: 80, partyCreditAmount: 20,
+        items: [{ productId: 'P1', lineIndex: 0, qty: 2, baseAmount: 200, vatAmount: 20, amount: 220, inventoryCost: 80, batchAllocations: [] }]
+      }]
+    }],
+    products: [{ id: 'P1', kardex: [{ doc: 'برگشت جزئی فاکتور #100', inQty: 2, outQty: 0 }] }],
+    vouchers: [{
+      id: 500, sourceType: 'invoice_return', sourceId: 'RET-100', sourceEvent: '100',
+      lines: [
+        { code: '4103', debit: 1, credit: 0 },
+        { code: '2103', debit: 219, credit: 0 },
+        { code: '1103', debit: 0, credit: 200 },
+        { code: '2101', debit: 0, credit: 20 },
+        { code: '1105', debit: 80, credit: 0 },
+        { code: '5101', debit: 0, credit: 80 }
+      ]
+    }],
+    treasuryTxs: [{ sourceReturnId: 'RET-100', sourceInvoiceId: 100, amount: 20, remainingAmount: 20 }]
+  };
+  const brokenResult = loadFunction(source, 'buildInvoiceReturnIntegrityAudit', { state: broken })();
+  assert.ok(brokenResult.ledgerMismatches > 0, 'return audit must detect incorrect account allocation even when the voucher balances');
 });
 
 test('invoice return audit reconciles purchase return inventory credit and detects missing or excessive return records', () => {
