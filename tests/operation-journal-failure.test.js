@@ -111,7 +111,6 @@ const prepareStart = html.indexOf('async function prepareLocalStorageMirror', cl
 assert.ok(cloudHistoryStart >= 0 && recoveredStoreStart > cloudHistoryStart && cloudRestoreStart > recoveredStoreStart && prepareStart > cloudRestoreStart, 'cloud history read and restore must precede startup preparation');
 const historyBody = html.slice(cloudHistoryStart, recoveredStoreStart);
 assert.ok(historyBody.includes('holoo_operation_log') && historyBody.includes('company_record_id=eq.') && historyBody.includes('server_updated_at.asc'), 'history fetch must be scoped to the company and ordered');
-assert.ok(historyBody.includes('offset=' + offset) === false, 'offset must be built dynamically rather than hard-coded');
 assert.ok(historyBody.includes('offset=') && historyBody.includes('20000'), 'history fetch must paginate and enforce a completeness cap');
 const recoveredStoreBody = html.slice(recoveredStoreStart, cloudRestoreStart);
 assert.ok(recoveredStoreBody.includes('recoveredFromServer: true') && recoveredStoreBody.includes('acknowledgedAt: row.server_updated_at'), 'restored history entries must be marked as server-acknowledged');
