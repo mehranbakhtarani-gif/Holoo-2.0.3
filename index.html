@@ -7596,8 +7596,11 @@
               'CANCEL-' + invId, entry.item.fifoReturnedAllocations || []
             );
           } else {
-            const consumption = consumeFifoStock(simulated, entry.quantity);
-            entry.inventoryCost = consumption.totalCost;
+            const batchPlan = consumePurchaseReturnBatches(simulated, invId, entry.item, entry.quantity);
+            entry.purchaseReturnAllocations = batchPlan.allocations;
+            entry.inventoryCost = state.costingMethod === 'FIFO'
+              ? batchPlan.totalCost
+              : safeInventoryExtendedCost(entry.quantity, Number(simulated.buyPrice || 0));
             if (!Number.isSafeInteger(entry.inventoryCost) || entry.inventoryCost < 0) throw new Error('بهای دفتری ابطال خرید معتبر نیست.');
           }
         }
@@ -7605,6 +7608,14 @@
         showToast('کنترل موجودی یا سری‌های ساخت در FIFO برای ابطال ناموفق بود؛ هیچ تغییری ثبت نشد. ' + (error?.message || ''), 'error');
         return false;
       }
+
+      const cancelInventoryCost = inv.type === 'purchase'
+        ? safeInventoryMoneySum(cancelPlan.map(entry => Number(entry.inventoryCost || 0))) : 0;
+      if (!Number.isSafeInteger(cancelInventoryCost) || cancelInventoryCost < 0) {
+        showToast('ارزش دفتری مانده خرید معتبر نیست؛ ابطال انجام نشد.', 'error'); return false;
+      }
+      const purchaseReturnAmountForVariance = inv.purchaseVatTreatment === 'non_recoverable' ? cancelAmount : cancelBaseAmount;
+      const purchaseReturnVariance = inv.type === 'purchase' ? purchaseReturnAmountForVariance - cancelInventoryCost : 0;
 
       const cancellationLines = inv.type === 'sale'
         ? [
@@ -7626,8 +7637,14 @@
             ...(cancelAmount > 0 ? [
               { code: '2101', partyId: inv.partyId, desc: `ابطال مانده خرید #${invId}`, debit: cancelAmount, credit: 0 }
             ] : []),
-            ...((inv.purchaseVatTreatment === 'non_recoverable' ? cancelAmount : cancelBaseAmount) > 0 ? [
-              { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار #${invId}`, debit: 0, credit: inv.purchaseVatTreatment === 'non_recoverable' ? cancelAmount : cancelBaseAmount }
+            ...(cancelInventoryCost > 0 ? [
+              { code: '1105', partyId: null, desc: `ابطال مانده ورود انبار به بهای دفتری #${invId}`, debit: 0, credit: cancelInventoryCost }
+            ] : []),
+            ...(purchaseReturnVariance > 0 ? [
+              { code: '4198', partyId: null, desc: `سود اختلاف بهای ابطال خرید #${invId}`, debit: 0, credit: purchaseReturnVariance }
+            ] : []),
+            ...(purchaseReturnVariance < 0 ? [
+              { code: '6107', partyId: null, desc: `زیان اختلاف بهای ابطال خرید #${invId}`, debit: Math.abs(purchaseReturnVariance), credit: 0 }
             ] : []),
             ...(inv.purchaseVatTreatment === 'non_recoverable' ? [] : (cancelVatAmount > 0 ? [
               { code: '1106', partyId: null, desc: `ابطال اعتبار مالیات خرید #${invId}`, debit: 0, credit: cancelVatAmount }
@@ -7669,7 +7686,13 @@
             )
           ];
         } else {
-          consumeFifoStock(product, quantity);
+          const batchPlan = consumePurchaseReturnBatches(product, invId, item, quantity);
+          const actualCost = state.costingMethod === 'FIFO'
+            ? batchPlan.totalCost
+            : safeInventoryExtendedCost(quantity, Number(product.buyPrice || 0));
+          if (!Number.isSafeInteger(actualCost) || actualCost !== entry.inventoryCost) {
+            throw new Error('بهای سری ساخت خرید هنگام ابطال با مقدار اعتبارسنجی‌شده برابر نیست.');
+          }
           product.stock -= quantity;
         }
         product.kardex = Array.isArray(product.kardex) ? product.kardex : [];
@@ -7688,7 +7711,8 @@
           sourceType: 'invoice_cancel',
           sourceRef: cancellationVoucherId ? String(cancellationVoucherId) : 'CANCEL-' + invId,
           sourceEvent: String(invId),
-          sourceLineIndex: lineIndex
+          sourceLineIndex: lineIndex,
+          batchAllocations: entry.purchaseReturnAllocations || []
         });
       }
       inv.status = 'cancelled';
