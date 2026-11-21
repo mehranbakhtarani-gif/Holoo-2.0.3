@@ -120,11 +120,12 @@ assert.ok(historyBody.includes('page.length !== pageSize'), 'short pages before 
 const recoveredStoreBody = html.slice(recoveredStoreStart, cloudRestoreStart);
 assert.ok(recoveredStoreBody.includes('recoveredFromServer: true') && recoveredStoreBody.includes('acknowledgedAt: row.server_updated_at'), 'restored history entries must be marked as server-acknowledged');
 assert.ok(recoveredStoreBody.includes('store.put(operation)'), 'recovered operations must be stored idempotently by operationId');
+assert.ok(recoveredStoreBody.includes("db.transaction([LOCAL_DB_STORE, OPERATION_DB_STORE], 'readwrite')") && recoveredStoreBody.includes("objectStore(LOCAL_DB_STORE).put({ payload: snapshot"), 'recovered history and state mirror must commit atomically in IndexedDB');
 assert.ok(recoveredStoreBody.includes("'mehran', 'ehsan', 'unknown'"), 'migration checkpoint rows with actor unknown must also be recoverable');
 const cloudRestoreBody = html.slice(cloudRestoreStart, prepareStart);
 assert.ok(cloudRestoreBody.includes('listPendingOperations(1)'), 'cloud recovery must refuse to overwrite unsent local operations');
 assert.ok(cloudRestoreBody.includes('CLOUD_OUTBOX_KEY') && cloudRestoreBody.includes('CLOUD_CONFLICT_DB_KEY'), 'cloud recovery must respect local outbox and conflict state');
-assert.ok(cloudRestoreBody.includes('Promise.all([') && cloudRestoreBody.includes('await storeRecoveredOperationHistory(history)'), 'snapshot and history must both be fetched and history persisted first');
+assert.ok(cloudRestoreBody.includes('Promise.all([') && cloudRestoreBody.includes('await storeRecoveredOperationHistory(history, state, remote.updated_at)'), 'snapshot and history must both be fetched and history persisted first');
 assert.ok(cloudRestoreBody.includes('await writeLocalMirror(state, null, remote.updated_at)'), 'restored mirror must retain the server timestamp after audit ID repair');
 assert.ok(cloudRestoreBody.indexOf('ensureAuditLogIds(state)') < cloudRestoreBody.indexOf('await writeLocalMirror(state, null, remote.updated_at)'), 'the normalized recovered state must be mirrored after audit ID repair');
 assert.ok(cloudRestoreBody.includes('CLOUD_BASELINE_KEY, remote.updated_at'), 'restored cloud baseline must be recorded');
