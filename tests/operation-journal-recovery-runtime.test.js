@@ -78,6 +78,7 @@ async function run(harness) {
   assert.equal(ehsan.writes.length, 1, 'the repaired snapshot and journal entry must be persisted together');
   const operation = ehsan.writes[0].operation;
   assert.equal(operation.actor, 'ehsan', 'recovery must retain the device-assigned operator');
+  assert.equal(operation.payload.activeRole, 'ehsan', 'the recovered snapshot must preserve Ehsan as the local active role');
   assert.equal(operation.deviceId, 'device-writer-123456');
   assert.equal(operation.operationType, 'state_snapshot_recovered');
   assert.equal(operation.sequence, 8, 'recovery must advance the local writer sequence');
