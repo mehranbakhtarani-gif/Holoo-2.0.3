@@ -2596,22 +2596,35 @@
       const columns = 'operation_id,company_record_id,actor,device_id,device_sequence,operation_type,summary,entity_changes,root_changes,client_created_at,server_updated_at';
       const allRows = [];
       const pageSize = 1000;
+      let expectedCount = null;
       for (let offset = 0; offset < 20000; offset += pageSize) {
         const endpoint = baseUrl + '?company_record_id=eq.' + encodeURIComponent(recordId) +
           '&select=' + columns + '&order=server_updated_at.asc,operation_id.asc&limit=' + pageSize + '&offset=' + offset;
-        const response = await fetchWithTimeout(endpoint, { method: 'GET', headers: cloudAuthHeaders({ Prefer: 'count=exact' }) });
+        const response = await fetchWithTimeout(endpoint, {
+          method: 'GET',
+          headers: { ...cloudAuthHeaders(), Prefer: 'count=exact' }
+        });
         if (!response.ok) throw new Error('خواندن تاریخچه دفتر عملیات از ابر ناموفق بود: HTTP ' + response.status);
-        const range = response.headers.get('content-range') || '';
-        const totalMatch = /\/(\d+)$/.exec(range);
-        if (!totalMatch) throw new Error('تعداد کل سوابق دفتر عملیات از پاسخ ابر قابل تأیید نیست.');
-        const expectedTotal = Number(totalMatch[1]);
+        const contentRange = response.headers.get('content-range') || '';
+        const countMatch = contentRange.match(/\\/([0-9]+)$/);
+        if (!countMatch) throw new Error('سرور تعداد کامل سوابق دفتر عملیات را اعلام نکرد؛ بازیابی ناقص پذیرفته نمی‌شود.');
+        const pageCount = Number(countMatch[1]);
+        if (!Number.isSafeInteger(pageCount) || pageCount < 0) throw new Error('تعداد سوابق دفتر عملیات از سرور معتبر نیست.');
+        if (expectedCount === null) {
+          expectedCount = pageCount;
+          if (expectedCount > 20000) throw new Error('تاریخچه دفتر عملیات از سقف ایمن بازیابی بیشتر است؛ بازیابی متوقف شد.');
+        } else if (expectedCount !== pageCount) {
+          throw new Error('تعداد سوابق دفتر عملیات حین بازیابی تغییر کرد؛ برای جلوگیری از تاریخچه ناسازگار، عملیات متوقف شد.');
+        }
         const page = await response.json();
-        if (!Array.isArray(page) || !Number.isSafeInteger(expectedTotal)) throw new Error('ساختار تاریخچه دفتر عملیات از ابر معتبر نیست.');
+        if (!Array.isArray(page)) throw new Error('ساختار تاریخچه دفتر عملیات از ابر معتبر نیست.');
         allRows.push(...page);
-        if (allRows.length === expectedTotal) return allRows;
-        if (page.length < pageSize || allRows.length > expectedTotal) throw new Error('تاریخچه دفتر عملیات ناقص یا ناسازگار دریافت شد.');
+        if (allRows.length === expectedCount) return allRows;
+        if (page.length !== pageSize || allRows.length > expectedCount) {
+          throw new Error('دریافت تاریخچه دفتر عملیات ناقص یا ناسازگار است؛ بازیابی متوقف شد.');
+        }
       }
-      throw new Error('تاریخچه دفتر عملیات بیش از سقف بازیابی است؛ برای جلوگیری از بازیابی ناقص، عملیات متوقف شد.');
+      throw new Error('تاریخچه دفتر عملیات کامل دریافت نشد؛ بازیابی متوقف شد.');
     }
 
     async function storeRecoveredOperationHistory(rows) {
