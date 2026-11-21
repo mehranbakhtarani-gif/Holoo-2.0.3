@@ -119,11 +119,12 @@ function buildInventoryCostAudit(state){
  };
  cancelledInvoices.forEach(inv=>{
   const id=String(inv.id??''),matches=vouchers.filter(v=>v&&v.sourceType==='invoice_cancel'&&String(v.sourceId??'')===id);
+  let cancellationVoucher=null;
   if(matches.length!==1){
    cancellationVoucherLinksUnverified++;
    add('cancellation-voucher-link',id,'سند ابطال متناظر یکتا پیدا نشد.','تعداد سند: '+matches.length);
   }else{
-   const voucher=matches[0];checkBalanced(voucher,id);
+   const voucher=matches[0];cancellationVoucher=voucher;checkBalanced(voucher,id);
    const amounts=inv.cancellationAmounts&&typeof inv.cancellationAmounts==='object'?inv.cancellationAmounts:{};
    if(inv.type==='sale'){
     const expected=amount(inv.cancelledCostOfGoodsSold);
@@ -133,7 +134,6 @@ function buildInventoryCostAudit(state){
     const nonRecoverable=inv.purchaseVatTreatment==='non_recoverable';
     const expectedInventory=amount(nonRecoverable?amounts.totalAmount:amounts.baseAmount);
     const expectedVat=nonRecoverable?0:amount(amounts.vatAmount);
-    compareCancellationSide(voucher,id,'1105','credit',expectedInventory,'debit','ابطال ورود موجودی خرید');
     compareCancellationSide(voucher,id,'1106','credit',expectedVat,'debit','ابطال اعتبار مالیات خرید');
    }
   }
@@ -156,12 +156,23 @@ function buildInventoryCostAudit(state){
    }
   });
   const kardexCost=sum(invoiceKardexRows,'inventoryCost');
-  const expectedKardexCost=inv.type==='sale'?amount(inv.cancelledCostOfGoodsSold):amount(
-   inv.purchaseVatTreatment==='non_recoverable'?amount((inv.cancellationAmounts||{}).totalAmount):amount((inv.cancellationAmounts||{}).baseAmount)
-  );
+  const expectedKardexCost=inv.type==='sale'
+   ? amount(inv.cancelledCostOfGoodsSold)
+   : sum(linesFor(cancellationVoucher,'1105'),'credit');
   if(kardexCost===null||expectedKardexCost===null||Math.abs(kardexCost-expectedKardexCost)>TOLERANCE){
    cancellationKardexCostMismatches++;
    add('cancellation-kardex-cost-mismatch',id,'جمع بهای دفتری گردش‌های کاردکس ابطال با مبلغ برگشت موجودی در سند حسابداری برابر نیست.','بهای کاردکس: '+kardexCost+' | بهای مورد انتظار: '+expectedKardexCost);
+  }
+  if(inv.type==='purchase'&&cancellationVoucher&&kardexCost!==null){
+   compareCancellationSide(cancellationVoucher,id,'1105','credit',kardexCost,'debit','ابطال موجودی به بهای دفتری');
+   const amounts=inv.cancellationAmounts||{};
+   const purchaseReturnAmount=amount(inv.purchaseVatTreatment==='non_recoverable'?amounts.totalAmount:amounts.baseAmount);
+   const variance=purchaseReturnAmount===null?null:purchaseReturnAmount-kardexCost;
+   if(variance===null){cancellationAccountMismatches++;add('cancellation-variance-unverified',id,'اختلاف بهای ابطال خرید به دلیل مبلغ مبنا قابل محاسبه نیست.','');}
+   else{
+    compareCancellationSide(cancellationVoucher,id,'4198','credit',Math.max(0,variance),'debit','سود اختلاف بهای ابطال خرید');
+    compareCancellationSide(cancellationVoucher,id,'6107','debit',Math.max(0,-variance),'credit','زیان اختلاف بهای ابطال خرید');
+   }
   }
  });
  return{salesChecked,purchasesChecked,cancellationVoucherLinksUnverified,cancellationAccountMismatches,cancellationKardexUnverified,cancellationKardexMismatches,cancellationKardexCostMismatches,missingInvoiceVouchers,duplicateInvoiceVouchers,invalidCogsLines,cogsAmountMismatches,inventoryCounterpartMismatches,unbalancedVouchers,purchaseQuantityMismatches,missingPurchaseProducts,returnLinksUnverified,returnAmountMismatches,orphanReturnVouchers,returnKardexMovementMismatches,returnKardexDirectionMismatches,returnKardexDuplicateMovements,returnKardexCostMismatches,returnKardexUnverified,kardexStockMismatches,batchStockMismatches,unverifiedStockTrace,kardexSequenceMismatches,invalidKardexRows,negativeKardexBalances,issueCount:issues.length,issues,details};
