@@ -2443,6 +2443,7 @@
           });
           tx.oncomplete = resolve;
           tx.onerror = () => reject(tx.error || new Error('ثبت تأیید عملیات ناموفق بود.'));
+          tx.onabort = () => reject(tx.error || new Error('ثبت تأیید عملیات لغو شد.'));
         });
       } finally { db.close(); }
     }
