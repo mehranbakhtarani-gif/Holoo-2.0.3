@@ -46,7 +46,7 @@ const saveEnd = html.indexOf('// ===============================================
 assert.ok(saveStart >= 0 && saveEnd > saveStart, 'saveState must be present');
 const saveBody = html.slice(saveStart, saveEnd);
 const durableSuccess = saveBody.indexOf('journalWrite.then(() =>');
-const durableFailure = saveBody.indexOf('journalWrite.catch(e =>');
+const durableFailure = saveBody.indexOf('}).catch(e =>', durableSuccess);
 assert.ok(durableSuccess >= 0 && durableFailure > durableSuccess,
   'durable journal success and failure must have separate continuations');
 assert.ok(saveBody.indexOf('lastSavedState = JSON.parse(snapshot);') > durableSuccess
