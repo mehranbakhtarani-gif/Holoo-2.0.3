@@ -2749,8 +2749,52 @@
 
         // A cloud restore commits the IndexedDB mirror before updating localStorage.
         // If the app closed between those writes, prefer the newer timestamped mirror.
-        const localUpdatedAt = Date.parse(localStorage.getItem(LOCAL_UPDATED_KEY) || '');
+        const localUpdatedAtText = localStorage.getItem(LOCAL_UPDATED_KEY) || '';
+        const localUpdatedAt = Date.parse(localUpdatedAtText);
         const mirrorUpdatedAt = Date.parse(mirror?.updatedAt || '');
+        const localOutboxPending = !!localStorage.getItem(CLOUD_OUTBOX_KEY);
+
+        // A crash can occur after localStorage is written but before the IndexedDB
+        // transaction commits. If the durable mirror is older and the outbox remains,
+        // recreate the missing journal entry from the last durable mirror to local state.
+        // Do not infer an operation from timestamps when either timestamp is invalid.
+        if (localOutboxPending && mirrorValid &&
+            (!Number.isFinite(localUpdatedAt) || !Number.isFinite(mirrorUpdatedAt))) {
+          setCloudBadge('⚠️ زمان نسخه محلی قابل تأیید نیست؛ ترمیم دفتر عملیات متوقف شد', 'text-amber-300');
+          return false;
+        }
+        if (localOutboxPending && mirrorValid && localUpdatedAt > mirrorUpdatedAt &&
+            JSON.stringify(mirror.payload) !== JSON.stringify(localData)) {
+          ensureAuditLogIds(localData);
+          const sequence = Number(localStorage.getItem(OPERATION_SOURCE_SEQUENCE_KEY) || 0) + 1;
+          const recoveredSnapshot = JSON.stringify(localData);
+          const recoveredPayload = JSON.parse(recoveredSnapshot);
+          recoveredPayload.activeRole = 'mehran';
+          const changeSet = buildEntityChangeSet(mirror.payload, localData, sequence);
+          const recoveredOperation = {
+            operationId: createStableId('op').slice(3),
+            sequence,
+            schemaVersion: OPERATION_SCHEMA_VERSION,
+            companyRecordId: cloudConfig.recordId,
+            actor: localStorage.getItem(DEVICE_ACTOR_KEY) || localData.activeRole || 'mehran',
+            deviceId: OPERATION_SOURCE_ID,
+            createdAt: localUpdatedAtText,
+            operationType: 'state_snapshot_recovered',
+            summary: 'بازیابی عملیات ذخیره‌شده پس از توقف ناگهانی برنامه',
+            payload: recoveredPayload,
+            entityChanges: changeSet.entityChanges,
+            rootChanges: changeSet.rootChanges,
+            expectedUpdatedAt: localStorage.getItem(CLOUD_BASELINE_KEY) || null,
+            acknowledgedAt: null
+          };
+          await writeLocalMirror(localData, recoveredOperation, localUpdatedAtText);
+          localStorage.setItem(OPERATION_SOURCE_SEQUENCE_KEY, String(sequence));
+          state = localData;
+          lastSavedState = JSON.parse(JSON.stringify(state));
+          setCloudBadge('💾 عملیات ناتمام پس از توقف برنامه به دفتر محلی بازسازی شد', 'text-emerald-300');
+          return true;
+        }
+
         if (mirrorValid && Number.isFinite(localUpdatedAt) &&
             Number.isFinite(mirrorUpdatedAt) && mirrorUpdatedAt > localUpdatedAt) {
           state = mirror.payload;
