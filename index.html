@@ -2816,8 +2816,12 @@
       return String(n).replace(/\d/g, x => d[x]);
     }
     function money(val, unit = true) {
+      const amount = Number(val);
+      if (val === null || val === undefined || val === '' || !Number.isFinite(amount) || Math.abs(amount) > Number.MAX_SAFE_INTEGER) {
+        return unit ? 'نیازمند بررسی' : '—';
+      }
       const isToman = state.currency === 'IRT';
-      const v = isToman ? Math.round(Number(val || 0) / 10) : Math.round(Number(val || 0));
+      const v = isToman ? Math.round(amount / 10) : Math.round(amount);
       const str = faNum(v.toLocaleString('en-US'));
       return unit ? `${str} ${isToman ? 'تومان' : 'ریال'}` : str;
     }
@@ -3349,7 +3353,7 @@
       CHART_ACCOUNTS.forEach(account => {
         map[account.code] = { ...account, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0 };
       });
-      const quality = { invalidDateVouchers: 0, invalidAmountVouchers: 0, invalidStructureVouchers: 0, unbalancedVouchers: 0, invalidFiscalYear: !validPeriod };
+      const quality = { invalidDateVouchers: 0, invalidAmountVouchers: 0, invalidStructureVouchers: 0, unbalancedVouchers: 0, unsafeAmountVouchers: 0, unknownAccountCodes: [], invalidFiscalYear: !validPeriod };
       (Array.isArray(state.vouchers) ? state.vouchers : []).forEach(voucher => {
         const rawDate = voucher?.date || voucher?.operationDate;
         const dateOrdinal = rawDate ? jalaliDateOrdinal(rawDate) : null;
@@ -3368,13 +3372,18 @@
         for (const line of lines) {
           const code = String(line?.code || '').trim();
           const debit = Number(line?.debit ?? 0), credit = Number(line?.credit ?? 0);
-          if (!code || !Number.isFinite(debit) || !Number.isFinite(credit) ||
+          if (!code || !Number.isSafeInteger(debit) || !Number.isSafeInteger(credit) ||
               debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
             quality.invalidAmountVouchers++;
             return;
           }
           debitTotal += debit;
           creditTotal += credit;
+          if (!Number.isSafeInteger(debitTotal) || !Number.isSafeInteger(creditTotal)) {
+            quality.unsafeAmountVouchers++;
+            return;
+          }
+          if (!map[code] && !quality.unknownAccountCodes.includes(code)) quality.unknownAccountCodes.push(code);
           normalizedLines.push({ code, debit, credit, name: line.accountName || line.name || code });
         }
         if (!Number.isFinite(debitTotal) || !Number.isFinite(creditTotal) || debitTotal <= 0 || creditTotal <= 0) {
@@ -3386,20 +3395,40 @@
           return;
         }
         const inSelectedYear = dateOrdinal >= periodStart && dateOrdinal <= periodEnd;
-        normalizedLines.forEach(line => {
-          if (!map[line.code]) map[line.code] = {
-            code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0
-          };
-          const account = map[line.code];
+        const pending = {};
+        let unsafeTurnover = false;
+        for (const line of normalizedLines) {
           const accountClass = String(line.code).charAt(0);
           // Balance-sheet accounts carry forward; income/expense accounts reset each fiscal year.
-          if (['4', '5', '6'].includes(accountClass) && !inSelectedYear) return;
-          account.debTurn += line.debit;
-          account.credTurn += line.credit;
-          if (inSelectedYear) {
-            account.periodDebTurn += line.debit;
-            account.periodCredTurn += line.credit;
+          if (['4', '5', '6'].includes(accountClass) && !inSelectedYear) continue;
+          const current = map[line.code] || { code: line.code, name: line.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0 };
+          const delta = pending[line.code] || { debTurn: 0, credTurn: 0, periodDebTurn: 0, periodCredTurn: 0 };
+          const nextDeb = current.debTurn + delta.debTurn + line.debit;
+          const nextCred = current.credTurn + delta.credTurn + line.credit;
+          const nextPeriodDeb = current.periodDebTurn + delta.periodDebTurn + (inSelectedYear ? line.debit : 0);
+          const nextPeriodCred = current.periodCredTurn + delta.periodCredTurn + (inSelectedYear ? line.credit : 0);
+          if (![nextDeb, nextCred, nextPeriodDeb, nextPeriodCred].every(Number.isSafeInteger)) {
+            unsafeTurnover = true;
+            break;
           }
+          pending[line.code] = {
+            debTurn: delta.debTurn + line.debit,
+            credTurn: delta.credTurn + line.credit,
+            periodDebTurn: delta.periodDebTurn + (inSelectedYear ? line.debit : 0),
+            periodCredTurn: delta.periodCredTurn + (inSelectedYear ? line.credit : 0),
+            name: line.name
+          };
+        }
+        if (unsafeTurnover) {
+          quality.unsafeAmountVouchers++;
+          return;
+        }
+        Object.entries(pending).forEach(([code, delta]) => {
+          if (!map[code]) map[code] = { code, name: delta.name, debTurn: 0, credTurn: 0, debBal: 0, credBal: 0, periodDebTurn: 0, periodCredTurn: 0 };
+          map[code].debTurn += delta.debTurn;
+          map[code].credTurn += delta.credTurn;
+          map[code].periodDebTurn += delta.periodDebTurn;
+          map[code].periodCredTurn += delta.periodCredTurn;
         });
       });
       Object.values(map).forEach(account => {
@@ -3693,10 +3722,12 @@
       if (balanceQuality.invalidAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidAmountVouchers) + ' سند دارای ردیف حساب/مبلغ نامعتبر از محاسبه شاخص‌ها کنار گذاشته شد.</div>');
       if (balanceQuality.invalidStructureVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ' + faNum(balanceQuality.invalidStructureVouchers) + ' سند ناقص یا بدون جمع بدهکار و بستانکار معتبر از محاسبه شاخص‌ها کنار گذاشته شد.</div>');
       if (balanceQuality.unbalancedVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unbalancedVouchers) + ' سند نامتوازن از محاسبه تمام شاخص‌های حسابداری کنار گذاشته شد.</div>');
+      if (balanceQuality.unsafeAmountVouchers) alerts.push('<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950">⚠️ ' + faNum(balanceQuality.unsafeAmountVouchers) + ' سند دارای مبلغ اعشاری، خارج از محدوده عدد امن یا گردش حساب سرریز شده است؛ برای جلوگیری از عدد نادرست کنار گذاشته/محدود شده است.</div>');
+      if (balanceQuality.unknownAccountCodes.length) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ کد حساب‌های خارج از فهرست پایه (ممکن است حساب سفارشی باشد): ' + balanceQuality.unknownAccountCodes.map(escapeKardexText).join('، ') + '؛ نگاشت کدینگ بررسی شود.</div>');
       if (!inventoryValueVerified) alerts.push('<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950">⚠️ ارزش کل موجودی نمایش داده نشد؛ حداقل یک کالا دارای مغایرت سری ساخت یا بهای تمام‌شده تأییدنشده است. گزارش تطبیق موجودی را اجرا کنید.</div>');
       (Array.isArray(state.checks) ? state.checks : []).filter(c => c.status === 'overdue' || c.status === 'in_progress').forEach(c => {
         alerts.push(`<div class="p-2.5 rounded-xl ${c.status === 'overdue' ? 'bg-rose-50 border-rose-300 text-rose-950' : 'bg-amber-50 border-amber-200 text-amber-950'} border flex justify-between items-center">
-          <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(String(c.sayad || '').slice(-6))} (${faNum(c.dueDate)})</span>
+          <span>${c.status === 'overdue' ? '🚨 چک سررسیدشده:' : '💳 چک در جریان:'} صیادی ${faNum(escapeKardexText(String(c.sayad || '').slice(-6)))} (${faNum(escapeKardexText(c.dueDate))})</span>
           <strong class="tabular-nums">${money(c.amount)}</strong>
         </div>`);
       });
@@ -4913,18 +4944,27 @@
     }
 
     function getInventoryBookValue(product) {
-      const stock = Number(product?.stock || 0);
-      const unitCost = Number(product?.buyPrice || 0);
+      if (!product || product.stock === undefined || product.stock === null || product.stock === '' ||
+          product.buyPrice === undefined || product.buyPrice === null || product.buyPrice === '') return null;
+      const stock = Number(product.stock);
+      const unitCost = Number(product.buyPrice);
       if (!Number.isFinite(stock) || stock < 0 || !Number.isFinite(unitCost) || unitCost < 0) return null;
-      if (state.costingMethod !== 'FIFO') return stock * unitCost;
+      if (state.costingMethod !== 'FIFO') {
+        const value = stock * unitCost;
+        return Number.isFinite(value) && Number.isSafeInteger(Math.round(value)) ? value : null;
+      }
       const reconciliation = inspectProductBatchReconciliation(product);
       if (!reconciliation.valid) return null;
       const batches = Array.isArray(product.batches) ? product.batches : [];
-      return batches.reduce((sum, batch) => {
+      let total = 0;
+      for (const batch of batches) {
         const quantity = Number(batch.remainingQty ?? batch.quantity ?? 0);
         const cost = Number(batch.unitCost ?? 0);
-        return sum + (quantity * cost);
-      }, 0);
+        const value = quantity * cost;
+        if (!Number.isFinite(value) || !Number.isFinite(total + value) || Math.abs(total + value) > Number.MAX_SAFE_INTEGER) return null;
+        total += value;
+      }
+      return Number.isSafeInteger(Math.round(total)) ? total : null;
     }
 
     function renderInventoryModule() {
@@ -8825,9 +8865,11 @@
         const faIndex = fa.indexOf(ch); return String(faIndex >= 0 ? faIndex : ar.indexOf(ch));
       });
       const parts = digits.replace(/-/g, '/').split('/');
-      if (parts.length !== 3 || parts.some(part => part.trim() === '' || !Number.isInteger(Number(part)))) return null;
+      if (parts.length !== 3 || parts.some(part => !/^\d{1,4}$/.test(part.trim()))) return null;
       const isDayFirst = Number(parts[2]) >= 1000 && Number(parts[0]) <= 31;
-      const jy = Number(isDayFirst ? parts[2] : parts[0]) - 979;
+      const year = Number(isDayFirst ? parts[2] : parts[0]);
+      if (!Number.isInteger(year) || year < 1 || year > 9999) return null;
+      const jy = year - 979;
       const jm = Number(parts[1]);
       const jd = Number(isDayFirst ? parts[0] : parts[2]);
       const yearDays = y => 365 * y + Math.floor(y / 33) * 8 + Math.floor(((y % 33) + 3) / 4) + 78;
