@@ -7534,7 +7534,8 @@
       const cancelPlan = [];
       let cancelBaseAmount = 0;
       let returnedVatAmount = 0;
-      for (const item of inv.items) {
+      for (let lineIndex = 0; lineIndex < inv.items.length; lineIndex++) {
+        const item = inv.items[lineIndex];
         const lineQty = Number(item.kg || 0);
         const returnedQty = Number(item.returnedKg || 0);
         const lineNetTotal = getInvoiceLineNetTotal(item);
@@ -7550,7 +7551,7 @@
         if (remainingQty > 0) {
           const product = resolveInvoiceWarehouseProduct(item.productId, inv.warehouseId, state.products, false).product;
           if (!product) { showToast('کالای یکی از ردیف‌های فاکتور پیدا نشد؛ ابطال انجام نشد.', 'error'); return false; }
-          cancelPlan.push({ item, product, quantity: remainingQty });
+          cancelPlan.push({ item, product, quantity: remainingQty, lineIndex });
         }
         cancelBaseAmount += remainingBase;
       }
@@ -7587,13 +7588,15 @@
           if (!simulatedProducts.has(entry.product)) simulatedProducts.set(entry.product, JSON.parse(JSON.stringify(entry.product)));
           const simulated = simulatedProducts.get(entry.product);
           if (inv.type === 'sale') {
+            entry.inventoryCost = getReturnCostOfGoods(entry.item, entry.quantity, simulated.buyPrice || 0);
             restoreFifoAllocations(
               simulated, entry.item.fifoAllocations || [], entry.quantity,
               entry.item.costOfGoodsSold ? entry.item.costOfGoodsSold / entry.item.kg : simulated.buyPrice,
               'CANCEL-' + invId, entry.item.fifoReturnedAllocations || []
             );
           } else {
-            consumeFifoStock(simulated, entry.quantity);
+            const consumption = consumeFifoStock(simulated, entry.quantity);
+            entry.inventoryCost = consumption.totalCost;
           }
         }
       } catch (error) {
@@ -7652,7 +7655,7 @@
 
       // The journal is valid; now apply the already-validated inventory changes.
       for (const entry of cancelPlan) {
-        const { item, product, quantity } = entry;
+        const { item, product, quantity, lineIndex } = entry;
         if (inv.type === 'sale') {
           product.stock += quantity;
           item.fifoReturnedAllocations = [
@@ -7667,6 +7670,24 @@
           consumeFifoStock(product, quantity);
           product.stock -= quantity;
         }
+        product.kardex = Array.isArray(product.kardex) ? product.kardex : [];
+        const cancellationCost = amount => Number.isSafeInteger(Number(amount)) && Number(amount) >= 0 ? Number(amount) : null;
+        const movementCost = cancellationCost(entry.inventoryCost);
+        if (movementCost === null) throw new Error('بهای دفتری گردش ابطال معتبر نیست؛ عملیات متوقف شد.');
+        product.kardex.push({
+          date: getTodayJalaliDate(),
+          doc: 'ابطال فاکتور #' + invId,
+          inQty: inv.type === 'sale' ? quantity : 0,
+          outQty: inv.type === 'purchase' ? quantity : 0,
+          bal: product.stock,
+          price: quantity > 0 ? movementCost / quantity : 0,
+          inventoryCost: movementCost,
+          costingMethod: state.costingMethod || 'AVG',
+          sourceType: 'invoice_cancel',
+          sourceRef: cancellationVoucherId ? String(cancellationVoucherId) : 'CANCEL-' + invId,
+          sourceEvent: String(invId),
+          sourceLineIndex: lineIndex
+        });
       }
       inv.status = 'cancelled';
       inv.cancelledCostOfGoodsSold = cancelCogs;
