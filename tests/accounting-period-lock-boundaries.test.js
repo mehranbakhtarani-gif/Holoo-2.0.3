@@ -72,8 +72,11 @@ sandbox.state.accountingPeriodLocks = [
 assert.equal(sandbox.getActiveAccountingPeriodLocks().length, 2);
 assert.equal(sandbox.getAccountingPeriodLockForDate(months[0].from).periodKey, 'month:1405:1');
 assert.equal(sandbox.getAccountingPeriodLockForDate(months[0].to).periodKey, 'month:1405:1');
+assert.equal(sandbox.getAccountingPeriodLockForDate('1405/02/01').periodKey, 'quarter:1405:1',
+  'reopening a month must not silently override an independently locked quarter');
+sandbox.state.accountingPeriodLocks = sandbox.state.accountingPeriodLocks.filter(item => item.periodKey !== 'quarter:1405:1');
 assert.equal(sandbox.getAccountingPeriodLockForDate('1405/02/01'), null,
-  'a reopened month must not block posting');
+  'the reopened month is writable after its overlapping quarter lock is also removed');
 assert.equal(sandbox.getAccountingPeriodLockForDate('1405/04/01'), null,
   'the next quarter must remain open');
 assert.equal(sandbox.getAccountingPeriodLockForDate('1404/12/30'), null);
