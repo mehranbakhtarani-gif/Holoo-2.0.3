@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: holoo-pwa
+    runtime: static
+    buildCommand: echo "Holoo PWA - static deployment"
+    staticPublishPath: .
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /manifest.json
+        name: Cache-Control
+        value: no-cache
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
